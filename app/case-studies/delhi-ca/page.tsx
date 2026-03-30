@@ -13,8 +13,8 @@ export async function generateStaticParams() {
   }))
 }
 
-export default function CaseStudyPage({ params }: { params: { id: string } }) {
-  const study = caseStudies.find((s) => s.id === 'delhi-ca')
+export default function CaseStudyPage() {
+  const study = caseStudies.find(s => s.id === 'delhi-ca')
 
   if (!study) {
     notFound()
