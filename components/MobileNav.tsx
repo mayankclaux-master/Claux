@@ -33,7 +33,7 @@ export default function MobileNav() {
         <div 
           className="fixed inset-0 flex flex-col md:hidden"
           style={{
-            zIndex: 9999,
+            zIndex: 99999,
             backgroundColor: '#050508',
             backdropFilter: 'blur(20px)'
           }}

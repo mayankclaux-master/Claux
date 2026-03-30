@@ -1,3 +1,4 @@
+"use client";
 import { notFound } from 'next/navigation'
 import { caseStudies } from '@/lib/caseStudiesData'
 import MobileNav from '@/components/MobileNav'
