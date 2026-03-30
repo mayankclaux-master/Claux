@@ -4,7 +4,9 @@ import MobileNav from '@/components/MobileNav'
 import CaseStudyCTA from '@/components/CaseStudyCTA'
 import Link from 'next/link'
 
-export function generateStaticParams() {
+export const dynamicParams = true
+
+export async function generateStaticParams() {
   return caseStudies.map((study) => ({
     id: study.id
   }))

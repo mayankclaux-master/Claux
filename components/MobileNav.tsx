@@ -30,7 +30,14 @@ export default function MobileNav() {
 
       {/* Full Screen Overlay Menu */}
       {isOpen && (
-        <div className="fixed inset-0 bg-[#050508] backdrop-blur-xl z-[9999] flex flex-col">
+        <div 
+          className="fixed inset-0 flex flex-col md:hidden"
+          style={{
+            zIndex: 9999,
+            backgroundColor: '#050508',
+            backdropFilter: 'blur(20px)'
+          }}
+        >
           {/* Top Row: Logo + Close Button */}
           <div className="flex justify-between items-center px-4 py-4 border-b border-white/5">
             <div className="flex items-center gap-2">
