@@ -1,0 +1,199 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design System - Color Palette & 3D Cards */
+.glass-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 -1px 0 rgba(0, 0, 0, 0.3) inset,
+    0 4px 24px rgba(0, 0, 0, 0.4);
+  transition: all 0.3s ease;
+}
+
+.glass-card:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: 
+    0 0 0 1px rgba(99, 102, 241, 0.2),
+    0 0 30px rgba(99, 102, 241, 0.15),
+    0 0 1px rgba(255, 255, 255, 0.1) inset,
+    0 8px 32px rgba(0, 0, 0, 0.5);
+  transform: translateY(-4px);
+}
+
+.gradient-text {
+  background: linear-gradient(to right, rgb(129, 140, 248), rgb(167, 139, 250), rgb(192, 132, 252));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.section-bg-alt {
+  background: #0D0D14;
+}
+
+/* Carousel Styles */
+.carousel-track::-webkit-scrollbar {
+  display: none;
+}
+
+.carousel-track {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+
+.carousel-track {
+  cursor: grab;
+}
+
+.carousel-track:active {
+  cursor: grabbing;
+}
+
+.carousel-outer {
+}
+
+/* Mobile Scroll Row Styles */
+.mobile-scroll-row::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-scroll-row {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+
+.mobile-scroll-outer {
+}
+
+/* Keyframe Animations */
+@keyframes gradient {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes timeline-draw {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.animate-timeline-draw {
+  animation: timeline-draw 2s ease-out forwards;
+}
+
+.bg-gradient-radial {
+  background: radial-gradient(circle, currentColor 0%, transparent 70%);
+}
+
+/* Button Micro-Polish */
+button {
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+@keyframes pulse-border {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes marquee-reverse {
+  0% { transform: translateX(-50%); }
+  100% { transform: translateX(0); }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Gradient Animation */
+.animate-gradient {
+  background-size: 200% 200%;
+  animation: gradient 3s ease infinite;
+}
+
+/* Pulse Border Animation */
+.animate-pulse-border {
+  animation: pulse-border 2s ease-in-out infinite;
+}
+
+/* Marquee Animations */
+.marquee-row {
+  display: flex;
+  overflow: hidden;
+}
+
+.marquee-content {
+  display: flex;
+  gap: 1rem;
+  animation: marquee 35s linear infinite;
+}
+
+.marquee-row-reverse {
+  display: flex;
+  overflow: hidden;
+}
+
+.marquee-content-reverse {
+  display: flex;
+  gap: 1rem;
+  animation: marquee-reverse 28s linear infinite;
+}
+
+.marquee-badge {
+  flex-shrink: 0;
+  padding: 0.5rem 1.5rem;
+  background-color: rgba(31, 41, 55, 0.5);
+  border: 1px solid rgb(55, 65, 81);
+  border-radius: 9999px;
+  color: rgb(209, 213, 219);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+/* Case Study Card Animations */
+.case-study-card {
+  opacity: 0;
+  animation: fadeInUp 0.6s ease-out forwards;
+}
+
+.case-study-card:nth-child(1) { animation-delay: 0.1s; }
+.case-study-card:nth-child(2) { animation-delay: 0.2s; }
+.case-study-card:nth-child(3) { animation-delay: 0.3s; }
+.case-study-card:nth-child(4) { animation-delay: 0.4s; }
+.case-study-card:nth-child(5) { animation-delay: 0.5s; }
+.case-study-card:nth-child(6) { animation-delay: 0.6s; }
+
+/* Timeline Step Animations */
+.timeline-step {
+  opacity: 0;
+  animation: fadeInUp 0.6s ease-out forwards;
+}
+
+.timeline-step:nth-child(1) { animation-delay: 0.1s; }
+.timeline-step:nth-child(2) { animation-delay: 0.3s; }
+.timeline-step:nth-child(3) { animation-delay: 0.5s; }
+.timeline-step:nth-child(4) { animation-delay: 0.7s; }
