@@ -24,16 +24,25 @@ export default async function CaseStudyPage({ params }: { params: Promise<{ id: 
 
   return (
     <div className="bg-[#050508] min-h-screen text-white">
-      <MobileNav />
-      
       {/* Desktop Navbar */}
       <nav className="border-b border-gray-800 bg-[#050508]/80 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <Link href="/" className="flex items-center gap-2">
-              <span className="text-2xl">🎯</span>
-              <span className="text-xl font-bold text-white">Claux</span>
-            </Link>
+            <div className="flex items-center gap-4">
+              <Link href="/" className="flex items-center gap-2">
+                <span className="text-2xl">🎯</span>
+                <span className="text-xl font-bold text-white">Claux</span>
+              </Link>
+              <Link 
+                href="/#results" 
+                className="hidden md:inline-flex items-center gap-2 text-slate-500 text-sm hover:text-indigo-400 transition"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                Back to Results
+              </Link>
+            </div>
             <div className="flex items-center gap-4">
               <div className="hidden md:flex items-center gap-8">
                 <Link href="/#agents" className="text-gray-300 hover:text-white transition-colors">
@@ -54,6 +63,7 @@ export default async function CaseStudyPage({ params }: { params: Promise<{ id: 
                   </button>
                 </Link>
               </div>
+              <MobileNav />
             </div>
           </div>
         </div>
@@ -62,16 +72,6 @@ export default async function CaseStudyPage({ params }: { params: Promise<{ id: 
       {/* Hero Section */}
       <section className="py-12 sm:py-16 px-4">
         <div className="max-w-5xl mx-auto">
-          {/* Breadcrumb */}
-          <Link 
-            href="/#results" 
-            className="text-slate-500 text-sm hover:text-indigo-400 transition inline-flex items-center gap-2 mb-8"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Back to Results
-          </Link>
 
           {/* Industry & Location */}
           <div className="flex flex-wrap items-center gap-3 mb-6">
