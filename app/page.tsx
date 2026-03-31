@@ -18,46 +18,47 @@ export default async function Home() {
   }
 
   return (
-    <ClientWrapper>
-      <div className="min-h-screen bg-[#050508] text-white">
-      {/* NAVBAR */}
-      <nav className="border-b border-gray-800 bg-[#050508]/80 backdrop-blur-md sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-2">
-              <span className="text-2xl">🎯</span>
-              <span className="text-xl font-bold text-white">
-                Claux
-              </span>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="hidden md:flex items-center gap-8">
-              <a href="#agents" className="text-gray-300 hover:text-white transition-colors">
-                Agents
-              </a>
-              <a href="#results" className="text-gray-300 hover:text-white transition-colors">
-                Results
-              </a>
-              <a href="#how-it-works" className="text-gray-300 hover:text-white transition-colors">
-                How It Works
-              </a>
-              <a href="/pricing" className="text-gray-300 hover:text-white transition-colors">
-                Pricing
-              </a>
-              <button data-demo-trigger className="px-5 py-2 border border-gray-700 rounded-lg font-medium hover:bg-gray-800 transition-all">
-                Watch How It Works
-              </button>
-              <a href="#faq">
-                <button className="px-5 py-2 bg-gradient-to-r from-indigo-500 to-violet-600 rounded-lg font-medium hover:from-indigo-400 hover:to-violet-500 transition-all">
-                  Claux FAQs
-                </button>
-              </a>
+    <>
+      <MobileNav />
+      <ClientWrapper>
+        <div className="min-h-screen bg-[#050508] text-white">
+        {/* NAVBAR */}
+        <nav className="border-b border-gray-800 bg-[#050508]/80 backdrop-blur-md sticky top-0 z-50">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center h-16">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">🎯</span>
+                <span className="text-xl font-bold text-white">
+                  Claux
+                </span>
               </div>
-              <MobileNav />
+              <div className="flex items-center gap-4">
+                <div className="hidden md:flex items-center gap-8">
+                <a href="#agents" className="text-gray-300 hover:text-white transition-colors">
+                  Agents
+                </a>
+                <a href="#results" className="text-gray-300 hover:text-white transition-colors">
+                  Results
+                </a>
+                <a href="#how-it-works" className="text-gray-300 hover:text-white transition-colors">
+                  How It Works
+                </a>
+                <a href="/pricing" className="text-gray-300 hover:text-white transition-colors">
+                  Pricing
+                </a>
+                <button data-demo-trigger className="px-5 py-2 border border-gray-700 rounded-lg font-medium hover:bg-gray-800 transition-all">
+                  Watch How It Works
+                </button>
+                <a href="#faq">
+                  <button className="px-5 py-2 bg-gradient-to-r from-indigo-500 to-violet-600 rounded-lg font-medium hover:from-indigo-400 hover:to-violet-500 transition-all">
+                    Claux FAQs
+                  </button>
+                </a>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </nav>
+        </nav>
 
       {/* HERO SECTION */}
       <section className="relative overflow-hidden bg-[#050508]">
@@ -1062,5 +1063,6 @@ export default async function Home() {
       <AnimationWrapper />
       </div>
     </ClientWrapper>
+    </>
   );
 }

@@ -24,6 +24,8 @@ export default async function CaseStudyPage({ params }: { params: Promise<{ id: 
 
   return (
     <div className="bg-[#050508] min-h-screen text-white">
+      <MobileNav />
+      
       {/* Desktop Navbar */}
       <nav className="border-b border-gray-800 bg-[#050508]/80 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -63,7 +65,6 @@ export default async function CaseStudyPage({ params }: { params: Promise<{ id: 
                   </button>
                 </Link>
               </div>
-              <MobileNav />
             </div>
           </div>
         </div>
