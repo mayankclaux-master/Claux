@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import DemoModal from './DemoModal'
 
 export default function CaseStudyCTA() {
@@ -23,12 +24,11 @@ export default function CaseStudyCTA() {
             >
               Watch How It Works
             </button>
-            <button
-              onClick={() => setShowDemoModal(true)}
-              className="px-8 py-3 bg-gradient-to-r from-indigo-500 to-violet-600 text-white rounded-xl font-semibold shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:shadow-[0_0_30px_rgba(99,102,241,0.5)] transition"
-            >
-              Start Free Trial
-            </button>
+            <Link href="/pricing">
+              <button className="px-8 py-3 bg-gradient-to-r from-indigo-500 to-violet-600 text-white rounded-xl font-semibold shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:shadow-[0_0_30px_rgba(99,102,241,0.5)] transition">
+                Pricing
+              </button>
+            </Link>
           </div>
         </div>
       </section>

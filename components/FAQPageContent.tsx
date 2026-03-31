@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import DemoModal from './DemoModal'
 
 const allFAQs = [
   {
@@ -22,7 +23,7 @@ const allFAQs = [
   {
     category: 'Pricing & Plans',
     question: "Is there a free trial?",
-    answer: "We don't do free trials — we do free audits. Connect your website and GBP, and our agents run a full 200-point analysis at no cost. You receive a personalised keyword opportunity report showing exactly where you rank, what you're losing, and what you can win. You only pay when you're ready for the agents to execute."
+    answer: "We have stopped free trial provision to prevent product abuse. But we have kept pricing at a lower side so that any business can start a monthly subscription at just 7499 INR and have complete flavour of the Claux Power."
   },
   {
     category: 'Pricing & Plans',
@@ -61,6 +62,7 @@ const categories = ['All Questions', 'About Claux', 'How It Works', 'Pricing & P
 export default function FAQPageContent() {
   const [activeCategory, setActiveCategory] = useState('All Questions')
   const [openIndex, setOpenIndex] = useState<number | null>(null)
+  const [showDemoModal, setShowDemoModal] = useState(false)
 
   const filteredFAQs = activeCategory === 'All Questions' 
     ? allFAQs 
@@ -185,20 +187,23 @@ export default function FAQPageContent() {
           <div className="mt-16 text-center">
             <div className="glass-card p-8 max-w-2xl mx-auto">
               <h3 className="text-2xl font-bold text-white mb-3">
-                Still have questions?
+                Still Not Sure?
               </h3>
               <p className="text-slate-400 mb-6">
-                Connect your website for a free 200-point audit and we'll answer everything specific to your business.
+                Watch a free demo video with real product walkthrough. Watch how a team of 9 AI Agents change the SEO game forever.
               </p>
-              <Link href="/">
-                <button className="px-8 py-3 bg-gradient-to-r from-indigo-500 to-violet-600 text-white rounded-xl font-semibold shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:shadow-[0_0_30px_rgba(99,102,241,0.5)] transition">
-                  Get Your Free Audit
-                </button>
-              </Link>
+              <button
+                onClick={() => setShowDemoModal(true)}
+                className="px-8 py-3 bg-gradient-to-r from-indigo-500 to-violet-600 text-white rounded-xl font-semibold shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:shadow-[0_0_30px_rgba(99,102,241,0.5)] transition"
+              >
+                Watch Demo
+              </button>
             </div>
           </div>
         </div>
       </section>
+
+      <DemoModal isOpen={showDemoModal} onClose={() => setShowDemoModal(false)} />
     </div>
   )
 }

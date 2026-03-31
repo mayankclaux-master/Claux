@@ -449,9 +449,13 @@ export default function PricingPage() {
               <p className="text-slate-400 text-sm">Connect and audit for free</p>
             </div>
             <div className="glass-card text-center p-5">
-              <div className="text-2xl mb-2">🇮🇳</div>
-              <h4 className="text-white font-semibold mb-1">Made for India</h4>
-              <p className="text-slate-400 text-sm">Priced in ₹, built for Indian markets</p>
+              <div className="flex justify-center mb-2">
+                <svg className="w-6 h-6 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                </svg>
+              </div>
+              <h4 className="text-white font-semibold mb-1">10x Growth 10x Faster</h4>
+              <p className="text-slate-400 text-sm">Much much better than Agency</p>
             </div>
           </div>
 

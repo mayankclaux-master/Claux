@@ -31,9 +31,9 @@ export default function Pricing() {
                 <a href="/pricing" className="text-gray-300 hover:text-white transition-colors">
                   Pricing
                 </a>
-                <a href="/">
+                <a href="/faq">
                   <button className="px-5 py-2 bg-gradient-to-r from-indigo-500 to-violet-600 rounded-lg font-medium hover:from-indigo-400 hover:to-violet-500 transition-all">
-                    Get Started Free
+                    FAQs
                   </button>
                 </a>
               </div>
