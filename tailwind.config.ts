@@ -8,6 +8,15 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      colors: {
+        'claux-bg': '#0A0B0F',
+        'claux-surface': '#12141A',
+        'claux-border': '#1E2130',
+        'claux-purple': '#7F77DD',
+        'claux-teal': '#1D9E75',
+        'claux-text': '#F0F2F8',
+        'claux-muted': '#8892A4',
+      },
       backgroundImage: {
         "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
         "gradient-conic":
