@@ -1,33 +1,31 @@
 'use client';
 
-import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { AreaChart, Area, ResponsiveContainer, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts';
 import DemoSidebar from '@/components/demo/DemoSidebar';
 
-const filters = ['All', 'Top 10', 'Improved', 'New Entries'];
-
-const rows = [
-  ['dentist andheri west', '#3', '↑4', 2400, 'PULSE'],
-  ['dental implants mumbai', '#7', '↑2', 1900, 'PULSE'],
-  ['root canal andheri', '#5', '↑6', 880, 'PULSE'],
-  ['teeth whitening mumbai', '#9', '↑3', 720, 'PULSE'],
-  ['best dentist mumbai', '#12', '↑1', 5400, 'PULSE'],
-  ['dental clinic near me', '#4', '↑8', 12000, 'PULSE'],
-  ['dental checkup andheri', '#2', '↑5', 440, 'PULSE'],
-  ['emergency dentist mumbai', '#6', 'NEW', 1100, 'PULSE'],
-  ['cosmetic dentist andheri', '#8', '↑5', 590, 'PULSE'],
-  ['dental crown mumbai', '#11', '↑3', 430, 'PULSE'],
-  ['kids dentist andheri', '#6', '↑7', 320, 'PULSE'],
-  ['orthodontist near me', '#14', '↑2', 2800, 'PULSE'],
-  ['dental pain relief mumbai', '#5', '↑9', 210, 'PULSE'],
-  ['full mouth rehabilitation', '#18', 'NEW', 390, 'PULSE'],
-  ['wisdom tooth removal andheri', '#7', '↑4', 510, 'PULSE'],
-  ['dental veneer mumbai', '#15', '↑1', 280, 'PULSE'],
-  ['periodontist andheri west', '#9', '↑6', 190, 'PULSE'],
-  ['dental bridge cost mumbai', '#13', '↑3', 340, 'PULSE'],
-  ['smile makeover andheri', '#10', '↑8', 260, 'PULSE'],
-  ['dental x-ray near me', '#4', '↑11', 1200, 'PULSE'],
+const allKeywords = [
+  { keyword: 'dentist andheri west', position: 3, change: 4, volume: 2400, agent: 'PULSE' },
+  { keyword: 'dental implants mumbai', position: 7, change: 2, volume: 1900, agent: 'PULSE' },
+  { keyword: 'root canal andheri', position: 5, change: 6, volume: 880, agent: 'PULSE' },
+  { keyword: 'teeth whitening mumbai', position: 9, change: 3, volume: 720, agent: 'PULSE' },
+  { keyword: 'best dentist mumbai', position: 12, change: 1, volume: 5400, agent: 'PULSE' },
+  { keyword: 'dental clinic near me', position: 4, change: 8, volume: 12000, agent: 'PULSE' },
+  { keyword: 'dental checkup andheri', position: 2, change: 5, volume: 440, agent: 'PULSE' },
+  { keyword: 'emergency dentist mumbai', position: 6, change: 'NEW' as const, volume: 1100, agent: 'PULSE' },
+  { keyword: 'cosmetic dentist andheri', position: 8, change: 5, volume: 590, agent: 'PULSE' },
+  { keyword: 'dental crown mumbai', position: 11, change: 3, volume: 430, agent: 'PULSE' },
+  { keyword: 'kids dentist andheri', position: 6, change: 7, volume: 320, agent: 'PULSE' },
+  { keyword: 'orthodontist near me', position: 14, change: 2, volume: 2800, agent: 'PULSE' },
+  { keyword: 'dental pain relief mumbai', position: 5, change: 9, volume: 210, agent: 'PULSE' },
+  { keyword: 'full mouth rehabilitation', position: 18, change: 'NEW' as const, volume: 390, agent: 'PULSE' },
+  { keyword: 'wisdom tooth removal andheri', position: 7, change: 4, volume: 510, agent: 'PULSE' },
+  { keyword: 'dental veneer mumbai', position: 15, change: 1, volume: 280, agent: 'PULSE' },
+  { keyword: 'periodontist andheri west', position: 9, change: 6, volume: 190, agent: 'PULSE' },
+  { keyword: 'dental bridge cost mumbai', position: 13, change: 3, volume: 340, agent: 'PULSE' },
+  { keyword: 'smile makeover andheri', position: 10, change: 8, volume: 260, agent: 'PULSE' },
+  { keyword: 'dental x-ray near me', position: 4, change: 11, volume: 1200, agent: 'PULSE' },
 ];
 
 const chartData = [
@@ -42,7 +40,20 @@ const chartData = [
 ];
 
 export default function RankingsPage() {
-  const [activeFilter, setActiveFilter] = useState('All');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'top10' | 'improved' | 'new'>('all');
+
+  const filteredKeywords = useMemo(() => {
+    switch (activeFilter) {
+      case 'top10':
+        return allKeywords.filter((k) => typeof k.position === 'number' && k.position <= 10);
+      case 'improved':
+        return allKeywords.filter((k) => typeof k.change === 'number' && k.change > 0);
+      case 'new':
+        return allKeywords.filter((k) => k.change === 'NEW');
+      default:
+        return allKeywords;
+    }
+  }, [activeFilter]);
 
   return (
     <div className="flex min-h-screen bg-[#0A0B0F] text-[#F0F2F8]">
@@ -52,17 +63,34 @@ export default function RankingsPage() {
           <h1 className="text-3xl font-bold mb-2">Keyword Rankings</h1>
           <p className="text-[#8892A4] mb-6">Live position tracking across Google Search, Maps & AI Overviews</p>
 
-          <div className="flex gap-2 mb-6 flex-wrap">
-            {filters.map((f) => (
+          <div className="flex gap-2 mb-3 flex-wrap">
+            {[
+              { key: 'all', label: 'All', count: allKeywords.length },
+              { key: 'top10', label: 'Top 10', count: allKeywords.filter((k) => typeof k.position === 'number' && k.position <= 10).length },
+              { key: 'improved', label: 'Improved', count: allKeywords.filter((k) => typeof k.change === 'number' && k.change > 0).length },
+              { key: 'new', label: 'New Entries', count: allKeywords.filter((k) => k.change === 'NEW').length },
+            ].map((filter) => (
               <button
-                key={f}
-                onClick={() => setActiveFilter(f)}
-                className={`px-4 py-2 rounded-lg border text-sm transition ${activeFilter === f ? 'bg-[#7F77DD]/20 border-[#7F77DD]/40 text-[#7F77DD]' : 'bg-[#12141A] border-[#1E2130] text-[#8892A4] hover:text-[#F0F2F8]'}`}
+                key={filter.key}
+                onClick={() => setActiveFilter(filter.key as any)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 flex items-center gap-2
+      ${activeFilter === filter.key
+        ? 'bg-[#7F77DD] text-white'
+        : 'bg-[#12141A] text-[#8892A4] border border-[#1E2130] hover:text-white hover:border-[#7F77DD]/50'
+      }`}
               >
-                {f}
+                {filter.label}
+                <span className={`text-xs px-1.5 py-0.5 rounded-full
+      ${activeFilter === filter.key ? 'bg-white/20 text-white' : 'bg-[#1E2130] text-[#8892A4]'}`}>
+                  {filter.count}
+                </span>
               </button>
             ))}
           </div>
+
+          <p className="text-sm text-[#8892A4] mb-6">
+            Showing {filteredKeywords.length} of {allKeywords.length} keywords
+          </p>
 
           <div className="bg-[#12141A] border border-[#1E2130] rounded-xl overflow-hidden mb-8">
             <table className="w-full text-sm">
@@ -76,15 +104,24 @@ export default function RankingsPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
-                  <tr key={r[0]} className="border-t border-[#1E2130]">
-                    <td className="p-4">{r[0]}</td>
-                    <td className="p-4 font-semibold">{r[1]}</td>
-                    <td className="p-4 text-[#1D9E75]">{r[2]}</td>
-                    <td className="p-4 text-[#8892A4]">{Number(r[3]).toLocaleString()}</td>
-                    <td className="p-4"><span className="text-xs px-2 py-1 rounded bg-[#7F77DD]/20 text-[#7F77DD]">{r[4]}</span></td>
-                  </tr>
-                ))}
+                <AnimatePresence mode="wait">
+                  {filteredKeywords.map((row) => (
+                    <motion.tr
+                      key={row.keyword}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="border-t border-[#1E2130]"
+                    >
+                      <td className="p-4">{row.keyword}</td>
+                      <td className="p-4 font-semibold">#{row.position}</td>
+                      <td className="p-4 text-[#1D9E75]">{typeof row.change === 'number' ? `↑${row.change}` : 'NEW'}</td>
+                      <td className="p-4 text-[#8892A4]">{row.volume.toLocaleString()}</td>
+                      <td className="p-4"><span className="text-xs px-2 py-1 rounded bg-[#7F77DD]/20 text-[#7F77DD]">{row.agent}</span></td>
+                    </motion.tr>
+                  ))}
+                </AnimatePresence>
               </tbody>
             </table>
           </div>

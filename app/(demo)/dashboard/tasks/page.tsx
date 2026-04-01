@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import DemoSidebar from '@/components/demo/DemoSidebar';
 
@@ -44,6 +45,64 @@ const tasks = [
 ];
 
 export default function TasksPage() {
+  const [exporting, setExporting] = useState(false);
+
+  const exportCSV = () => {
+    setExporting(true);
+
+    const headers = ['Agent', 'Task Description', 'Category', 'Time Taken', 'Timestamp', 'Status'];
+
+    const rows = [
+      ['PULSE', "'dentist andheri west' moved to #3", 'Tracking', '2.1 min', 'Today 09:42 AM', 'Completed'],
+      ['ARIA', 'andheri dentist implants mapped', 'Keyword Research', '4.8 min', 'Today 09:30 AM', 'Completed'],
+      ['CORE', '12 crawl errors fixed', 'Technical', '6.2 min', 'Today 09:10 AM', 'Completed'],
+      ['SCRIBE', 'Top 5 Dental Services Mumbai published', 'Content', '5.4 min', 'Today 08:54 AM', 'Completed'],
+      ['LOCL', 'Summer Dental Camp post published', 'GBP', '3.6 min', 'Today 08:40 AM', 'Completed'],
+      ['LINX', 'healthindia.in backlink acquired (DA41)', 'Backlinks', '4.1 min', 'Today 08:19 AM', 'Completed'],
+      ['REPUTE', 'Review request sent to 14 patients', 'Reputation', '2.8 min', 'Today 07:58 AM', 'Completed'],
+      ['RIVAL', 'Competitor keyword gap report generated', 'Competitor', '5.9 min', 'Today 07:22 AM', 'Completed'],
+      ['AMPLI', 'Article pushed to 31 channels', 'Distribution', '3.4 min', 'Today 06:48 AM', 'Completed'],
+      ['CORE', 'Page speed improved to 91', 'Technical', '4.7 min', 'Yesterday 10:15 PM', 'Completed'],
+      ['ARIA', '23 competitor gaps identified', 'Keyword Research', '5.1 min', 'Yesterday 09:46 PM', 'Completed'],
+      ['PULSE', '5 keywords entered top 10', 'Tracking', '3.2 min', 'Yesterday 09:20 PM', 'Completed'],
+      ['SCRIBE', 'Root Canal Cost outline created', 'Content', '4.3 min', 'Yesterday 08:57 PM', 'Completed'],
+      ['LOCL', '3 GBP attributes updated', 'GBP', '2.1 min', 'Yesterday 08:30 PM', 'Completed'],
+      ['LINX', 'dentistryindia.com outreach sent', 'Backlinks', '3.8 min', 'Yesterday 07:45 PM', 'Completed'],
+      ['RIVAL', 'SmileCare published 2 new pages — alert sent', 'Competitor', '1.2 min', 'Yesterday 07:00 PM', 'Completed'],
+      ['AMPLI', 'Article indexed by Google in 4.2 hours', 'Distribution', '0.5 min', 'Yesterday 06:30 PM', 'Completed'],
+      ['REPUTE', 'Google review flagged for response', 'Reputation', '1.8 min', 'Yesterday 05:55 PM', 'Completed'],
+      ['ARIA', 'Intent cluster report generated', 'Keyword Research', '7.2 min', 'Yesterday 04:20 PM', 'Completed'],
+      ['CORE', 'Schema markup added to 4 pages', 'Technical', '8.1 min', 'Yesterday 03:10 PM', 'Completed'],
+      ['PULSE', 'AI Overview appearance detected — dentist andheri', 'Tracking', '1.5 min', 'Yesterday 02:45 PM', 'Completed'],
+      ['SCRIBE', 'Teeth Whitening article submitted for review', 'Content', '5.8 min', 'Yesterday 01:30 PM', 'Completed'],
+      ['LOCL', 'NAP synced across 12 directories', 'GBP', '4.4 min', 'Yesterday 12:15 PM', 'Completed'],
+      ['LINX', '2 guest post slots confirmed', 'Backlinks', '6.3 min', 'Yesterday 11:00 AM', 'Completed'],
+      ['REPUTE', 'Rating improved 4.2 to 4.6 — milestone alert', 'Reputation', '0.8 min', 'Yesterday 10:30 AM', 'Completed'],
+      ['RIVAL', 'Monday morning briefing delivered', 'Competitor', '2.3 min', '2 days ago 09:00 AM', 'Completed'],
+      ['AMPLI', '3 social signals amplified', 'Distribution', '1.9 min', '2 days ago 08:30 AM', 'Completed'],
+      ['ARIA', 'High-intent keyword cluster: dental emergencies', 'Keyword Research', '6.7 min', '2 days ago 07:45 AM', 'Completed'],
+      ['CORE', 'Mobile usability issues resolved — 3 pages', 'Technical', '5.5 min', '2 days ago 06:20 AM', 'Completed'],
+      ['PULSE', 'Weekly ranking summary report generated', 'Tracking', '2.9 min', '2 days ago 05:00 AM', 'Completed'],
+    ];
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map((row) => row.map((cell) => `"${cell}"`).join(',')),
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'Claux_Task_History_April2026.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    setTimeout(() => setExporting(false), 1500);
+  };
+
   return (
     <div className="flex min-h-screen bg-[#0A0B0F] text-[#F0F2F8]">
       <DemoSidebar />
@@ -54,8 +113,11 @@ export default function TasksPage() {
               <h1 className="text-3xl font-bold mb-2">Task History</h1>
               <p className="text-[#8892A4]">Complete log of all agent actions</p>
             </div>
-            <button className="px-4 py-2 rounded-lg border border-[#1E2130] text-[#8892A4] hover:text-[#F0F2F8] hover:bg-white/5 text-sm">
-              Export CSV
+            <button
+              onClick={exportCSV}
+              className="px-4 py-2 rounded-lg border border-[#1E2130] text-[#8892A4] hover:text-[#F0F2F8] hover:bg-white/5 text-sm"
+            >
+              {exporting ? 'Exporting...' : 'Export CSV'}
             </button>
           </div>
 
