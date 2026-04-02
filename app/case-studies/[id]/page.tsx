@@ -34,17 +34,15 @@ export default async function CaseStudyPage({ params }: { params: Promise<{ id: 
             <div className="flex items-center gap-4">
               <Link href="/" className="flex items-center gap-2">
                 <Image
-                  src="/claux-logo.png"
+                  src="/claux-logo-cropped.png"
                   alt="Claux"
-                  width={120}
-                  height={40}
+                  width={180}
+                  height={48}
                   className="object-contain"
                   style={{
-                    width: '120px',
-                    height: '40px',
-                    minWidth: '120px',
-                    objectFit: 'contain',
-                    objectPosition: 'left center'
+                    width: '180px',
+                    height: '48px',
+                    objectFit: 'contain'
                   }}
                   priority
                 />
@@ -395,17 +393,15 @@ export default async function CaseStudyPage({ params }: { params: Promise<{ id: 
             <div>
               <div className="flex items-center gap-2 mb-4">
                 <Image
-                  src="/claux-logo.png"
+                  src="/claux-logo-cropped.png"
                   alt="Claux"
-                  width={120}
-                  height={40}
+                  width={180}
+                  height={48}
                   className="object-contain"
                   style={{
-                    width: '120px',
-                    height: '40px',
-                    minWidth: '120px',
-                    objectFit: 'contain',
-                    objectPosition: 'left center'
+                    width: '180px',
+                    height: '48px',
+                    objectFit: 'contain'
                   }}
                   priority
                 />

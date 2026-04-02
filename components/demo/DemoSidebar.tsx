@@ -21,17 +21,15 @@ export default function DemoSidebar() {
       <div className="p-6 border-b border-claux-border">
         <Link href="/">
           <Image
-            src="/claux-logo.png"
+            src="/claux-logo-cropped.png"
             alt="Claux"
-            width={110}
-            height={36}
+            width={180}
+            height={48}
             className="object-contain"
             style={{
-              width: '110px',
-              height: '36px',
-              minWidth: '110px',
-              objectFit: 'contain',
-              objectPosition: 'left center'
+              width: '180px',
+              height: '48px',
+              objectFit: 'contain'
             }}
             priority
           />

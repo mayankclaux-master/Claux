@@ -30,17 +30,15 @@ export default async function Home() {
             <div className="flex justify-between items-center h-16">
               <Link href="/" className="flex items-center gap-2">
                 <Image
-                  src="/claux-logo.png"
+                  src="/claux-logo-cropped.png"
                   alt="Claux"
-                  width={120}
-                  height={40}
+                  width={180}
+                  height={48}
                   className="object-contain"
                   style={{
-                    width: '120px',
-                    height: '40px',
-                    minWidth: '120px',
-                    objectFit: 'contain',
-                    objectPosition: 'left center'
+                    width: '180px',
+                    height: '48px',
+                    objectFit: 'contain'
                   }}
                   priority
                 />
@@ -1044,11 +1042,16 @@ export default async function Home() {
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <Image
-                  src="/claux-logo.png"
+                  src="/claux-logo-cropped.png"
                   alt="Claux"
-                  width={120}
-                  height={40}
-                  className="h-8 w-auto object-contain"
+                  width={180}
+                  height={48}
+                  className="object-contain"
+                  style={{
+                    width: '180px',
+                    height: '48px',
+                    objectFit: 'contain'
+                  }}
                   priority
                 />
               </div>

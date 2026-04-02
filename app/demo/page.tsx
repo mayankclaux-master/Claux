@@ -16,12 +16,12 @@ export default function DemoPage() {
       >
         <Link href="/">
           <Image
-            src="/claux-logo.png"
+            src="/claux-logo-cropped.png"
             alt="Claux"
-            width={120}
-            height={40}
+            width={180}
+            height={48}
             className="object-contain"
-            style={{ width: '120px', height: '40px', objectFit: 'contain', objectPosition: 'left center' }}
+            style={{ width: '180px', height: '48px', objectFit: 'contain' }}
             priority
           />
         </Link>

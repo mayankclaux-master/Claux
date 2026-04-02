@@ -36,17 +36,15 @@ export default function MobileNav() {
           <div className="flex justify-between items-center mb-12">
             <Link href="/" onClick={() => setIsOpen(false)}>
               <Image
-                src="/claux-logo.png"
+                src="/claux-logo-cropped.png"
                 alt="Claux"
-                width={100}
-                height={34}
+                width={180}
+                height={48}
                 className="object-contain"
                 style={{
-                  width: '100px',
-                  height: '34px',
-                  minWidth: '100px',
-                  objectFit: 'contain',
-                  objectPosition: 'left center'
+                  width: '180px',
+                  height: '48px',
+                  objectFit: 'contain'
                 }}
                 priority
               />
