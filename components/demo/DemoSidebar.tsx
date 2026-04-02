@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 
 const navItems = [
@@ -18,7 +19,14 @@ export default function DemoSidebar() {
   return (
     <aside className="w-60 bg-claux-surface border-r border-claux-border flex flex-col">
       <div className="p-6 border-b border-claux-border">
-        <h1 className="text-xl font-bold text-white">🎯 CLAUX</h1>
+        <Image
+          src="/claux-logo.png"
+          alt="Claux"
+          width={100}
+          height={32}
+          className="h-7 w-auto object-contain"
+          priority
+        />
       </div>
 
       <nav className="flex-1 p-4 space-y-1">

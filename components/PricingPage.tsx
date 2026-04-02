@@ -326,11 +326,14 @@ export default function PricingPage() {
               {/* CTA Button */}
               <div className="p-6 pt-0 mt-auto">
                 {plan.id === 'growth' ? (
-                  <button className="w-full bg-gradient-to-r from-indigo-500 to-violet-600 text-white rounded-xl py-3 font-semibold shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:shadow-[0_0_30px_rgba(99,102,241,0.5)] transition">
-                    Get Started with {plan.name}
-                  </button>
+                  <a href="https://rzp.io/rzp/AAmFRQiu" target="_blank" rel="noopener noreferrer" className="w-full bg-gradient-to-r from-indigo-500 to-violet-600 text-white rounded-xl py-3 font-semibold shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:shadow-[0_0_30px_rgba(99,102,241,0.5)] transition block text-center">
+                    Get Started with Growth
+                  </a>
                 ) : (
-                  <button
+                  <a
+                    href={plan.id === 'starter' ? 'https://rzp.io/rzp/fERD1Gq' : 'https://rzp.io/rzp/FSU6fsQn'}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="w-full rounded-xl py-3 font-semibold transition"
                     style={{
                       border: `1px solid ${plan.accentColor}66`,
@@ -343,8 +346,8 @@ export default function PricingPage() {
                       e.currentTarget.style.background = 'transparent'
                     }}
                   >
-                    Get Started with {plan.name}
-                  </button>
+                    {plan.id === 'starter' ? 'Get Started with Starter' : 'Get Started with Dominator'}
+                  </a>
                 )}
               </div>
             </div>

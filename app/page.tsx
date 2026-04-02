@@ -7,6 +7,7 @@ import CaseStudyCards from "@/components/CaseStudyCards";
 import MobileScrollRow from "@/components/MobileScrollRow";
 import MobileNav from "@/components/MobileNav";
 import FAQSection from "@/components/FAQSection";
+import Image from "next/image";
 
 export default async function Home() {
   const { data: caseStudies, error } = await supabase
@@ -27,10 +28,14 @@ export default async function Home() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center h-16">
               <div className="flex items-center gap-2">
-                <span className="text-2xl">🎯</span>
-                <span className="text-xl font-bold text-white">
-                  Claux
-                </span>
+                <Image
+                  src="/claux-logo.png"
+                  alt="Claux"
+                  width={120}
+                  height={40}
+                  className="h-8 w-auto object-contain"
+                  priority
+                />
               </div>
               <div className="flex items-center gap-4">
                 <div className="hidden md:flex items-center gap-8">
@@ -1033,8 +1038,14 @@ export default async function Home() {
             {/* Logo & Tagline - Left */}
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <span className="text-3xl">🎯</span>
-                <span className="text-2xl font-bold text-slate-100">Claux</span>
+                <Image
+                  src="/claux-logo.png"
+                  alt="Claux"
+                  width={120}
+                  height={40}
+                  className="h-8 w-auto object-contain"
+                  priority
+                />
               </div>
               <p className="text-slate-500 text-sm">
                 9 AI Agents. 1 Goal. Page 1.

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 
 export default function MobileNav() {
   const [isOpen, setIsOpen] = useState(false);
@@ -33,7 +34,14 @@ export default function MobileNav() {
       {isOpen && (
         <div className="fixed inset-0 z-[999999] bg-[#050508] flex flex-col p-8">
           <div className="flex justify-between items-center mb-12">
-            <span className="text-xl font-bold tracking-tighter text-white">CLAUX</span>
+            <Image
+              src="/claux-logo.png"
+              alt="Claux"
+              width={120}
+              height={40}
+              className="h-8 w-auto object-contain"
+              priority
+            />
             <button
               onClick={() => setIsOpen(false)}
               className="p-2 text-white hover:text-lavender"
