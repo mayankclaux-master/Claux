@@ -18,7 +18,7 @@ export default function DemoModal({ isOpen, onClose }: DemoModalProps) {
     whatsapp: '',
     city: ''
   })
-  const SHEETS_WEBHOOK = 'https://script.google.com/macros/s/NEEDS_GOOGLE_SCRIPT_SETUP/exec'
+  const SHEETS_WEBHOOK = 'https://script.google.com/macros/s/AKfycbwumFgSRL2Dgjey-61eD8py-MnXf_vaNB_YEMjPmX85PzErxfDyxfN2CrlCUz-UQ17d/exec'
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

@@ -62,8 +62,21 @@ export default function FAQPage() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
             <div>
               <div className="flex items-center gap-2 mb-4">
-                <span className="text-2xl">🎯</span>
-                <span className="text-xl font-bold text-white">Claux</span>
+                <Image
+                  src="/claux-logo.png"
+                  alt="Claux"
+                  width={120}
+                  height={40}
+                  className="object-contain"
+                  style={{
+                    width: '120px',
+                    height: '40px',
+                    minWidth: '120px',
+                    objectFit: 'contain',
+                    objectPosition: 'left center'
+                  }}
+                  priority
+                />
               </div>
               <p className="text-slate-400 text-sm">
                 9 AI agents. 24/7 execution. Zero human error.
