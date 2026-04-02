@@ -34,14 +34,16 @@ export default function MobileNav() {
       {isOpen && (
         <div className="fixed inset-0 z-[999999] bg-[#050508] flex flex-col p-8">
           <div className="flex justify-between items-center mb-12">
-            <Image
-              src="/claux-logo.png"
-              alt="Claux"
-              width={140}
-              height={46}
-              className="h-9 w-auto object-contain"
-              priority
-            />
+            <Link href="/" onClick={() => setIsOpen(false)}>
+              <Image
+                src="/claux-logo.png"
+                alt="Claux"
+                width={48}
+                height={48}
+                className="h-12 w-12 object-contain"
+                priority
+              />
+            </Link>
             <button
               onClick={() => setIsOpen(false)}
               className="p-2 text-white hover:text-lavender"

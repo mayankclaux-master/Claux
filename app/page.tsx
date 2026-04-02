@@ -8,6 +8,7 @@ import MobileScrollRow from "@/components/MobileScrollRow";
 import MobileNav from "@/components/MobileNav";
 import FAQSection from "@/components/FAQSection";
 import Image from "next/image";
+import Link from "next/link";
 
 export default async function Home() {
   const { data: caseStudies, error } = await supabase
@@ -27,17 +28,16 @@ export default async function Home() {
         <nav className="border-b border-gray-800 bg-[#050508]/80 backdrop-blur-md sticky top-0 z-50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center h-16">
-              <div className="flex items-center gap-2">
+              <Link href="/" className="flex items-center gap-2">
                 <Image
                   src="/claux-logo.png"
                   alt="Claux"
-                  width={160}
-                  height={52}
-                  className="h-10 w-auto object-contain"
-                  style={{ filter: 'brightness(1.2)' }}
+                  width={56}
+                  height={56}
+                  className="h-14 w-14 object-contain cursor-pointer"
                   priority
                 />
-              </div>
+              </Link>
               <div className="flex items-center gap-4">
                 <div className="hidden md:flex items-center gap-8">
                 <a href="#agents" className="text-gray-300 hover:text-white transition-colors">
@@ -117,44 +117,42 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* VIDEO BANNER SECTION */}
-      <section className="py-8 sm:py-12 md:py-20 section-bg-alt">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-3 sm:mb-6">
-            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-3 sm:mb-4 gradient-text">
-              The ₹3 Lakh/Month Problem — Solved in 60 Seconds
-            </h2>
+      <section className="w-full py-16 px-4 flex flex-col items-center">
+        <div className="w-full max-w-5xl mx-auto">
+          <div
+            className="relative w-full rounded-2xl overflow-hidden"
+            style={{
+              background: '#0A0B0F',
+              boxShadow: '0 0 0 1px rgba(127,119,221,0.3), 0 32px 80px rgba(0,0,0,0.6)',
+              aspectRatio: '16/9'
+            }}
+          >
+            {/* Purple glow accent top */}
+            <div
+              className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-px"
+              style={{ background: 'linear-gradient(90deg, transparent, #7F77DD, transparent)' }}
+            />
+
+            <video
+              className="w-full h-full object-cover"
+              controls
+              playsInline
+              preload="metadata"
+              poster=""
+              style={{ display: 'block' }}
+            >
+              <source
+                src="https://res.cloudinary.com/des5qm4q8/video/upload/v1775107006/Compressed_Claux_file_cx2lev.mp4"
+                type="video/mp4"
+              />
+              Your browser does not support the video tag.
+            </video>
           </div>
 
-          {/* VIDEO CONTAINER */}
-          <div className="relative max-w-5xl mx-auto">
-            <div className="relative aspect-video md:aspect-video bg-gray-900 rounded-2xl overflow-hidden border border-gray-800">
-              {/* Replace with actual video URL */}
-              <video
-                className="w-full h-full object-cover"
-                poster="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1920' height='1080'%3E%3Crect width='1920' height='1080' fill='%23111827'/%3E%3C/svg%3E"
-                controls
-              >
-                <source src="" type="video/mp4" />
-                Your browser does not support the video tag.
-              </video>
-              
-              {/* PLAY BUTTON OVERLAY */}
-              <div className="absolute inset-0 flex items-center justify-center bg-black/30 hover:bg-black/20 transition-all cursor-pointer group">
-                <div className="w-20 h-20 sm:w-24 sm:h-24 bg-blue-600 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform shadow-2xl">
-                  <svg className="w-10 h-10 sm:w-12 sm:h-12 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M8 5v14l11-7z"/>
-                  </svg>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="text-center mt-3 sm:mt-6">
-            <p className="text-gray-400 text-lg">
-              Watch how Claux's 9 AI agents replaced an entire SEO team
-            </p>
-          </div>
+          {/* Caption below video */}
+          <p className="text-center text-sm mt-4" style={{ color: '#8892A4' }}>
+            See how 9 AI agents replace your entire SEO agency — in 90 seconds
+          </p>
         </div>
       </section>
 

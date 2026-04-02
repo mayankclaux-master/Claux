@@ -16,10 +16,9 @@ export default function FAQPage() {
               <Image
                 src="/claux-logo.png"
                 alt="Claux"
-                width={160}
-                height={52}
-                className="h-10 w-auto object-contain"
-                style={{ mixBlendMode: 'screen' }}
+                width={56}
+                height={56}
+                className="h-14 w-14 object-contain cursor-pointer"
                 priority
               />
             </Link>

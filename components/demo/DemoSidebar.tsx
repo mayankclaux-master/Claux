@@ -19,14 +19,16 @@ export default function DemoSidebar() {
   return (
     <aside className="w-60 bg-claux-surface border-r border-claux-border flex flex-col">
       <div className="p-6 border-b border-claux-border">
-        <Image
-          src="/claux-logo.png"
-          alt="Claux"
-          width={130}
-          height={44}
-          className="h-8 w-auto object-contain"
-          priority
-        />
+        <Link href="/">
+          <Image
+            src="/claux-logo.png"
+            alt="Claux"
+            width={48}
+            height={48}
+            className="h-12 w-12 object-contain"
+            priority
+          />
+        </Link>
       </div>
 
       <nav className="flex-1 p-4 space-y-1">
