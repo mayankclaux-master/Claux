@@ -23,9 +23,16 @@ export default function DemoSidebar() {
           <Image
             src="/claux-logo.png"
             alt="Claux"
-            width={48}
-            height={48}
-            className="h-12 w-12 object-contain"
+            width={110}
+            height={36}
+            className="object-contain"
+            style={{
+              width: '110px',
+              height: '36px',
+              minWidth: '110px',
+              objectFit: 'contain',
+              objectPosition: 'left center'
+            }}
             priority
           />
         </Link>

@@ -32,9 +32,16 @@ export default async function Home() {
                 <Image
                   src="/claux-logo.png"
                   alt="Claux"
-                  width={56}
-                  height={56}
-                  className="h-14 w-14 object-contain cursor-pointer"
+                  width={120}
+                  height={40}
+                  className="object-contain"
+                  style={{
+                    width: '120px',
+                    height: '40px',
+                    minWidth: '120px',
+                    objectFit: 'contain',
+                    objectPosition: 'left center'
+                  }}
                   priority
                 />
               </Link>
@@ -127,9 +134,9 @@ export default async function Home() {
               aspectRatio: '16/9'
             }}
           >
-            {/* Purple glow accent top */}
+            {/* Top accent line */}
             <div
-              className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-px"
+              className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-px z-10"
               style={{ background: 'linear-gradient(90deg, transparent, #7F77DD, transparent)' }}
             />
 
@@ -137,15 +144,14 @@ export default async function Home() {
               className="w-full h-full object-cover"
               controls
               playsInline
-              preload="metadata"
-              poster=""
+              preload="none"
+              poster="https://res.cloudinary.com/des5qm4q8/video/upload/v1775107006/Compressed_Claux_file_cx2lev.jpg"
               style={{ display: 'block' }}
             >
               <source
                 src="https://res.cloudinary.com/des5qm4q8/video/upload/v1775107006/Compressed_Claux_file_cx2lev.mp4"
                 type="video/mp4"
               />
-              Your browser does not support the video tag.
             </video>
           </div>
 

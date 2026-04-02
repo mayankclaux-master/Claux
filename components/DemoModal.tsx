@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
 interface DemoModalProps {
@@ -9,7 +10,7 @@ interface DemoModalProps {
 }
 
 export default function DemoModal({ isOpen, onClose }: DemoModalProps) {
-  const [showThankYou, setShowThankYou] = useState(false)
+  const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [formData, setFormData] = useState({
     name: '',
@@ -17,6 +18,7 @@ export default function DemoModal({ isOpen, onClose }: DemoModalProps) {
     whatsapp: '',
     city: ''
   })
+  const SHEETS_WEBHOOK = 'https://script.google.com/macros/s/NEEDS_GOOGLE_SCRIPT_SETUP/exec'
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -41,7 +43,25 @@ export default function DemoModal({ isOpen, onClose }: DemoModalProps) {
         return
       }
 
-      setShowThankYou(true)
+      const sheetsData = new FormData()
+      sheetsData.append('name', formData.name)
+      sheetsData.append('website', formData.website)
+      sheetsData.append('whatsapp', formData.whatsapp)
+      sheetsData.append('city', formData.city)
+      sheetsData.append('timestamp', new Date().toISOString())
+      sheetsData.append('source', 'Demo Modal - Watch How It Works')
+
+      try {
+        await fetch(SHEETS_WEBHOOK, {
+          method: 'POST',
+          body: sheetsData,
+          mode: 'no-cors'
+        })
+      } catch (e) {
+      }
+
+      handleClose()
+      router.push('/demo')
     } catch (error) {
       console.error('Error:', error)
       alert('Something went wrong. Please try again.')
@@ -51,7 +71,6 @@ export default function DemoModal({ isOpen, onClose }: DemoModalProps) {
   }
 
   const handleClose = () => {
-    setShowThankYou(false)
     setFormData({ name: '', website: '', whatsapp: '', city: '' })
     onClose()
   }
@@ -79,125 +98,90 @@ export default function DemoModal({ isOpen, onClose }: DemoModalProps) {
         </button>
 
         <div className="p-8 sm:p-12">
-          {!showThankYou ? (
-            <>
-              {/* Form View */}
-              <h2 className="text-3xl sm:text-4xl font-bold mb-3 text-slate-100 gradient-text">See Claux In Action</h2>
-              <p className="text-slate-400 mb-8">Enter your details to unlock the demo</p>
+          {/* Form View */}
+          <h2 className="text-3xl sm:text-4xl font-bold mb-3 text-slate-100 gradient-text">See Claux In Action</h2>
+          <p className="text-slate-400 mb-8">Enter your details to unlock the demo</p>
 
-              <form onSubmit={handleSubmit} className="space-y-5">
-                {/* Full Name */}
-                <div>
-                  <label htmlFor="name" className="block text-sm font-medium text-slate-300 mb-2">
-                    Full Name *
-                  </label>
-                  <input
-                    type="text"
-                    id="name"
-                    required
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent backdrop-blur-sm"
-                    placeholder="Enter your full name"
-                  />
-                </div>
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Full Name */}
+            <div>
+              <label htmlFor="name" className="block text-sm font-medium text-slate-300 mb-2">
+                Full Name *
+              </label>
+              <input
+                type="text"
+                id="name"
+                required
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent backdrop-blur-sm"
+                placeholder="Enter your full name"
+              />
+            </div>
 
-                {/* Business Website */}
-                <div>
-                  <label htmlFor="website" className="block text-sm font-medium text-slate-300 mb-2">
-                    Business Website *
-                  </label>
-                  <input
-                    type="url"
-                    id="website"
-                    required
-                    value={formData.website}
-                    onChange={(e) => setFormData({ ...formData, website: e.target.value })}
-                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent backdrop-blur-sm"
-                    placeholder="https://yourbusiness.com"
-                  />
-                </div>
+            {/* Business Website */}
+            <div>
+              <label htmlFor="website" className="block text-sm font-medium text-slate-300 mb-2">
+                Business Website *
+              </label>
+              <input
+                type="url"
+                id="website"
+                required
+                value={formData.website}
+                onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent backdrop-blur-sm"
+                placeholder="https://yourbusiness.com"
+              />
+            </div>
 
-                {/* WhatsApp Number */}
-                <div>
-                  <label htmlFor="whatsapp" className="block text-sm font-medium text-slate-300 mb-2">
-                    WhatsApp Number *
-                  </label>
-                  <div className="flex">
-                    <span className="inline-flex items-center px-4 bg-white/5 border border-r-0 border-white/10 rounded-l-lg text-slate-400 backdrop-blur-sm">
-                      +91
-                    </span>
-                    <input
-                      type="tel"
-                      id="whatsapp"
-                      required
-                      pattern="[0-9]{10}"
-                      value={formData.whatsapp}
-                      onChange={(e) => setFormData({ ...formData, whatsapp: e.target.value })}
-                      className="flex-1 px-4 py-3 bg-white/5 border border-white/10 rounded-r-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent backdrop-blur-sm"
-                      placeholder="9876543210"
-                    />
-                  </div>
-                </div>
-
-                {/* City */}
-                <div>
-                  <label htmlFor="city" className="block text-sm font-medium text-slate-300 mb-2">
-                    City *
-                  </label>
-                  <input
-                    type="text"
-                    id="city"
-                    required
-                    value={formData.city}
-                    onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent backdrop-blur-sm"
-                    placeholder="Mumbai, Delhi, Bangalore..."
-                  />
-                </div>
-
-                {/* Submit Button */}
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="w-full px-8 py-4 bg-gradient-to-r from-indigo-500 to-violet-600 rounded-lg font-semibold text-lg hover:from-indigo-400 hover:to-violet-500 transition-all hover:shadow-[0_0_20px_rgba(99,102,241,0.4)] disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isSubmitting ? 'Submitting...' : 'Watch How It Works →'}
-                </button>
-              </form>
-            </>
-          ) : (
-            <>
-              {/* Thank You View */}
-              <div className="text-center mb-6">
-                <div className="text-6xl mb-4">🎉</div>
-                <h2 className="text-3xl sm:text-4xl font-bold mb-3 text-slate-100 gradient-text">Here's your exclusive demo!</h2>
-                <p className="text-slate-400">Watch how Claux transforms SEO for Indian businesses</p>
+            {/* WhatsApp Number */}
+            <div>
+              <label htmlFor="whatsapp" className="block text-sm font-medium text-slate-300 mb-2">
+                WhatsApp Number *
+              </label>
+              <div className="flex">
+                <span className="inline-flex items-center px-4 bg-white/5 border border-r-0 border-white/10 rounded-l-lg text-slate-400 backdrop-blur-sm">
+                  +91
+                </span>
+                <input
+                  type="tel"
+                  id="whatsapp"
+                  required
+                  pattern="[0-9]{10}"
+                  value={formData.whatsapp}
+                  onChange={(e) => setFormData({ ...formData, whatsapp: e.target.value })}
+                  className="flex-1 px-4 py-3 bg-white/5 border border-white/10 rounded-r-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent backdrop-blur-sm"
+                  placeholder="9876543210"
+                />
               </div>
+            </div>
 
-              {/* YouTube Embed */}
-              <div className="relative aspect-video bg-white/5 rounded-xl overflow-hidden border border-white/10">
-                {/* Replace with YouTube embed URL */}
-                <iframe
-                  className="absolute inset-0 w-full h-full"
-                  src="https://www.youtube.com/embed/dQw4w9WgXcQ"
-                  title="Claux Demo Video"
-                  frameBorder="0"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                ></iframe>
-              </div>
+            {/* City */}
+            <div>
+              <label htmlFor="city" className="block text-sm font-medium text-slate-300 mb-2">
+                City *
+              </label>
+              <input
+                type="text"
+                id="city"
+                required
+                value={formData.city}
+                onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent backdrop-blur-sm"
+                placeholder="Mumbai, Delhi, Bangalore..."
+              />
+            </div>
 
-              <div className="mt-6 text-center">
-                <button
-                  onClick={handleClose}
-                  className="text-gray-400 hover:text-white transition-colors"
-                >
-                  Close
-                </button>
-              </div>
-            </>
-          )}
+            {/* Submit Button */}
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full px-8 py-4 bg-gradient-to-r from-indigo-500 to-violet-600 rounded-lg font-semibold text-lg hover:from-indigo-400 hover:to-violet-500 transition-all hover:shadow-[0_0_20px_rgba(99,102,241,0.4)] disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSubmitting ? 'Submitting...' : 'Watch How It Works →'}
+            </button>
+          </form>
         </div>
       </div>
     </div>

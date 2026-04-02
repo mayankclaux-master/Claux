@@ -38,9 +38,16 @@ export default function MobileNav() {
               <Image
                 src="/claux-logo.png"
                 alt="Claux"
-                width={48}
-                height={48}
-                className="h-12 w-12 object-contain"
+                width={100}
+                height={34}
+                className="object-contain"
+                style={{
+                  width: '100px',
+                  height: '34px',
+                  minWidth: '100px',
+                  objectFit: 'contain',
+                  objectPosition: 'left center'
+                }}
                 priority
               />
             </Link>
