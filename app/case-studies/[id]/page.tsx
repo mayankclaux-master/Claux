@@ -1,6 +1,7 @@
 import { caseStudies } from '@/lib/caseStudiesData';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import CaseStudyCTA from '@/components/CaseStudyCTA';
 import MobileNav from '@/components/MobileNav';
 
@@ -32,8 +33,15 @@ export default async function CaseStudyPage({ params }: { params: Promise<{ id: 
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center gap-4">
               <Link href="/" className="flex items-center gap-2">
-                <span className="text-2xl">🎯</span>
-                <span className="text-xl font-bold text-white">Claux</span>
+                <Image
+                  src="/claux-logo.png"
+                  alt="Claux"
+                  width={160}
+                  height={52}
+                  className="h-10 w-auto object-contain"
+                  style={{ mixBlendMode: 'screen' }}
+                  priority
+                />
               </Link>
               <Link 
                 href="/#results" 

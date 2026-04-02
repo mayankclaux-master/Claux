@@ -31,9 +31,10 @@ export default async function Home() {
                 <Image
                   src="/claux-logo.png"
                   alt="Claux"
-                  width={120}
-                  height={40}
-                  className="h-8 w-auto object-contain"
+                  width={160}
+                  height={52}
+                  className="h-10 w-auto object-contain"
+                  style={{ filter: 'brightness(1.2)' }}
                   priority
                 />
               </div>

@@ -22,9 +22,9 @@ export default function DemoSidebar() {
         <Image
           src="/claux-logo.png"
           alt="Claux"
-          width={100}
-          height={32}
-          className="h-7 w-auto object-contain"
+          width={130}
+          height={44}
+          className="h-8 w-auto object-contain"
           priority
         />
       </div>
