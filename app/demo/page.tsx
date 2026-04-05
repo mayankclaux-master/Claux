@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
+import VideoPlayer from '@/components/VideoPlayer'
 
 export default function DemoPage() {
   return (
@@ -31,7 +32,7 @@ export default function DemoPage() {
           rel="noopener noreferrer"
           className="text-sm font-medium px-5 py-2.5 rounded-lg transition-all"
           style={{
-            background: 'linear-gradient(135deg, #7F77DD, #5B52C7)',
+            background: 'linear-gradient(135deg, #1D9E75, #0d8a64)',
             color: '#ffffff'
           }}
         >
@@ -44,9 +45,9 @@ export default function DemoPage() {
         <div
           className="inline-block text-xs font-medium px-3 py-1 rounded-full mb-4"
           style={{
-            background: 'rgba(127,119,221,0.1)',
-            color: '#7F77DD',
-            border: '1px solid rgba(127,119,221,0.2)'
+            background: 'rgba(29,158,117,0.1)',
+            color: '#1D9E75',
+            border: '1px solid rgba(29,158,117,0.2)'
           }}
         >
           Live Demo — 90 Seconds
@@ -56,7 +57,7 @@ export default function DemoPage() {
           style={{ color: '#F0F2F8' }}
         >
           See 9 AI Agents Replace Your
-          <span style={{ color: '#7F77DD' }}> Entire SEO Agency</span>
+          <span style={{ color: '#1D9E75' }}> Entire SEO Agency</span>
         </h1>
         <p className="text-base md:text-lg max-w-2xl mx-auto" style={{ color: '#8892A4' }}>
           Watch how ARIA, SCRIBE, LOCL and 6 more agents work 24/7 —
@@ -67,40 +68,14 @@ export default function DemoPage() {
       {/* Video player */}
       <div className="flex-1 flex items-center justify-center px-4 pb-8">
         <div className="w-full max-w-5xl">
-          <div
-            className="relative w-full rounded-2xl overflow-hidden"
-            style={{
-              aspectRatio: '16/9',
-              boxShadow: '0 0 0 1px rgba(127,119,221,0.25), 0 40px 100px rgba(127,119,221,0.15), 0 0 0 1px rgba(255,255,255,0.05)'
-            }}
-          >
-            {/* Top purple line */}
-            <div
-              className="absolute top-0 left-0 right-0 h-px z-10"
-              style={{ background: 'linear-gradient(90deg, transparent 0%, #7F77DD 30%, #1D9E75 70%, transparent 100%)' }}
-            />
-            <video
-              className="w-full h-full"
-              controls
-              playsInline
-              autoPlay
-              preload="auto"
-              poster="https://res.cloudinary.com/des5qm4q8/video/upload/v1775107006/Compressed_Claux_file_cx2lev.jpg"
-              style={{ display: 'block', background: '#0A0B0F' }}
-            >
-              <source
-                src="https://res.cloudinary.com/des5qm4q8/video/upload/v1775107006/Compressed_Claux_file_cx2lev.mp4"
-                type="video/mp4"
-              />
-            </video>
-          </div>
+          <VideoPlayer />
 
           {/* Below video CTA strip */}
           <div
             className="mt-6 rounded-xl p-5 flex flex-col md:flex-row items-center justify-between gap-4"
             style={{
-              background: 'rgba(127,119,221,0.06)',
-              border: '1px solid rgba(127,119,221,0.15)'
+              background: 'rgba(29,158,117,0.06)',
+              border: '1px solid rgba(29,158,117,0.15)'
             }}
           >
             <div>
@@ -118,8 +93,8 @@ export default function DemoPage() {
                 rel="noopener noreferrer"
                 className="text-sm px-4 py-2.5 rounded-lg font-medium transition-all"
                 style={{
-                  border: '1px solid rgba(127,119,221,0.4)',
-                  color: '#7F77DD'
+                  border: '1px solid rgba(29,158,117,0.4)',
+                  color: '#1D9E75'
                 }}
               >
                 Starter — ₹7,499
@@ -130,7 +105,7 @@ export default function DemoPage() {
                 rel="noopener noreferrer"
                 className="text-sm px-4 py-2.5 rounded-lg font-medium transition-all"
                 style={{
-                  background: 'linear-gradient(135deg, #7F77DD, #5B52C7)',
+                  background: 'linear-gradient(135deg, #1D9E75, #0d8a64)',
                   color: '#ffffff'
                 }}
               >
@@ -142,8 +117,8 @@ export default function DemoPage() {
                 rel="noopener noreferrer"
                 className="text-sm px-4 py-2.5 rounded-lg font-medium transition-all"
                 style={{
-                  border: '1px solid rgba(127,119,221,0.4)',
-                  color: '#7F77DD'
+                  border: '1px solid rgba(29,158,117,0.4)',
+                  color: '#1D9E75'
                 }}
               >
                 Dominator — ₹24,999
