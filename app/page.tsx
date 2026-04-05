@@ -8,6 +8,7 @@ import MobileScrollRow from "@/components/MobileScrollRow";
 import MobileNav from "@/components/MobileNav";
 import FAQSection from "@/components/FAQSection";
 import Image from "next/image";
+import SiteFooter from "@/components/SiteFooter";
 import Link from "next/link";
 
 export default async function Home() {
@@ -1034,50 +1035,7 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* FOOTER */}
-      <footer className="bg-[#050508] border-t border-white/5 py-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8 mb-8">
-            {/* Logo & Tagline - Left */}
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <Image
-                  src="/claux-logo-cropped.png"
-                  alt="Claux"
-                  width={180}
-                  height={48}
-                  className="object-contain"
-                  style={{
-                    width: '180px',
-                    height: '48px',
-                    objectFit: 'contain'
-                  }}
-                  priority
-                />
-              </div>
-              <p className="text-slate-500 text-sm">
-                9 AI Agents. 1 Goal. Page 1.
-              </p>
-            </div>
-
-            {/* Nav Links - Center */}
-            <div className="flex flex-wrap gap-6">
-              <a href="#agents" className="text-slate-500 hover:text-slate-300 text-sm transition-colors">Agents</a>
-              <a href="#results" className="text-slate-500 hover:text-slate-300 text-sm transition-colors">Results</a>
-              <a href="#how-it-works" className="text-slate-500 hover:text-slate-300 text-sm transition-colors">How It Works</a>
-              <a href="#pricing" className="text-slate-500 hover:text-slate-300 text-sm transition-colors">Pricing</a>
-              <a href="#faq" className="text-slate-500 hover:text-slate-300 text-sm transition-colors">FAQs</a>
-            </div>
-
-            {/* Copyright - Right */}
-            <div>
-              <p className="text-slate-500 text-sm">
-                © 2026 Claux. All rights reserved.
-              </p>
-            </div>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
 
       <AnimationWrapper />
       </div>
