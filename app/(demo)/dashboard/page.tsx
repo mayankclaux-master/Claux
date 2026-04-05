@@ -262,7 +262,8 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="flex h-screen bg-claux-bg text-claux-text overflow-hidden relative">
+    <div className="dashboard-mobile-outer">
+      <div className="dashboard-mobile-inner flex h-screen bg-claux-bg text-claux-text overflow-hidden relative">
       <div className="absolute top-8 right-8 text-claux-text text-4xl font-bold opacity-[0.15] pointer-events-none z-50">
         DEMO
       </div>
@@ -752,6 +753,7 @@ export default function DashboardPage() {
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
     </div>
   );
 }

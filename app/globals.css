@@ -2,6 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Demo Dashboard — mobile scale-down so desktop layout fits in viewport */
+.dashboard-mobile-outer {
+  overflow: hidden;
+}
+@media (max-width: 767px) {
+  .dashboard-mobile-outer {
+    height: 100vh;
+    width: 100vw;
+  }
+  .dashboard-mobile-inner {
+    transform: scale(0.62);
+    transform-origin: top left;
+    width: calc(100vw / 0.62);
+    height: calc(100vh / 0.62);
+  }
+}
+
 /* Design System - Color Palette & 3D Cards */
 .glass-card {
   background: rgba(255, 255, 255, 0.03);

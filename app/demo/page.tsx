@@ -86,7 +86,7 @@ export default function DemoPage() {
                 All 9 agents active from Day 1. Starting at ₹7,499/month.
               </p>
             </div>
-            <div className="flex gap-3 flex-shrink-0">
+            <div className="flex flex-wrap gap-3 justify-center">
               <a
                 href="https://rzp.io/rzp/fERD1Gq"
                 target="_blank"

@@ -18,7 +18,7 @@ const faqs = [
   },
   {
     question: "Is there a free trial?",
-    answer: "We don't do free trials — we do free audits. Connect your website and GBP, and our agents run a full 200-point analysis at no cost. You receive a personalised keyword opportunity report showing exactly where you rank, what you're losing, and what you can win. You only pay when you're ready for the agents to execute."
+    answer: "We provide a full SEO baseline audit to identify growth gaps. No credit card required to see your data. Connect your website and GBP and get your SEO baseline immediately — a personalised keyword opportunity report showing exactly where you rank, what you're losing, and what you can win. You only pay when you're ready for the agents to execute."
   },
   {
     question: "Can I cancel anytime?",

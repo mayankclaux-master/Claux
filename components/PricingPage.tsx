@@ -95,7 +95,7 @@ const comparisonData = [
 const faqs = [
   {
     question: 'Is there a free trial?',
-    answer: "We don't do free trials — we do free audits. Connect your Google Business Profile and website, and we'll show you exactly where you're losing customers right now. No credit card required. If you like what you see, pick a plan and we start executing immediately."
+    answer: "We provide a full SEO baseline audit to identify growth gaps. No credit card required to see your data. Connect your Google Business Profile and website, get your SEO baseline immediately, then choose a plan when you're ready for the agents to execute."
   },
   {
     question: 'Can I upgrade or downgrade?',
@@ -224,7 +224,7 @@ export default function PricingPage() {
 
       {/* Pricing Cards */}
       <section className="py-12 px-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-6xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-6xl mx-auto mt-6">
           {plans.map((plan) => (
             <div
               key={plan.id}
@@ -239,7 +239,7 @@ export default function PricingPage() {
             >
               {/* Recommended Badge */}
               {plan.recommended && (
-                <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-indigo-500 text-white text-xs font-bold px-4 py-1.5 rounded-full whitespace-nowrap">
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full bg-indigo-500 text-white text-xs font-bold px-4 py-1.5 rounded-full whitespace-nowrap z-10">
                   Most Popular 🔥
                 </div>
               )}
@@ -396,7 +396,7 @@ export default function PricingPage() {
                           </svg>
                         )
                       ) : (
-                        <span className="text-slate-300 text-sm">{row.starter}</span>
+                        <span className="text-slate-300 text-sm whitespace-nowrap">{row.starter}</span>
                       )}
                     </td>
                     <td className="text-center py-3.5 px-6">
@@ -449,7 +449,7 @@ export default function PricingPage() {
             <div className="glass-card text-center p-5">
               <div className="text-2xl mb-2">💳</div>
               <h4 className="text-white font-semibold mb-1">No credit card to start</h4>
-              <p className="text-slate-400 text-sm">Connect and audit for free</p>
+              <p className="text-slate-400 text-sm">Get your SEO baseline immediately.</p>
             </div>
             <div className="glass-card text-center p-5">
               <div className="flex justify-center mb-2">

@@ -2,9 +2,27 @@
 
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
+import Link from 'next/link'
 import VideoPlayer from '@/components/VideoPlayer'
+import SavingsCalculator from '@/components/SavingsCalculator'
 
 const DISCOUNT = 0.15
+const USD_RATE = 0.012
+
+const COMPARISON_DATA = [
+  { feature: 'AI Agents', starter: 'All 9', growth: 'All 9', dominator: 'All 9' },
+  { feature: 'Keywords Tracked', starter: '25', growth: '70', dominator: '150' },
+  { feature: 'Blog Posts / Month', starter: '10', growth: '40', dominator: '100' },
+  { feature: 'Business Locations', starter: '1', growth: 'Up to 3', dominator: 'Up to 7' },
+  { feature: 'GBP Optimization', starter: true, growth: true, dominator: true },
+  { feature: 'Backlink Building', starter: true, growth: true, dominator: true },
+  { feature: 'Live Dashboard', starter: true, growth: true, dominator: true },
+  { feature: 'Competitor Intelligence', starter: '4 rivals', growth: '6 rivals', dominator: '10 rivals' },
+  { feature: 'Monthly Ranking Report', starter: true, growth: true, dominator: true },
+  { feature: 'Priority Support', starter: false, growth: true, dominator: true },
+  { feature: 'Account Manager', starter: false, growth: false, dominator: true },
+  { feature: 'Custom SOP Tuning', starter: false, growth: false, dominator: true },
+] as const
 
 const PLANS = [
   {
@@ -132,6 +150,7 @@ export default function PartnerOfferPage() {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [unlocked, setUnlocked] = useState(false)
+  const [currency, setCurrency] = useState<'INR' | 'USD'>('INR')
 
   useEffect(() => {
     const code = getCookie('claux_ref')
@@ -181,8 +200,36 @@ export default function PartnerOfferPage() {
 
   const displayName = affiliateName || affiliateCode || null
 
+  const getPrice = (monthlyINR: number) => {
+    const disc = discountedPrice(monthlyINR)
+    if (currency === 'USD') return `$${Math.round(disc * USD_RATE)}`
+    return `₹${disc.toLocaleString('en-IN')}`
+  }
+
+  const getOriginal = (monthlyINR: number) => {
+    if (currency === 'USD') return `$${Math.round(monthlyINR * USD_RATE)}`
+    return `₹${monthlyINR.toLocaleString('en-IN')}`
+  }
+
+  const getSaved = (monthlyINR: number) => {
+    const s = savedAmount(monthlyINR)
+    if (currency === 'USD') return `$${Math.round(s * USD_RATE)}`
+    return `₹${s.toLocaleString('en-IN')}`
+  }
+
   return (
     <div className="min-h-screen bg-[#0D1B2A] text-white font-sans">
+      {/* ── Branded Header ── */}
+      <header className="border-b px-6 py-4 flex items-center justify-between" style={{ borderColor: 'rgba(255,255,255,0.06)', background: '#091525' }}>
+        <Link href="/">
+          <Image src="/claux-logo-cropped.png" alt="Claux" width={140} height={38} className="object-contain" priority />
+        </Link>
+        <div className="flex items-center gap-4">
+          <Link href="/pricing" className="text-sm hidden sm:block" style={{ color: '#8892A4' }}>View Pricing</Link>
+          <a href="/affiliate/login" className="text-sm px-4 py-2 rounded-lg font-medium transition-all" style={{ border: '1px solid rgba(29,158,117,0.35)', color: '#1D9E75' }}>Partner Login</a>
+        </div>
+      </header>
+
       {/* ── Sticky Urgency Banner ── */}
       <div className="sticky top-0 z-50 border-b border-claux-teal/25 bg-[#0D1B2A]/95 backdrop-blur-md px-4 py-3">
         <p className="text-center text-sm">
@@ -351,7 +398,7 @@ export default function PartnerOfferPage() {
 
             {/* ── Pricing Cards with FOMO ── */}
             <section>
-              <div className="text-center mb-8">
+              <div className="text-center mb-6">
                 <p className="text-xs uppercase tracking-[0.2em] text-claux-teal mb-2">
                   Partner Pricing
                 </p>
@@ -362,18 +409,30 @@ export default function PartnerOfferPage() {
                   Prices shown include your exclusive partner discount. Standard pricing resumes
                   after this session.
                 </p>
+
+                {/* Currency toggle */}
+                <div className="mt-5 inline-flex rounded-full p-1" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  {(['INR', 'USD'] as const).map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => setCurrency(c)}
+                      className="rounded-full px-5 py-1.5 text-xs font-semibold transition-all"
+                      style={currency === c ? { background: '#1D9E75', color: '#fff' } : { color: '#8892A4' }}
+                    >
+                      {c === 'INR' ? '₹ INR' : '$ USD'}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
                 {PLANS.map((plan) => {
                   const original = plan.monthlyINR
-                  const discounted = discountedPrice(original)
-                  const saved = savedAmount(original)
 
                   return (
                     <div
                       key={plan.id}
-                      className={`relative flex flex-col rounded-2xl border bg-[#091525] overflow-hidden transition-all duration-300 ${
+                      className={`relative flex flex-col rounded-2xl border bg-[#091525] transition-all duration-300 ${
                         plan.recommended ? 'md:scale-105' : ''
                       }`}
                       style={{
@@ -387,7 +446,7 @@ export default function PartnerOfferPage() {
                     >
                       {/* Most Popular badge */}
                       {plan.recommended && (
-                        <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-indigo-500 text-white text-xs font-bold px-4 py-1.5 rounded-full whitespace-nowrap z-10">
+                        <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full bg-indigo-500 text-white text-xs font-bold px-4 py-1.5 rounded-full whitespace-nowrap z-10">
                           Most Popular 🔥
                         </div>
                       )}
@@ -408,7 +467,7 @@ export default function PartnerOfferPage() {
                       <div className="px-6 py-4">
                         {/* Original — red strikethrough */}
                         <p className="text-sm text-red-400/70 line-through mb-1">
-                          ₹{original.toLocaleString('en-IN')}/month
+                          {getOriginal(original)}/month
                         </p>
 
                         {/* Discounted — teal */}
@@ -417,7 +476,7 @@ export default function PartnerOfferPage() {
                             className="text-4xl font-bold"
                             style={{ color: '#1D9E75' }}
                           >
-                            ₹{discounted.toLocaleString('en-IN')}
+                            {getPrice(original)}
                           </span>
                           <span className="text-[#8892A4] text-sm">/month</span>
                         </div>
@@ -431,7 +490,7 @@ export default function PartnerOfferPage() {
                             background: 'rgba(29,158,117,0.08)',
                           }}
                         >
-                          You save ₹{saved.toLocaleString('en-IN')} per month
+                          You save {getSaved(original)} per month
                         </span>
 
                         <div className="border-t border-white/[0.06] mt-4" />
@@ -533,12 +592,78 @@ export default function PartnerOfferPage() {
               </div>
 
               <p className="text-center text-xs text-gray-600 mt-6">
-                Partner discount applied at checkout. Prices in INR. Cancel anytime. No lock-in.
+                Partner discount applied at checkout. Prices in {currency}. Cancel anytime. No lock-in.
               </p>
             </section>
+
+            {/* ── Compare Plans Table ── */}
+            <section>
+              <div className="text-center mb-8">
+                <p className="text-xs uppercase tracking-[0.2em] text-claux-teal mb-2">Full Breakdown</p>
+                <h2 className="text-2xl sm:text-3xl font-bold">Compare Plans Side by Side</h2>
+                <p className="text-[#8892A4] text-sm mt-2">Every feature, every plan — no asterisks, no surprises.</p>
+              </div>
+              <div className="overflow-x-auto rounded-2xl border" style={{ borderColor: 'rgba(255,255,255,0.07)', background: '#091525' }}>
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                      <th className="text-left py-4 px-5 text-xs font-medium" style={{ color: '#8892A4' }}>Feature</th>
+                      <th className="py-4 px-5 text-xs font-bold text-center" style={{ color: '#2DD4BF' }}>Starter</th>
+                      <th className="py-4 px-5 text-xs font-bold text-center" style={{ color: '#6366F1' }}>Growth</th>
+                      <th className="py-4 px-5 text-xs font-bold text-center" style={{ color: '#8B5CF6' }}>Dominator</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {COMPARISON_DATA.map((row, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: idx % 2 === 1 ? 'rgba(255,255,255,0.015)' : 'transparent' }}>
+                        <td className="py-3 px-5 font-medium" style={{ color: '#CBD5E1' }}>{row.feature}</td>
+                        {(['starter', 'growth', 'dominator'] as const).map((col) => {
+                          const val = row[col]
+                          return (
+                            <td key={col} className="py-3 px-5 text-center">
+                              {typeof val === 'boolean' ? (
+                                val ? (
+                                  <svg className="w-4 h-4 mx-auto" style={{ color: '#1D9E75' }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                                ) : (
+                                  <svg className="w-4 h-4 mx-auto text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
+                                )
+                              ) : (
+                                <span className="whitespace-nowrap" style={{ color: '#CBD5E1' }}>{val}</span>
+                              )}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            {/* ── Savings Calculator ── */}
+            <section className="-mx-4">
+              <SavingsCalculator />
+            </section>
+
           </div>
         )}
       </div>
+
+      {/* ── Footer ── */}
+      <footer className="border-t mt-8 py-10 px-6" style={{ borderColor: 'rgba(255,255,255,0.06)', background: '#091525' }}>
+        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+          <Link href="/">
+            <Image src="/claux-logo-cropped.png" alt="Claux" width={110} height={30} className="object-contain opacity-70" />
+          </Link>
+          <div className="flex gap-6 text-xs" style={{ color: '#8892A4' }}>
+            <Link href="/" className="hover:text-white transition-colors">Home</Link>
+            <Link href="/pricing" className="hover:text-white transition-colors">Pricing</Link>
+            <Link href="/faq" className="hover:text-white transition-colors">FAQ</Link>
+            <Link href="/affiliate/login" className="hover:text-white transition-colors">Partner Login</Link>
+          </div>
+          <p className="text-xs" style={{ color: '#8892A4' }}>© 2025 Claux. All rights reserved.</p>
+        </div>
+      </footer>
     </div>
   )
 }
