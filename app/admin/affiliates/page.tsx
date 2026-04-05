@@ -70,6 +70,7 @@ function fmt(n: number) {
 export default function AdminAffiliatesPage() {
   const [authToken, setAuthToken] = useState<string | null>(null)
   const [authChecked, setAuthChecked] = useState(false)
+  const [accessDenied, setAccessDenied] = useState(false)
 
   const [affiliates, setAffiliates] = useState<AffiliateRow[]>([])
   const [commissions, setCommissions] = useState<CommissionRow[]>([])
@@ -91,10 +92,17 @@ export default function AdminAffiliatesPage() {
         data: { session },
       } = await supabase.auth.getSession()
 
-      if (!session?.access_token || session.user.email !== ADMIN_EMAIL) {
-        window.location.href = '/'
+      if (!session?.access_token) {
+        window.location.href = '/login'
         return
       }
+
+      if (session.user.email !== ADMIN_EMAIL) {
+        setAccessDenied(true)
+        setAuthChecked(true)
+        return
+      }
+
       setAuthToken(session.access_token)
       setAuthChecked(true)
     }
@@ -235,6 +243,44 @@ export default function AdminAffiliatesPage() {
         style={{ background: '#0D1B2A' }}
       >
         <p style={{ color: '#8892A4' }}>Verifying access…</p>
+      </div>
+    )
+  }
+
+  if (accessDenied) {
+    return (
+      <div
+        className="min-h-screen flex flex-col items-center justify-center gap-5 px-4"
+        style={{ background: '#0D1B2A' }}
+      >
+        <div
+          className="rounded-2xl border p-8 max-w-sm w-full text-center"
+          style={{ background: '#091525', borderColor: 'rgba(239,68,68,0.25)' }}
+        >
+          <div
+            className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4"
+            style={{ background: 'rgba(239,68,68,0.1)' }}
+          >
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="#F87171" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+          </div>
+          <h2 className="text-lg font-bold text-white mb-2">Access Denied</h2>
+          <p className="text-sm mb-6" style={{ color: '#8892A4' }}>
+            You are signed in but your account does not have admin privileges.
+            Sign in with the admin email to continue.
+          </p>
+          <button
+            onClick={async () => {
+              await supabase.auth.signOut()
+              window.location.href = '/login'
+            }}
+            className="w-full rounded-lg py-2.5 text-sm font-semibold text-white transition-all"
+            style={{ background: 'linear-gradient(to right, #1D9E75, #10b981)' }}
+          >
+            Sign Out &amp; Try Again
+          </button>
+        </div>
       </div>
     )
   }
