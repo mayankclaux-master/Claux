@@ -14,6 +14,26 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     db.from('commissions').select('commission_amount, status'),
   ])
 
+  if (affiliatesResult.error) {
+    console.error(
+      '[admin/affiliates] query error on table "affiliates":',
+      JSON.stringify(affiliatesResult.error)
+    )
+    return NextResponse.json(
+      { error: `DB error (affiliates): ${affiliatesResult.error.message}` },
+      { status: 500 }
+    )
+  }
+
+  if (commissionsResult.error) {
+    console.error(
+      '[admin/affiliates] query error on table "commissions":',
+      JSON.stringify(commissionsResult.error)
+    )
+    // Non-fatal — commissions are only for stats; proceed with empty
+    console.warn('[admin/affiliates] Continuing without commissions stats')
+  }
+
   const affiliates = Array.isArray(affiliatesResult.data) ? affiliatesResult.data : []
   const allCommissions = Array.isArray(commissionsResult.data) ? commissionsResult.data : []
 

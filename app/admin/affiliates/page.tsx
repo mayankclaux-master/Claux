@@ -123,11 +123,22 @@ export default function AdminAffiliatesPage() {
         }),
       ])
 
-      if (!affRes.ok) throw new Error('Failed to load affiliates')
-      if (!commRes.ok) throw new Error('Failed to load commissions')
+      const [affData, commData] = await Promise.all([affRes.json(), commRes.json()])
 
-      const affData = await affRes.json()
-      const commData = await commRes.json()
+      if (!affRes.ok) {
+        throw new Error(
+          affData?.error
+            ? `Affiliates API: ${affData.error}`
+            : `Affiliates API returned ${affRes.status}`
+        )
+      }
+      if (!commRes.ok) {
+        throw new Error(
+          commData?.error
+            ? `Commissions API: ${commData.error}`
+            : `Commissions API returned ${commRes.status}`
+        )
+      }
 
       setAffiliates(affData.affiliates ?? [])
       setStats(affData.stats ?? null)
@@ -361,7 +372,7 @@ export default function AdminAffiliatesPage() {
         {/* ── Affiliates Table ── */}
         <section>
           <h2 className="text-base font-semibold mb-4">
-            All Affiliates
+            All Partners &amp; Influencers
             <span className="ml-2 text-sm font-normal" style={{ color: '#8892A4' }}>
               ({affiliates.length})
             </span>
@@ -373,14 +384,14 @@ export default function AdminAffiliatesPage() {
             </div>
           ) : affiliates.length === 0 ? (
             <div className="text-sm" style={{ color: '#8892A4' }}>
-              No affiliates found.
+              No partners or influencers found.
             </div>
           ) : (
             <div className="rounded-2xl border overflow-x-auto" style={{ borderColor: 'rgba(255,255,255,0.06)', background: '#091525' }}>
               <table className="w-full text-sm">
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                    {['Name / Email', 'Specialty', 'Tier', 'Total Earnings', 'Unpaid', 'Status', 'Actions'].map(
+                    {['Name / Email', 'Niche / Specialty', 'Tier', 'Total Earnings', 'Unpaid', 'Status', 'Actions'].map(
                       (h) => (
                         <th
                           key={h}
@@ -533,7 +544,7 @@ export default function AdminAffiliatesPage() {
         {/* ── Pending Commissions Table ── */}
         <section>
           <h2 className="text-base font-semibold mb-4">
-            Pending Commissions
+            Pending Payouts
             <span className="ml-2 text-sm font-normal" style={{ color: '#8892A4' }}>
               ({commissions.length})
             </span>
@@ -548,7 +559,7 @@ export default function AdminAffiliatesPage() {
               className="rounded-xl px-5 py-6 text-center text-sm border"
               style={{ background: '#091525', borderColor: 'rgba(255,255,255,0.06)', color: '#8892A4' }}
             >
-              No pending commissions. All payouts are clear.
+              No pending payouts. All commissions have been cleared.
             </div>
           ) : (
             <div

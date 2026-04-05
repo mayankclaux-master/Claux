@@ -27,7 +27,16 @@ export async function checkAdminAuth(request: Request): Promise<boolean> {
 export function makeDb() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!supabaseUrl || !serviceRoleKey) return null
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    console.error(
+      '[admin/makeDb] Missing env vars — supabaseUrl:',
+      Boolean(supabaseUrl),
+      '| SUPABASE_SERVICE_ROLE_KEY:',
+      Boolean(serviceRoleKey)
+    )
+    return null
+  }
 
   return createClient(supabaseUrl, serviceRoleKey, {
     db: { schema: 'affiliates' },
