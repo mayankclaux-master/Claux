@@ -28,6 +28,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!supabaseUrl || !serviceRoleKey) {
+    console.error(
+      '[partner-offer] Missing env vars — supabaseUrl:',
+      Boolean(supabaseUrl),
+      '| serviceRoleKey:',
+      Boolean(serviceRoleKey)
+    )
     return NextResponse.json({ error: 'Server configuration error.' }, { status: 500 })
   }
 
@@ -36,20 +42,26 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     auth: { persistSession: false, autoRefreshToken: false },
   }) as any
 
-  const { error } = await db.from('referrals').insert({
-    affiliate_code: affiliate_code ?? null,
-    full_name: full_name.trim(),
-    website_url: website_url?.trim() || null,
-    email: email.trim(),
-    whatsapp: whatsapp.trim(),
-    referral_status: 'signed_up',
-    status: 'signed_up',
-    source: 'partner_offer',
-    created_at: new Date().toISOString(),
-  })
+  let insertError: unknown = null
+  try {
+    const { error } = await db.from('referrals').insert({
+      affiliate_code: affiliate_code ?? null,
+      full_name: full_name.trim(),
+      website_url: website_url?.trim() || null,
+      email: email.trim(),
+      whatsapp: whatsapp.trim(),
+      referral_status: 'signed_up',
+      status: 'signed_up',
+      source: 'partner_offer',
+      created_at: new Date().toISOString(),
+    })
+    insertError = error
+  } catch (err) {
+    insertError = err
+  }
 
-  if (error) {
-    console.error('[partner-offer] DB insert error:', error.message)
+  if (insertError) {
+    console.error('[partner-offer] DB insert error:', JSON.stringify(insertError))
   }
 
   return NextResponse.json({ success: true })

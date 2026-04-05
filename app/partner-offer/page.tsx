@@ -16,7 +16,7 @@ const PLANS = [
     monthlyINR: 7499,
     accentColor: '#2DD4BF',
     recommended: false,
-    payUrl: 'https://rzp.io/rzp/fERD1Gq',
+    payUrl: 'https://rzp.io/rzp/eE0Wtft',
     features: [
       { text: 'All 9 AI Agents active', included: true },
       { text: '25 keywords tracked', included: true },
@@ -39,7 +39,7 @@ const PLANS = [
     monthlyINR: 14999,
     accentColor: '#6366F1',
     recommended: true,
-    payUrl: 'https://rzp.io/rzp/AAmFRQiu',
+    payUrl: 'https://rzp.io/rzp/jIYCGJKH',
     features: [
       { text: 'All 9 AI Agents active', included: true },
       { text: '70 keywords tracked', included: true },
@@ -62,7 +62,7 @@ const PLANS = [
     monthlyINR: 24999,
     accentColor: '#8B5CF6',
     recommended: false,
-    payUrl: 'https://rzp.io/rzp/FSU6fsQn',
+    payUrl: 'https://rzp.io/rzp/nh7wsXxq',
     features: [
       { text: 'All 9 AI Agents active', included: true },
       { text: '150 keywords tracked', included: true },
@@ -502,7 +502,11 @@ export default function PartnerOfferPage() {
                       {/* CTA */}
                       <div className="px-6 pb-6 mt-auto">
                         <a
-                          href={plan.payUrl}
+                          href={
+                            affiliateCode
+                              ? `${plan.payUrl}?notes[affiliate_code]=${encodeURIComponent(affiliateCode)}`
+                              : plan.payUrl
+                          }
                           target="_blank"
                           rel="noopener noreferrer"
                           className="block w-full rounded-xl py-3 text-center text-sm font-semibold transition-all"
