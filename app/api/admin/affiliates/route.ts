@@ -42,7 +42,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     0
   )
   const pendingPayouts = allCommissions
-    .filter((c: any) => c.status === 'pending')
+    .filter((c: any) => c.payout_status === 'pending')
     .reduce((sum: number, c: any) => sum + (Number(c.commission_amount) || 0), 0)
 
   return NextResponse.json({

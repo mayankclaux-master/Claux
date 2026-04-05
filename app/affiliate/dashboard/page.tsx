@@ -43,6 +43,7 @@ type DashboardResponse = {
     thisMonthEarnings: number
     totalReferrals: number
     activeSubscribers: number
+    pendingPayout: number
   }
   linkStats: {
     clicks: number
@@ -63,7 +64,8 @@ const EMPTY_RESPONSE: DashboardResponse = {
     totalEarnings: 0,
     thisMonthEarnings: 0,
     totalReferrals: 0,
-    activeSubscribers: 0
+    activeSubscribers: 0,
+    pendingPayout: 0
   },
   linkStats: {
     clicks: 0,
@@ -91,7 +93,7 @@ function statusBadge(status: ReferralRow['status']): string {
 
 export default function AffiliateDashboardPage() {
   const [dashboard, setDashboard] = useState<DashboardResponse>(EMPTY_RESPONSE)
-  const [animatedValues, setAnimatedValues] = useState([0, 0, 0, 0])
+  const [animatedValues, setAnimatedValues] = useState([0, 0, 0, 0, 0])
   const [copied, setCopied] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -100,8 +102,8 @@ export default function AffiliateDashboardPage() {
     () => [
       { label: 'Total Earnings', value: dashboard.kpis.totalEarnings, prefix: '₹', isCurrency: true },
       { label: 'This Month', value: dashboard.kpis.thisMonthEarnings, prefix: '₹', isCurrency: true },
-      { label: 'Total Referrals', value: dashboard.kpis.totalReferrals },
-      { label: 'Active Subscribers', value: dashboard.kpis.activeSubscribers }
+      { label: 'Pending Payout', value: dashboard.kpis.pendingPayout, prefix: '₹', isCurrency: true },
+      { label: 'Total Referrals', value: dashboard.kpis.totalReferrals }
     ],
     [dashboard.kpis]
   )

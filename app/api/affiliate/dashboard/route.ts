@@ -117,6 +117,7 @@ export async function GET(request: Request): Promise<NextResponse> {
   const totalReferrals = toNumber(affiliateRecord.total_referrals) || referralRows.length
   const activeSubscribers = toNumber(affiliateRecord.active_subscribers)
   const totalEarnings = toNumber(affiliateRecord.total_earnings)
+  const pendingPayout = toNumber(affiliateRecord.pending_payout)
 
   const thisMonthEarnings = monthRows.reduce((sum, row) => {
     return sum + toNumber(row.commission_amount ?? row.commission)
@@ -160,7 +161,8 @@ export async function GET(request: Request): Promise<NextResponse> {
       totalEarnings,
       thisMonthEarnings,
       totalReferrals,
-      activeSubscribers
+      activeSubscribers,
+      pendingPayout
     },
     linkStats: {
       clicks,

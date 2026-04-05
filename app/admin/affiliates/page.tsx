@@ -9,10 +9,10 @@ type AffiliateRow = {
   affiliate_code: string
   full_name: string
   email: string
-  specialty?: string
+  content_niche?: string
   current_tier: string
   total_earnings: number
-  unpaid_balance: number
+  pending_payout: number
   status: string
   created_at: string
 }
@@ -25,7 +25,7 @@ type CommissionRow = {
   commission_amount: number
   rate: number
   payer_email: string | null
-  status: string
+  payout_status: string
   created_at: string
 }
 
@@ -428,9 +428,9 @@ export default function AdminAffiliatesPage() {
                           </p>
                         </td>
 
-                        {/* Specialty */}
+                        {/* Niche */}
                         <td className="px-4 py-3" style={{ color: '#8892A4' }}>
-                          {aff.specialty || '—'}
+                          {aff.content_niche || '—'}
                         </td>
 
                         {/* Tier badge */}
@@ -448,9 +448,9 @@ export default function AdminAffiliatesPage() {
                           {fmt(Number(aff.total_earnings) || 0)}
                         </td>
 
-                        {/* Unpaid Balance */}
+                        {/* Pending Payout */}
                         <td className="px-4 py-3" style={{ color: '#FABD00' }}>
-                          {fmt(Number(aff.unpaid_balance) || 0)}
+                          {fmt(Number(aff.pending_payout) || 0)}
                         </td>
 
                         {/* Status */}

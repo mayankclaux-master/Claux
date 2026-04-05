@@ -46,7 +46,7 @@ type AffiliateRow = {
   affiliate_code: string
   current_tier: string | null
   total_earnings: number | null
-  unpaid_balance: number | null
+  pending_payout: number | null
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -165,7 +165,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // 8. Fetch affiliate record for tier + current running totals
   const { data: affiliate, error: affiliateError } = await db
     .from('affiliates')
-    .select('affiliate_code, current_tier, total_earnings, unpaid_balance')
+    .select('affiliate_code, current_tier, total_earnings, pending_payout')
     .eq('affiliate_code', affiliateCode)
     .maybeSingle()
 
@@ -197,7 +197,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     commission_amount: commission,
     rate,
     payer_email: payerEmail || null,
-    status: 'pending',
+    payout_status: 'pending',
     created_at: new Date().toISOString(),
   })
 
@@ -210,13 +210,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // 11. Update affiliate running totals
   const newTotalEarnings = (Number(row.total_earnings) || 0) + commission
-  const newUnpaidBalance = (Number(row.unpaid_balance) || 0) + commission
+  const newPendingPayout = (Number(row.pending_payout) || 0) + commission
 
   const { error: updateError } = await db
     .from('affiliates')
     .update({
       total_earnings: newTotalEarnings,
-      unpaid_balance: newUnpaidBalance,
+      pending_payout: newPendingPayout,
     })
     .eq('affiliate_code', affiliateCode)
 
@@ -229,7 +229,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   console.log(
     `[razorpay-webhook] Done — ₹${commission} credited to ${affiliateCode}` +
-      ` | new total_earnings=₹${newTotalEarnings} | new unpaid_balance=₹${newUnpaidBalance}`
+      ` | new total_earnings=₹${newTotalEarnings} | new pending_payout=₹${newPendingPayout}`
   )
 
   return NextResponse.json({ received: true })

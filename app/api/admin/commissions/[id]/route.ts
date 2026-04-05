@@ -18,7 +18,7 @@ export async function PATCH(
   // Fetch the commission row first to get affiliate_code + commission_amount
   const { data: commission, error: fetchError } = await db
     .from('commissions')
-    .select('id, affiliate_code, commission_amount, status')
+    .select('id, affiliate_code, commission_amount, payout_status')
     .eq('id', id)
     .maybeSingle()
 
@@ -26,7 +26,7 @@ export async function PATCH(
     return NextResponse.json({ error: 'Commission not found' }, { status: 404 })
   }
 
-  if (commission.status === 'paid') {
+  if (commission.payout_status === 'paid') {
     return NextResponse.json({ error: 'Already marked as paid' }, { status: 409 })
   }
 
@@ -35,7 +35,7 @@ export async function PATCH(
   // Mark commission as paid
   const { error: updateCommError } = await db
     .from('commissions')
-    .update({ status: 'paid', paid_at: new Date().toISOString() })
+    .update({ payout_status: 'paid', paid_at: new Date().toISOString() })
     .eq('id', id)
 
   if (updateCommError) {
@@ -46,18 +46,18 @@ export async function PATCH(
   // Subtract from affiliate unpaid_balance
   const { data: affiliate, error: affiliateFetchError } = await db
     .from('affiliates')
-    .select('unpaid_balance')
+    .select('pending_payout')
     .eq('affiliate_code', commission.affiliate_code)
     .maybeSingle()
 
   if (!affiliateFetchError && affiliate) {
-    const newUnpaidBalance = Math.max(
+    const newPendingPayout = Math.max(
       0,
-      (Number(affiliate.unpaid_balance) || 0) - commissionAmount
+      (Number(affiliate.pending_payout) || 0) - commissionAmount
     )
     const { error: balanceUpdateError } = await db
       .from('affiliates')
-      .update({ unpaid_balance: newUnpaidBalance })
+      .update({ pending_payout: newPendingPayout })
       .eq('affiliate_code', commission.affiliate_code)
 
     if (balanceUpdateError) {

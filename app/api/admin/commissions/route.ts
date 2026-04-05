@@ -12,7 +12,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const { data, error } = await db
     .from('commissions')
     .select('*')
-    .eq('status', 'pending')
+    .eq('payout_status', 'pending')
     .order('created_at', { ascending: false })
 
   if (error) {
