@@ -220,14 +220,10 @@ export default function PartnerOfferPage() {
   return (
     <div className="min-h-screen bg-[#0D1B2A] text-white font-sans">
       {/* ── Branded Header ── */}
-      <header className="border-b px-6 py-4 flex items-center justify-between" style={{ borderColor: 'rgba(255,255,255,0.06)', background: '#091525' }}>
+      <header className="border-b px-6 py-4 flex items-center" style={{ borderColor: 'rgba(255,255,255,0.06)', background: '#091525' }}>
         <Link href="/">
           <Image src="/claux-logo-cropped.png" alt="Claux" width={140} height={38} className="object-contain" priority />
         </Link>
-        <div className="flex items-center gap-4">
-          <Link href="/pricing" className="text-sm hidden sm:block" style={{ color: '#8892A4' }}>View Pricing</Link>
-          <a href="/affiliate/login" className="text-sm px-4 py-2 rounded-lg font-medium transition-all" style={{ border: '1px solid rgba(29,158,117,0.35)', color: '#1D9E75' }}>Partner Login</a>
-        </div>
       </header>
 
       {/* ── Sticky Urgency Banner ── */}
