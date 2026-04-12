@@ -5,6 +5,10 @@ import { sendWhatsAppTemplate } from '@/lib/whatsapp/meta-api'
 type RoutingDecision = {
   templateName: string
   stage: string
+  headerUrl?: string
+  headerType?: 'image' | 'video'
+  useDynamicButtonSuffix?: boolean
+  buttonIndex?: number
 }
 
 type InboundMessage = {
@@ -24,8 +28,18 @@ const LEADS_TABLE = 'wa_seo_leads'
 const LOGS_TABLE = 'wa_seo_logs'
 
 const ROUTING_TABLE: Record<string, RoutingDecision> = {
-  'watch demo': { templateName: 'claux_stage2_path_a', stage: 'demo_sent' },
-  'see what claux does': { templateName: 'claux_stage2_path_b', stage: 'features_sent' },
+  'watch demo': {
+    templateName: 'claux_stage2_path_a',
+    stage: 'demo_sent',
+    useDynamicButtonSuffix: true,
+    buttonIndex: 0,
+  },
+  'see what claux does': {
+    templateName: 'claux_stage2_path_b',
+    stage: 'features_sent',
+    useDynamicButtonSuffix: true,
+    buttonIndex: 0,
+  },
   'see pricing': { templateName: 'claux_stage3_decision', stage: 'decision_sent' },
   'see offer price': { templateName: 'claux_stage4_path_a', stage: 'offer_sent' },
   'talk to us': { templateName: 'claux_stage4_path_b', stage: 'human_handoff' },
@@ -156,6 +170,8 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid webhook payload.' }, { status: 400 })
   }
 
+  console.log('[whatsapp-webhook] Incoming POST body:', JSON.stringify(body))
+
   const messages = getWebhookMessages(body)
 
   for (const message of messages) {
@@ -204,8 +220,17 @@ export async function POST(request: Request): Promise<NextResponse> {
     const route = ROUTING_TABLE[normalizeRouteKey(inboundText)]
     if (!route) continue
 
+    const routeButtonSuffix = route.useDynamicButtonSuffix ? waId : undefined
+
     try {
-      const sendResult = await sendWhatsAppTemplate({ to: waId, templateName: route.templateName })
+      const sendResult = await sendWhatsAppTemplate({
+        to: waId,
+        templateName: route.templateName,
+        ...(route.headerUrl ? { headerUrl: route.headerUrl } : {}),
+        ...(route.headerType ? { headerType: route.headerType } : {}),
+        ...(routeButtonSuffix ? { buttonUrlSuffix: routeButtonSuffix } : {}),
+        ...(route.buttonIndex !== undefined ? { buttonIndex: route.buttonIndex } : {}),
+      })
 
       await ensureLeadAndStage(db, waId, route.stage)
 
