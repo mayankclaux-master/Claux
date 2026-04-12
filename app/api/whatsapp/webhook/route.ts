@@ -53,33 +53,33 @@ function normalizeRouteKey(value: string): string {
 
 async function logToWaSeo(
   db: any,
-  payload: {
+  logInput: {
     waId: string
     direction: 'inbound' | 'outbound'
     messageType?: string
     messageText?: string
     templateName?: string
     metaMessageId?: string
-    rawPayload: unknown
+    payloadData: unknown
   }
 ): Promise<void> {
   const detailedInsert = {
-    wa_id: payload.waId,
-    direction: payload.direction,
-    message_type: payload.messageType ?? null,
-    message_text: payload.messageText ?? null,
-    template_name: payload.templateName ?? null,
-    meta_message_id: payload.metaMessageId ?? null,
-    payload: payload.rawPayload,
+    wa_id: logInput.waId,
+    direction: logInput.direction,
+    message_type: logInput.messageType ?? null,
+    message_text: logInput.messageText ?? null,
+    template_name: logInput.templateName ?? null,
+    meta_message_id: logInput.metaMessageId ?? null,
+    payload: logInput.payloadData,
   }
 
   const { error } = await db.from(LOGS_TABLE).insert(detailedInsert)
   if (!error) return
 
   const fallbackInsert = {
-    wa_id: payload.waId,
-    direction: payload.direction,
-    payload: payload.rawPayload,
+    wa_id: logInput.waId,
+    direction: logInput.direction,
+    payload: logInput.payloadData,
   }
 
   const { error: fallbackError } = await db.from(LOGS_TABLE).insert(fallbackInsert)
@@ -168,7 +168,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       messageType: message.type ?? 'unknown',
       messageText: inboundText,
       metaMessageId: message.id,
-      rawPayload: message,
+      payloadData: message,
     })
 
     const { data: lead } = await db.from(LEADS_TABLE).select('wa_id, stage').eq('wa_id', waId).maybeSingle()
@@ -185,7 +185,7 @@ export async function POST(request: Request): Promise<NextResponse> {
           messageType: 'template',
           templateName: 'claux_stage1_welcome',
           metaMessageId: sendResult.messages?.[0]?.id,
-          rawPayload: sendResult,
+          payloadData: sendResult,
         })
       } catch (error) {
         console.error('[whatsapp-webhook] Failed sending welcome template:', error)
@@ -208,7 +208,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         messageType: 'template',
         templateName: route.templateName,
         metaMessageId: sendResult.messages?.[0]?.id,
-        rawPayload: sendResult,
+        payloadData: sendResult,
       })
     } catch (error) {
       console.error('[whatsapp-webhook] Failed sending routed template:', error)
