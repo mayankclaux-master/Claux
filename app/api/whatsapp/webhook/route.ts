@@ -115,14 +115,26 @@ function getWebhookMessages(body: any): InboundMessage[] {
 export async function GET(request: Request): Promise<Response> {
   const { searchParams } = new URL(request.url)
   const mode = searchParams.get('hub.mode')
-  const token = searchParams.get('hub.verify_token')
-  const challenge = searchParams.get('hub.challenge')
+  const verifyToken = searchParams.get('hub.verify_token')
+  const hubChallenge = searchParams.get('hub.challenge') ?? ''
 
-  if (mode === 'subscribe' && token && token === process.env.WHATSAPP_VERIFY_TOKEN) {
-    return new Response(challenge ?? '', { status: 200 })
+  console.log(`DEBUG: Expected [${process.env.WHATSAPP_VERIFY_TOKEN}] - Received [${verifyToken}]`)
+
+  if (mode === 'subscribe' && verifyToken && verifyToken.trim() === process.env.WHATSAPP_VERIFY_TOKEN?.trim()) {
+    return new Response(hubChallenge, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/plain',
+      },
+    })
   }
 
-  return new Response('Verification failed', { status: 403 })
+  return new Response('Verification failed', {
+    status: 403,
+    headers: {
+      'Content-Type': 'text/plain',
+    },
+  })
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
