@@ -201,6 +201,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       .maybeSingle()
 
     const detectedAction = normalizeRouteKey(inboundText)
+    console.log('[DEBUG_FLOW] Step 1: Action detected:', detectedAction)
     const route = ROUTING_TABLE[detectedAction]
     const currentStage = (lead?.current_stage as string | null | undefined) ?? null
 
@@ -209,15 +210,20 @@ export async function POST(request: Request): Promise<NextResponse> {
     if (route) {
       const routeButtonSuffix = route.buttonUrlSuffix
 
+      console.log('[DEBUG_FLOW] Step 2: Attempting DB write for:', waId)
       await ensureLeadAndStage(db, waId, route.stage)
 
       try {
-        const sendResult = await sendWhatsAppTemplate({
+        console.log('[DEBUG_FLOW] Step 3: Meta Send Start for template:', route.templateName)
+        const metaRes = await sendWhatsAppTemplate({
           to: waId,
           templateName: route.templateName,
           ...(routeButtonSuffix ? { buttonUrlSuffix: routeButtonSuffix } : {}),
           ...(route.buttonIndex !== undefined ? { buttonIndex: route.buttonIndex } : {}),
         })
+        console.log('[DEBUG_FLOW] Step 4: Meta Response Status:', (metaRes as any)?.status)
+
+        const sendResult = metaRes
 
         await logToWaSeo(db, {
           waId,
