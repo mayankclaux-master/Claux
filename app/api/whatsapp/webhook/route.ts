@@ -54,7 +54,7 @@ function normalizeRouteKey(value: string): string {
 async function logToWaSeo(
   db: any,
   logInput: {
-    waId: string
+    waId?: string
     direction: 'inbound' | 'outbound'
     messageType?: string
     messageText?: string
@@ -63,8 +63,10 @@ async function logToWaSeo(
     payloadData: unknown
   }
 ): Promise<void> {
+  const logMessageId = logInput.metaMessageId || logInput.waId || null
+
   const detailedInsert = {
-    wa_id: logInput.waId,
+    wa_id: logMessageId,
     direction: logInput.direction,
     message_type: logInput.messageType ?? null,
     message_text: logInput.messageText ?? null,
@@ -77,7 +79,7 @@ async function logToWaSeo(
   if (!error) return
 
   const fallbackInsert = {
-    wa_id: logInput.waId,
+    wa_id: logMessageId,
     direction: logInput.direction,
     payload: logInput.payloadData,
   }
@@ -175,7 +177,12 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     if (!lead) {
       try {
-        const sendResult = await sendWhatsAppTemplate({ to: waId, templateName: 'claux_stage1_welcome' })
+        const sendResult = await sendWhatsAppTemplate({
+          to: waId,
+          templateName: 'claux_stage1_welcome',
+          headerType: 'image',
+          headerUrl: 'https://claux.automizemedialabs.com/claux-logo-cropped.png',
+        })
 
         await ensureLeadAndStage(db, waId, 'welcome')
 

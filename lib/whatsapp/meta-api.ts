@@ -3,6 +3,7 @@ type WhatsAppTemplateSendInput = {
   templateName: string
   languageCode?: string
   headerUrl?: string
+  headerType?: 'image' | 'video'
   components?: TemplateComponent[]
 }
 
@@ -48,8 +49,8 @@ function inferHeaderMediaType(url: string): 'image' | 'video' {
   return 'video'
 }
 
-function buildHeaderComponent(url: string): TemplateComponent {
-  const mediaType = inferHeaderMediaType(url)
+function buildHeaderComponent(url: string, forcedType?: 'image' | 'video'): TemplateComponent {
+  const mediaType = forcedType ?? inferHeaderMediaType(url)
 
   if (mediaType === 'image') {
     return {
@@ -69,6 +70,7 @@ export async function sendWhatsAppTemplate({
   templateName,
   languageCode = 'en',
   headerUrl,
+  headerType,
   components,
 }: WhatsAppTemplateSendInput): Promise<MetaSendResponse> {
   const token = process.env.WHATSAPP_TOKEN
@@ -85,7 +87,7 @@ export async function sendWhatsAppTemplate({
     if (!url) {
       throw new Error('Missing header media URL for claux_stage1_welcome. Set headerUrl or NEXT_PUBLIC_DEMO_VIDEO_URL.')
     }
-    templateComponents = [buildHeaderComponent(url)]
+    templateComponents = [buildHeaderComponent(url, headerType)]
   }
 
   const response = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
