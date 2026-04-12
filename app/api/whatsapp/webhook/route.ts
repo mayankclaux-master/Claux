@@ -103,7 +103,10 @@ async function logToWaSeo(
 }
 
 async function ensureLeadAndStage(db: any, waId: string, stage: string): Promise<void> {
-  const { error: upsertError } = await db.from(LEADS_TABLE).upsert({ wa_id: waId, stage }, { onConflict: 'wa_id' })
+  const { error: upsertError } = await db
+    .from(LEADS_TABLE)
+    .upsert({ phone_number: waId, current_stage: stage }, { onConflict: 'phone_number' })
+
   if (upsertError) {
     console.error('[whatsapp-webhook] Failed to upsert lead stage:', upsertError)
   }
@@ -187,7 +190,45 @@ export async function POST(request: Request): Promise<NextResponse> {
       payloadData: message,
     })
 
-    const { data: lead } = await db.from(LEADS_TABLE).select('wa_id, stage').eq('wa_id', waId).maybeSingle()
+    const { data: lead } = await db
+      .from(LEADS_TABLE)
+      .select('phone_number, current_stage')
+      .eq('phone_number', waId)
+      .maybeSingle()
+
+    const detectedAction = normalizeRouteKey(inboundText)
+    const route = ROUTING_TABLE[detectedAction]
+    const currentStage = (lead?.current_stage as string | null | undefined) ?? null
+
+    console.log('[STAGE_CHECK]', { waId, detectedAction, currentStage })
+
+    if (route) {
+      const routeButtonSuffix = route.buttonUrlSuffix
+
+      await ensureLeadAndStage(db, waId, route.stage)
+
+      try {
+        const sendResult = await sendWhatsAppTemplate({
+          to: waId,
+          templateName: route.templateName,
+          ...(routeButtonSuffix ? { buttonUrlSuffix: routeButtonSuffix } : {}),
+          ...(route.buttonIndex !== undefined ? { buttonIndex: route.buttonIndex } : {}),
+        })
+
+        await logToWaSeo(db, {
+          waId,
+          direction: 'outbound',
+          messageType: 'template',
+          templateName: route.templateName,
+          metaMessageId: sendResult.messages?.[0]?.id,
+          payloadData: sendResult,
+        })
+      } catch (error) {
+        console.error('[whatsapp-webhook] Failed sending routed template:', error)
+      }
+
+      continue
+    }
 
     if (!lead) {
       try {
@@ -208,33 +249,6 @@ export async function POST(request: Request): Promise<NextResponse> {
       }
 
       continue
-    }
-
-    const route = ROUTING_TABLE[normalizeRouteKey(inboundText)]
-    if (!route) continue
-
-    const routeButtonSuffix = route.buttonUrlSuffix
-
-    try {
-      const sendResult = await sendWhatsAppTemplate({
-        to: waId,
-        templateName: route.templateName,
-        ...(routeButtonSuffix ? { buttonUrlSuffix: routeButtonSuffix } : {}),
-        ...(route.buttonIndex !== undefined ? { buttonIndex: route.buttonIndex } : {}),
-      })
-
-      await ensureLeadAndStage(db, waId, route.stage)
-
-      await logToWaSeo(db, {
-        waId,
-        direction: 'outbound',
-        messageType: 'template',
-        templateName: route.templateName,
-        metaMessageId: sendResult.messages?.[0]?.id,
-        payloadData: sendResult,
-      })
-    } catch (error) {
-      console.error('[whatsapp-webhook] Failed sending routed template:', error)
     }
   }
 
