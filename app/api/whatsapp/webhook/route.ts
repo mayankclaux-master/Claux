@@ -7,7 +7,7 @@ type RoutingDecision = {
   stage: string
   headerUrl?: string
   headerType?: 'image' | 'video'
-  useDynamicButtonSuffix?: boolean
+  buttonUrlSuffix?: string
   buttonIndex?: number
 }
 
@@ -31,13 +31,13 @@ const ROUTING_TABLE: Record<string, RoutingDecision> = {
   'watch demo': {
     templateName: 'claux_stage2_path_a',
     stage: 'demo_sent',
-    useDynamicButtonSuffix: true,
+    buttonUrlSuffix: 'demo',
     buttonIndex: 0,
   },
   'see what claux does': {
     templateName: 'claux_stage2_path_b',
     stage: 'features_sent',
-    useDynamicButtonSuffix: true,
+    buttonUrlSuffix: 'features',
     buttonIndex: 0,
   },
   'see pricing': { templateName: 'claux_stage3_decision', stage: 'decision_sent' },
@@ -220,7 +220,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     const route = ROUTING_TABLE[normalizeRouteKey(inboundText)]
     if (!route) continue
 
-    const routeButtonSuffix = route.useDynamicButtonSuffix ? waId : undefined
+    const routeButtonSuffix = route.buttonUrlSuffix
 
     try {
       const sendResult = await sendWhatsAppTemplate({
