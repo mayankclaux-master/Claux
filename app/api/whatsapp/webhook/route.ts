@@ -103,12 +103,16 @@ async function logToWaSeo(
 }
 
 async function ensureLeadAndStage(db: any, waId: string, stage: string): Promise<void> {
-  const { error: upsertError } = await db
-    .from(LEADS_TABLE)
-    .upsert({ phone_number: waId, current_stage: stage }, { onConflict: 'phone_number' })
+  try {
+    const { error: upsertError } = await db
+      .from(LEADS_TABLE)
+      .upsert({ phone_number: waId, current_stage: stage }, { onConflict: 'phone_number' })
 
-  if (upsertError) {
-    console.error('[whatsapp-webhook] Failed to upsert lead stage:', upsertError)
+    if (upsertError) {
+      console.error('[whatsapp-webhook] Failed to upsert lead stage:', upsertError)
+    }
+  } catch (error) {
+    console.error('[whatsapp-webhook] Lead stage update threw error:', error)
   }
 }
 
