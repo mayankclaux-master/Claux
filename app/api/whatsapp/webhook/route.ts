@@ -5,8 +5,6 @@ import { sendWhatsAppTemplate } from '@/lib/whatsapp/meta-api'
 type RoutingDecision = {
   templateName: string
   stage: string
-  headerUrl?: string
-  headerType?: 'image' | 'video'
   buttonUrlSuffix?: string
   buttonIndex?: number
 }
@@ -193,12 +191,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     if (!lead) {
       try {
-        const sendResult = await sendWhatsAppTemplate({
-          to: waId,
-          templateName: 'claux_stage1_welcome',
-          headerType: 'image',
-          headerUrl: 'https://claux.automizemedialabs.com/claux-logo-cropped.png',
-        })
+        const sendResult = await sendWhatsAppTemplate({ to: waId, templateName: 'claux_stage1_welcome' })
 
         await ensureLeadAndStage(db, waId, 'welcome')
 
@@ -226,8 +219,6 @@ export async function POST(request: Request): Promise<NextResponse> {
       const sendResult = await sendWhatsAppTemplate({
         to: waId,
         templateName: route.templateName,
-        ...(route.headerUrl ? { headerUrl: route.headerUrl } : {}),
-        ...(route.headerType ? { headerType: route.headerType } : {}),
         ...(routeButtonSuffix ? { buttonUrlSuffix: routeButtonSuffix } : {}),
         ...(route.buttonIndex !== undefined ? { buttonIndex: route.buttonIndex } : {}),
       })
