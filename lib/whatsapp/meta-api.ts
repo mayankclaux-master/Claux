@@ -124,24 +124,28 @@ export async function sendWhatsAppTemplate({
     }
   }
 
+  const payload = {
+    messaging_product: 'whatsapp',
+    to,
+    type: 'template',
+    template: {
+      name: templateName,
+      language: {
+        code: languageCode,
+      },
+      ...(templateComponents?.length ? { components: templateComponents } : {}),
+    },
+  }
+
+  console.log('[META_DEBUG_PAYLOAD]', JSON.stringify(payload, null, 2))
+
   const response = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      messaging_product: 'whatsapp',
-      to,
-      type: 'template',
-      template: {
-        name: templateName,
-        language: {
-          code: languageCode,
-        },
-        ...(templateComponents?.length ? { components: templateComponents } : {}),
-      },
-    }),
+    body: JSON.stringify(payload),
   })
 
   const data = (await response.json().catch(() => ({}))) as MetaSendResponse
