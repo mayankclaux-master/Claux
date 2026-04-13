@@ -97,7 +97,7 @@ export async function sendWhatsAppTemplate({
 
 export async function fetchApprovedWhatsAppTemplates(): Promise<MetaTemplateOption[]> {
   const token = process.env.WHATSAPP_TOKEN
-  const businessId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID ?? process.env.WHATSAPP_BUSINESS_ID
+  const businessId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID
 
   if (!token || !businessId) {
     throw new Error('Missing WhatsApp configuration: WHATSAPP_TOKEN or WHATSAPP_BUSINESS_ACCOUNT_ID')

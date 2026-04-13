@@ -105,6 +105,15 @@ export async function GET(request: Request): Promise<NextResponse> {
 
   if (mode === 'templates') {
     try {
+      const token = process.env.WHATSAPP_TOKEN
+      const businessAccountId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID
+      if (!token || !businessAccountId) {
+        return NextResponse.json(
+          { error: 'Missing WhatsApp configuration: WHATSAPP_TOKEN or WHATSAPP_BUSINESS_ACCOUNT_ID' },
+          { status: 500 }
+        )
+      }
+
       const templates = await fetchApprovedWhatsAppTemplates()
       return NextResponse.json({ templates })
     } catch (error) {
