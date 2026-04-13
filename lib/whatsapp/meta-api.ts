@@ -50,11 +50,6 @@ type MetaTemplateRecord = {
   components?: MetaTemplateComponent[]
 }
 
-function hasTemplateVariables(text: string | undefined): boolean {
-  const value = String(text ?? '')
-  return /\{\{\d+\}\}/.test(value)
-}
-
 export async function sendWhatsAppTemplate({
   to,
   templateName,
@@ -140,13 +135,12 @@ export async function fetchApprovedWhatsAppTemplates(): Promise<MetaTemplateOpti
       return {
         id: template.id,
         name: String(template.name ?? '').trim(),
-        language: template.language,
-        category: template.category,
+        language: String(template.language ?? '').trim() || undefined,
+        category: String(template.category ?? '').trim() || undefined,
         previewText: String(bodyText ?? '').trim() || undefined,
       }
     })
     .filter((template) => template.name)
-    .filter((template) => !hasTemplateVariables(template.previewText))
 }
 
 export async function sendWhatsAppText({ to, text }: WhatsAppTextSendInput): Promise<MetaSendResponse> {

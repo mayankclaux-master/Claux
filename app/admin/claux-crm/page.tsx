@@ -708,7 +708,7 @@ export default function ClauxCrmPage() {
                         Approved Templates
                       </p>
                       <p className="text-[11px]" style={{ color: '#6B7280' }}>
-                        Showing templates without variables.
+                        Showing all approved Meta templates.
                       </p>
                     </div>
                     <div className="max-h-72 overflow-y-auto p-1">
