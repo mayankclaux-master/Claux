@@ -5,8 +5,6 @@ import { sendWhatsAppTemplate } from '@/lib/whatsapp/meta-api'
 type RoutingDecision = {
   templateName: string
   stage: string
-  buttonUrlSuffix?: string
-  buttonIndex?: number
 }
 
 type InboundMessage = {
@@ -29,14 +27,10 @@ const ROUTING_TABLE: Record<string, RoutingDecision> = {
   'watch demo': {
     templateName: 'claux_stage2_path_a',
     stage: 'demo_sent',
-    buttonUrlSuffix: 'demo',
-    buttonIndex: 0,
   },
   'see what claux does': {
     templateName: 'claux_stage2_path_b',
     stage: 'features_sent',
-    buttonUrlSuffix: 'features',
-    buttonIndex: 0,
   },
   'see pricing': { templateName: 'claux_stage3_decision', stage: 'decision_sent' },
   'see offer price': { templateName: 'claux_stage4_path_a', stage: 'offer_sent' },
@@ -208,8 +202,6 @@ export async function POST(request: Request): Promise<NextResponse> {
     console.log('[STAGE_CHECK]', { waId, detectedAction, currentStage })
 
     if (route) {
-      const routeButtonSuffix = route.buttonUrlSuffix
-
       console.log('[DEBUG_FLOW] Step 2: Attempting DB write for:', waId)
       await ensureLeadAndStage(db, waId, route.stage)
 
@@ -218,8 +210,6 @@ export async function POST(request: Request): Promise<NextResponse> {
         const metaRes = await sendWhatsAppTemplate({
           to: waId,
           templateName: route.templateName,
-          ...(routeButtonSuffix ? { buttonUrlSuffix: routeButtonSuffix } : {}),
-          ...(route.buttonIndex !== undefined ? { buttonIndex: route.buttonIndex } : {}),
         })
         console.log('[DEBUG_FLOW] Step 4: Meta Response Status:', (metaRes as any)?.status)
 

@@ -2,20 +2,6 @@ type WhatsAppTemplateSendInput = {
   to: string
   templateName: string
   languageCode?: string
-  buttonUrlSuffix?: string
-  buttonIndex?: number
-  components?: TemplateComponent[]
-}
-
-type ButtonParameter = { type: 'text'; text: string }
-
-type TemplateParameter = ButtonParameter
-
-type TemplateComponent = {
-  type: 'button'
-  sub_type?: 'url'
-  index?: string
-  parameters?: TemplateParameter[]
 }
 
 type MetaMessage = {
@@ -37,37 +23,16 @@ type MetaSendResponse = {
   error?: MetaError
 }
 
-function buildButtonComponent(urlSuffix: string, index = 0): TemplateComponent {
-  return {
-    type: 'button',
-    sub_type: 'url',
-    index: String(index),
-    parameters: [{ type: 'text', text: urlSuffix }],
-  }
-}
-
 export async function sendWhatsAppTemplate({
   to,
   templateName,
   languageCode = 'en',
-  buttonUrlSuffix,
-  buttonIndex = 0,
-  components,
 }: WhatsAppTemplateSendInput): Promise<MetaSendResponse> {
   const token = process.env.WHATSAPP_TOKEN
   const phoneId = process.env.WHATSAPP_PHONE_ID
 
   if (!token || !phoneId) {
     throw new Error('Missing WhatsApp configuration: WHATSAPP_TOKEN or WHATSAPP_PHONE_ID')
-  }
-
-  let templateComponents = [...(components ?? [])]
-
-  if (buttonUrlSuffix) {
-    const hasUrlButton = templateComponents.some((component) => component.type === 'button' && component.sub_type === 'url')
-    if (!hasUrlButton) {
-      templateComponents.push(buildButtonComponent(buttonUrlSuffix, buttonIndex))
-    }
   }
 
   const payload = {
@@ -79,7 +44,6 @@ export async function sendWhatsAppTemplate({
       language: {
         code: languageCode,
       },
-      ...(templateComponents?.length ? { components: templateComponents } : {}),
     },
   }
 
