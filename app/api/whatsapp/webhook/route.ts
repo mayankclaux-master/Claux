@@ -20,6 +20,16 @@ type InboundMessage = {
   }
 }
 
+type InboundContact = {
+  wa_id?: string
+  profile?: { name?: string }
+}
+
+type WebhookMessageEvent = {
+  message: InboundMessage
+  profileName?: string
+}
+
 const LEADS_TABLE = 'wa_seo_leads'
 const LOGS_TABLE = 'wa_seo_logs'
 
@@ -109,18 +119,21 @@ async function ensureLeadAndStage(
   metadata: Record<string, unknown>,
   fullName?: string
 ): Promise<void> {
+  const trimmedFullName = String(fullName ?? '').trim()
+  const upsertPayload: Record<string, unknown> = {
+    phone_number: waId,
+    current_stage: stage,
+    metadata,
+  }
+
+  if (trimmedFullName) {
+    upsertPayload.full_name = trimmedFullName
+  }
+
   try {
     const { error: upsertError } = await db
       .from(LEADS_TABLE)
-      .upsert(
-        {
-          phone_number: waId,
-          current_stage: stage,
-          metadata,
-          full_name: (fullName || '').trim() || waId,
-        },
-        { onConflict: 'phone_number' }
-      )
+      .upsert(upsertPayload, { onConflict: 'phone_number' })
 
     if (upsertError) {
       console.error('[whatsapp-webhook] Failed to upsert lead stage:', upsertError)
@@ -130,16 +143,47 @@ async function ensureLeadAndStage(
   }
 }
 
-function getWebhookMessages(body: any): InboundMessage[] {
+async function ensureLeadName(db: any, waId: string, fullName?: string): Promise<void> {
+  const trimmedFullName = String(fullName ?? '').trim()
+  if (!trimmedFullName) return
+
+  try {
+    const { error } = await db.from(LEADS_TABLE).update({ full_name: trimmedFullName }).eq('phone_number', waId)
+    if (error) {
+      console.error('[whatsapp-webhook] Failed to update lead name:', error)
+    }
+  } catch (error) {
+    console.error('[whatsapp-webhook] Lead name update threw error:', error)
+  }
+}
+
+function getWebhookMessages(body: any): WebhookMessageEvent[] {
   const entries = Array.isArray(body?.entry) ? body.entry : []
-  const messages: InboundMessage[] = []
+  const messages: WebhookMessageEvent[] = []
 
   for (const entry of entries) {
     const changes = Array.isArray(entry?.changes) ? entry.changes : []
     for (const change of changes) {
+      const contacts = Array.isArray(change?.value?.contacts) ? (change.value.contacts as InboundContact[]) : []
+      const profileNameByWaId = new Map<string, string>()
+
+      for (const contact of contacts) {
+        const waId = String(contact?.wa_id ?? '').trim()
+        const profileName = String(contact?.profile?.name ?? '').trim()
+        if (!waId || !profileName) continue
+        profileNameByWaId.set(waId, profileName)
+      }
+
       const incoming = Array.isArray(change?.value?.messages) ? change.value.messages : []
       for (const message of incoming) {
-        messages.push(message as InboundMessage)
+        const inbound = message as InboundMessage
+        const fromWaId = String(inbound.from ?? '').trim()
+        const profileName = profileNameByWaId.get(fromWaId)
+
+        messages.push({
+          message: inbound,
+          profileName,
+        })
       }
     }
   }
@@ -191,9 +235,10 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   console.log('[whatsapp-webhook] Incoming POST body:', JSON.stringify(body))
 
-  const messages = getWebhookMessages(body)
+  const events = getWebhookMessages(body)
 
-  for (const message of messages) {
+  for (const event of events) {
+    const { message, profileName } = event
     const waId = String(message.from ?? '').trim()
     if (!waId) continue
 
@@ -226,7 +271,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     if (route) {
       console.log('[DEBUG_FLOW] Step 2: Attempting DB write for:', waId)
-      await ensureLeadAndStage(db, waId, route.stage, leadMetadata)
+      await ensureLeadAndStage(db, waId, route.stage, leadMetadata, profileName)
 
       try {
         console.log('[DEBUG_FLOW] Step 3: Meta Send Start for template:', route.templateName)
@@ -252,11 +297,15 @@ export async function POST(request: Request): Promise<NextResponse> {
       continue
     }
 
+    if (lead) {
+      await ensureLeadName(db, waId, profileName)
+    }
+
     if (!lead) {
       try {
         const sendResult = await sendWhatsAppTemplate({ to: waId, templateName: 'claux_stage1_welcome' })
 
-        await ensureLeadAndStage(db, waId, 'welcome', leadMetadata)
+        await ensureLeadAndStage(db, waId, 'welcome', leadMetadata, profileName)
 
         await logToWaSeo(db, {
           waId,

@@ -368,7 +368,7 @@ export default function ClauxCrmPage() {
                 }}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm font-semibold" style={{ color: hasHighInteractions ? HOT_ORANGE : '#111827' }}>
+                  <p className="text-[15px] font-bold tracking-tight" style={{ color: hasHighInteractions ? HOT_ORANGE : '#0F172A' }}>
                     {displayName}
                   </p>
                   <span
@@ -404,7 +404,7 @@ export default function ClauxCrmPage() {
       <main className="flex-1 flex flex-col">
         <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: '#E2E8F0', background: '#FFFFFF' }}>
           <div>
-            <h3 className="font-semibold" style={{ color: SEA_GREEN }}>
+            <h3 className="text-lg font-bold tracking-tight" style={{ color: '#0F172A' }}>
               {selectedLead?.full_name || selectedPhone || 'Select a lead'}
             </h3>
             <p className="text-xs" style={{ color: '#6B7280' }}>
