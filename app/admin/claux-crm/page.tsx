@@ -7,6 +7,8 @@ type LeadItem = {
   full_name: string | null
   current_stage: string
   last_interaction_at: string | null
+  interaction_count: number
+  button_click_count: number
 }
 
 type MessageItem = {
@@ -39,6 +41,61 @@ function fmtDate(value: string | null | undefined): string {
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return 'No activity yet'
   return d.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+function fmtRelativeTime(value: string | null | undefined): string {
+  if (!value) return 'Inactive'
+  const timestamp = new Date(value).getTime()
+  if (Number.isNaN(timestamp)) return 'Inactive'
+
+  const deltaMs = Date.now() - timestamp
+  if (deltaMs < 0) return 'Active just now'
+
+  const mins = Math.floor(deltaMs / (60 * 1000))
+  if (mins < 1) return 'Active just now'
+  if (mins < 60) return `Active ${mins} min${mins === 1 ? '' : 's'} ago`
+
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `Active ${hours} hr${hours === 1 ? '' : 's'} ago`
+
+  const days = Math.floor(hours / 24)
+  return `Active ${days} day${days === 1 ? '' : 's'} ago`
+}
+
+function templatePreview(templateName: string | null | undefined): string {
+  const key = String(templateName ?? '').trim().toLowerCase()
+  if (!key) return 'Sent: Template Message'
+
+  const map: Record<string, string> = {
+    claux_stage1_welcome: 'Sent: Welcome Message',
+    claux_stage2_path_a: 'Sent: Demo Link',
+    claux_stage2_path_b: 'Sent: Features Overview',
+    claux_stage3_decision: 'Sent: Pricing',
+    claux_stage4_path_a: 'Sent: Offer Price',
+    claux_stage4_path_b: 'Sent: Human Handoff',
+  }
+
+  return map[key] || 'Sent: Template Message'
+}
+
+function messagePreview(message: MessageItem): string {
+  const outbound = message.direction === 'outbound'
+
+  if (outbound) {
+    if (message.message_body && message.message_body.trim()) {
+      return message.message_body.trim()
+    }
+    if (message.template_name) {
+      return templatePreview(message.template_name)
+    }
+    return '[Sent message]'
+  }
+
+  if (message.message_body && message.message_body.trim()) {
+    return message.message_body.trim()
+  }
+
+  return '[No inbound text]'
 }
 
 export default function ClauxCrmPage() {
@@ -236,6 +293,8 @@ export default function ClauxCrmPage() {
           {leads.map((lead) => {
             const active = selectedPhone === lead.phone_number
             const isHot = (lead.current_stage || '').toLowerCase().includes('hot')
+            const hasHighInteractions = (lead.interaction_count || 0) > 5
+            const displayName = lead.full_name || lead.phone_number
 
             return (
               <button
@@ -247,7 +306,18 @@ export default function ClauxCrmPage() {
                   background: active ? '#E7F7EF' : '#FFFFFF',
                 }}
               >
-                <p className="text-sm font-semibold" style={{ color: '#111827' }}>
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-semibold" style={{ color: hasHighInteractions ? HOT_ORANGE : '#111827' }}>
+                    {displayName}
+                  </p>
+                  <span
+                    className="text-[11px] px-2 py-0.5 rounded-full"
+                    style={{ background: '#E6F4EE', color: SEA_GREEN }}
+                  >
+                    {lead.interaction_count || 0} interactions
+                  </span>
+                </div>
+                <p className="text-xs mt-0.5" style={{ color: '#6B7280' }}>
                   {lead.phone_number}
                 </p>
                 <div className="flex items-center justify-between mt-1">
@@ -279,6 +349,14 @@ export default function ClauxCrmPage() {
             <p className="text-xs" style={{ color: '#6B7280' }}>
               {selectedLead?.phone_number || ''}
             </p>
+            <div className="mt-1 flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: '#E6F4EE', color: SEA_GREEN }}>
+                Button Clicks: {selectedLead?.button_click_count || 0}
+              </span>
+              <span className="text-[11px]" style={{ color: '#6B7280' }}>
+                {fmtRelativeTime(selectedLead?.last_interaction_at)}
+              </span>
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
@@ -304,7 +382,7 @@ export default function ClauxCrmPage() {
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
           {messages.map((message, idx) => {
             const outbound = message.direction === 'outbound'
-            const text = message.message_body || (message.template_name ? `Template: ${message.template_name}` : '[No content]')
+            const text = messagePreview(message)
 
             return (
               <div key={`${message.id ?? idx}-${message.created_at ?? ''}`} className={`flex ${outbound ? 'justify-end' : 'justify-start'}`}>

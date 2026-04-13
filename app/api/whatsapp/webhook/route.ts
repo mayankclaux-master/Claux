@@ -37,18 +37,28 @@ const ROUTING_TABLE: Record<string, RoutingDecision> = {
   'talk to us': { templateName: 'claux_stage4_path_b', stage: 'human_handoff' },
 }
 
+function prettifyButtonLabel(value: string | undefined): string {
+  const raw = String(value ?? '').trim()
+  if (!raw) return ''
+
+  return raw
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function getInboundText(message: InboundMessage): string {
   const textBody = message.text?.body?.trim()
   if (textBody) return textBody
 
-  const buttonText = message.button?.text?.trim() || message.button?.payload?.trim()
+  const buttonText = message.button?.text?.trim() || prettifyButtonLabel(message.button?.payload)
   if (buttonText) return buttonText
 
   const interactiveTitle =
     message.interactive?.button_reply?.title?.trim() ||
-    message.interactive?.button_reply?.id?.trim() ||
+    prettifyButtonLabel(message.interactive?.button_reply?.id) ||
     message.interactive?.list_reply?.title?.trim() ||
-    message.interactive?.list_reply?.id?.trim()
+    prettifyButtonLabel(message.interactive?.list_reply?.id)
 
   return interactiveTitle || ''
 }

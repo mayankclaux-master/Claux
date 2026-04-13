@@ -11,6 +11,15 @@ type LeadRow = {
   full_name?: string | null
 }
 
+type LeadItem = {
+  phone_number: string
+  full_name: string | null
+  current_stage: string
+  last_interaction_at: string | null
+  interaction_count: number
+  button_click_count: number
+}
+
 type LogRow = {
   id?: string | number
   lead_phone?: string | null
@@ -35,6 +44,22 @@ function makeDb() {
 
 function normalizePhone(input: unknown): string {
   return String(input ?? '').trim()
+}
+
+function isInboundButtonClick(log: LogRow): boolean {
+  if (log.direction !== 'inbound') return false
+  const payload = log.payload
+  if (!payload || typeof payload !== 'object') return false
+
+  const value = payload as {
+    button?: unknown
+    interactive?: { type?: string }
+  }
+
+  if (value.button) return true
+
+  const interactiveType = String(value.interactive?.type ?? '').trim().toLowerCase()
+  return interactiveType === 'button_reply' || interactiveType === 'list_reply'
 }
 
 export async function GET(request: Request): Promise<NextResponse> {
@@ -65,9 +90,17 @@ export async function GET(request: Request): Promise<NextResponse> {
   const logs = (logsResult.data ?? []) as LogRow[]
 
   const latestByPhone = new Map<string, string>()
+  const interactionCountByPhone = new Map<string, number>()
+  const buttonClicksByPhone = new Map<string, number>()
   for (const row of logs) {
     const phone = normalizePhone(row.lead_phone || row.wa_id)
     if (!phone) continue
+
+    interactionCountByPhone.set(phone, (interactionCountByPhone.get(phone) ?? 0) + 1)
+
+    if (isInboundButtonClick(row)) {
+      buttonClicksByPhone.set(phone, (buttonClicksByPhone.get(phone) ?? 0) + 1)
+    }
 
     const createdAt = row.created_at ? new Date(row.created_at).getTime() : 0
     const currentLatest = latestByPhone.get(phone)
@@ -78,11 +111,13 @@ export async function GET(request: Request): Promise<NextResponse> {
     }
   }
 
-  const leadItems = leads.map((lead) => ({
+  const leadItems: LeadItem[] = leads.map((lead) => ({
     phone_number: lead.phone_number,
     full_name: lead.full_name ?? null,
     current_stage: lead.current_stage ?? 'unknown',
     last_interaction_at: latestByPhone.get(lead.phone_number) ?? null,
+    interaction_count: interactionCountByPhone.get(lead.phone_number) ?? 0,
+    button_click_count: buttonClicksByPhone.get(lead.phone_number) ?? 0,
   }))
 
   leadItems.sort((a, b) => {
