@@ -1,0 +1,408 @@
+'use client'
+
+import { FormEvent, useEffect, useMemo, useState } from 'react'
+
+type LeadItem = {
+  phone_number: string
+  full_name: string | null
+  current_stage: string
+  last_interaction_at: string | null
+}
+
+type MessageItem = {
+  id?: string | number
+  direction?: string | null
+  message_body?: string | null
+  template_name?: string | null
+  created_at?: string | null
+}
+
+type CrmResponse = {
+  leads: LeadItem[]
+  selectedPhone: string
+  messages: MessageItem[]
+}
+
+const ADMIN_ID = 'mayank_admin'
+const ADMIN_PASS = 'claux_war_room_2026'
+const SESSION_KEY = 'claux_crm_session'
+
+const BG = '#F8FAFC'
+const SEA_GREEN = '#075E54'
+const WA_GREEN = '#25D366'
+const HOT_ORANGE = '#FF8C00'
+
+const QUICK_EMOJIS = ['😀', '👍', '🔥', '✅', '💬', '🚀', '🙂', '🎯']
+
+function fmtDate(value: string | null | undefined): string {
+  if (!value) return 'No activity yet'
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return 'No activity yet'
+  return d.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+export default function ClauxCrmPage() {
+  const [userId, setUserId] = useState('')
+  const [password, setPassword] = useState('')
+  const [authed, setAuthed] = useState(false)
+
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [warning, setWarning] = useState('')
+
+  const [leads, setLeads] = useState<LeadItem[]>([])
+  const [messages, setMessages] = useState<MessageItem[]>([])
+  const [selectedPhone, setSelectedPhone] = useState('')
+
+  const [draft, setDraft] = useState('')
+  const [sending, setSending] = useState(false)
+  const [updatingStage, setUpdatingStage] = useState(false)
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const existing = window.sessionStorage.getItem(SESSION_KEY)
+    if (existing === 'ok') setAuthed(true)
+  }, [])
+
+  const selectedLead = useMemo(() => leads.find((lead) => lead.phone_number === selectedPhone) ?? null, [leads, selectedPhone])
+
+  const fetchCrm = async (phone = selectedPhone) => {
+    setLoading(true)
+    setError('')
+
+    try {
+      const endpoint = phone ? `/api/whatsapp/crm?phone=${encodeURIComponent(phone)}` : '/api/whatsapp/crm'
+      const response = await fetch(endpoint, { cache: 'no-store' })
+      const data = (await response.json().catch(() => ({}))) as Partial<CrmResponse> & { error?: string }
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to fetch CRM data.')
+      }
+
+      const nextLeads = Array.isArray(data.leads) ? data.leads : []
+      const nextSelected = data.selectedPhone || phone || nextLeads[0]?.phone_number || ''
+
+      setLeads(nextLeads)
+      setSelectedPhone(nextSelected)
+      setMessages(Array.isArray(data.messages) ? data.messages : [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch CRM data.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!authed) return
+
+    fetchCrm()
+    const timer = window.setInterval(() => {
+      fetchCrm(selectedPhone)
+    }, 5000)
+
+    return () => window.clearInterval(timer)
+  }, [authed, selectedPhone])
+
+  const handleLogin = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (userId.trim() === ADMIN_ID && password === ADMIN_PASS) {
+      setAuthed(true)
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem(SESSION_KEY, 'ok')
+      }
+      setError('')
+      return
+    }
+
+    setError('Invalid admin credentials.')
+  }
+
+  const handleSend = async () => {
+    const text = draft.trim()
+    if (!selectedPhone || !text || sending) return
+
+    setSending(true)
+    setError('')
+    setWarning('')
+
+    try {
+      const response = await fetch('/api/whatsapp/crm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone_number: selectedPhone, text }),
+      })
+
+      const data = (await response.json().catch(() => ({}))) as { error?: string; requires_template?: boolean }
+      if (!response.ok) {
+        if (response.status === 409 && data.requires_template) {
+          setWarning(data.error || 'Last user message is older than 24 hours. Use a template.')
+          return
+        }
+        throw new Error(data.error || 'Failed to send message.')
+      }
+
+      setDraft('')
+      await fetchCrm(selectedPhone)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send message.')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const updateStage = async (nextStage: string) => {
+    if (!selectedPhone || updatingStage) return
+
+    setUpdatingStage(true)
+    setError('')
+
+    try {
+      const response = await fetch('/api/whatsapp/crm', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone_number: selectedPhone, current_stage: nextStage }),
+      })
+
+      const data = (await response.json().catch(() => ({}))) as { error?: string }
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to update stage.')
+      }
+
+      await fetchCrm(selectedPhone)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update stage.')
+    } finally {
+      setUpdatingStage(false)
+    }
+  }
+
+  if (!authed) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4" style={{ background: BG }}>
+        <form onSubmit={handleLogin} className="w-full max-w-sm rounded-2xl border p-6 shadow-sm" style={{ borderColor: '#D7E4E0', background: '#FFFFFF' }}>
+          <h1 className="text-xl font-semibold" style={{ color: SEA_GREEN }}>
+            CLAUX CRM Access
+          </h1>
+          <p className="text-sm mt-1 mb-5" style={{ color: '#4B5563' }}>
+            Enter war room credentials
+          </p>
+
+          <div className="space-y-3">
+            <input
+              value={userId}
+              onChange={(e) => setUserId(e.target.value)}
+              placeholder="Admin ID"
+              className="w-full rounded-lg border px-3 py-2 text-sm outline-none"
+              style={{ borderColor: '#D1D5DB' }}
+            />
+            <input
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password"
+              type="password"
+              className="w-full rounded-lg border px-3 py-2 text-sm outline-none"
+              style={{ borderColor: '#D1D5DB' }}
+            />
+          </div>
+
+          {error && (
+            <p className="text-sm mt-3" style={{ color: HOT_ORANGE }}>
+              {error}
+            </p>
+          )}
+
+          <button type="submit" className="w-full mt-5 rounded-lg py-2.5 text-sm font-semibold text-white" style={{ background: SEA_GREEN }}>
+            Enter CRM
+          </button>
+        </form>
+      </div>
+    )
+  }
+
+  return (
+    <div className="h-screen flex" style={{ background: BG }}>
+      <aside className="w-full max-w-sm border-r flex flex-col" style={{ borderColor: '#E2E8F0', background: '#FFFFFF' }}>
+        <div className="px-4 py-4 border-b" style={{ borderColor: '#E2E8F0' }}>
+          <h2 className="text-base font-semibold" style={{ color: SEA_GREEN }}>
+            CLAUX CRM
+          </h2>
+          <p className="text-xs" style={{ color: '#6B7280' }}>
+            Leads ({leads.length})
+          </p>
+        </div>
+
+        <div className="overflow-y-auto flex-1">
+          {leads.map((lead) => {
+            const active = selectedPhone === lead.phone_number
+            const isHot = (lead.current_stage || '').toLowerCase().includes('hot')
+
+            return (
+              <button
+                key={lead.phone_number}
+                onClick={() => setSelectedPhone(lead.phone_number)}
+                className="w-full text-left px-4 py-3 border-b"
+                style={{
+                  borderColor: '#F1F5F9',
+                  background: active ? '#E7F7EF' : '#FFFFFF',
+                }}
+              >
+                <p className="text-sm font-semibold" style={{ color: '#111827' }}>
+                  {lead.phone_number}
+                </p>
+                <div className="flex items-center justify-between mt-1">
+                  <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: isHot ? '#FFE8CC' : '#DFF6E8', color: isHot ? HOT_ORANGE : SEA_GREEN }}>
+                    {lead.current_stage || 'unknown'}
+                  </span>
+                  <span className="text-[11px]" style={{ color: '#6B7280' }}>
+                    {fmtDate(lead.last_interaction_at)}
+                  </span>
+                </div>
+              </button>
+            )
+          })}
+
+          {!leads.length && (
+            <p className="px-4 py-6 text-sm" style={{ color: '#6B7280' }}>
+              No leads found yet.
+            </p>
+          )}
+        </div>
+      </aside>
+
+      <main className="flex-1 flex flex-col">
+        <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: '#E2E8F0', background: '#FFFFFF' }}>
+          <div>
+            <h3 className="font-semibold" style={{ color: SEA_GREEN }}>
+              {selectedLead?.full_name || selectedPhone || 'Select a lead'}
+            </h3>
+            <p className="text-xs" style={{ color: '#6B7280' }}>
+              {selectedLead?.phone_number || ''}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => updateStage('Hot')}
+              disabled={!selectedPhone || updatingStage}
+              className="px-3 py-1.5 text-xs rounded-lg text-white disabled:opacity-50"
+              style={{ background: HOT_ORANGE }}
+            >
+              Mark Hot
+            </button>
+            <button
+              onClick={() => updateStage('Converted')}
+              disabled={!selectedPhone || updatingStage}
+              className="px-3 py-1.5 text-xs rounded-lg text-white disabled:opacity-50"
+              style={{ background: SEA_GREEN }}
+            >
+              Mark Converted
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+          {messages.map((message, idx) => {
+            const outbound = message.direction === 'outbound'
+            const text = message.message_body || (message.template_name ? `Template: ${message.template_name}` : '[No content]')
+
+            return (
+              <div key={`${message.id ?? idx}-${message.created_at ?? ''}`} className={`flex ${outbound ? 'justify-end' : 'justify-start'}`}>
+                <div
+                  className="max-w-[70%] rounded-2xl px-3 py-2 text-sm"
+                  style={{
+                    background: outbound ? WA_GREEN : '#FFFFFF',
+                    color: outbound ? '#FFFFFF' : '#0F172A',
+                    border: outbound ? 'none' : '1px solid #E2E8F0',
+                  }}
+                >
+                  <p>{text}</p>
+                  <p className="text-[10px] mt-1 opacity-80">{fmtDate(message.created_at)}</p>
+                </div>
+              </div>
+            )
+          })}
+
+          {!messages.length && (
+            <p className="text-sm" style={{ color: '#6B7280' }}>
+              No messages yet.
+            </p>
+          )}
+        </div>
+
+        <div className="border-t px-5 py-3" style={{ borderColor: '#E2E8F0', background: '#FFFFFF' }}>
+          {warning && (
+            <p className="text-xs mb-2" style={{ color: HOT_ORANGE }}>
+              {warning}
+            </p>
+          )}
+          {error && (
+            <p className="text-xs mb-2" style={{ color: '#DC2626' }}>
+              {error}
+            </p>
+          )}
+
+          <div className="flex items-end gap-2">
+            <div className="relative">
+              <button
+                onClick={() => setShowEmojiPicker((prev) => !prev)}
+                className="h-10 w-10 rounded-lg border text-lg"
+                style={{ borderColor: '#D1D5DB', background: '#FFFFFF' }}
+                type="button"
+              >
+                🙂
+              </button>
+              {showEmojiPicker && (
+                <div className="absolute bottom-12 left-0 rounded-lg border p-2 grid grid-cols-4 gap-1 shadow-sm" style={{ borderColor: '#E5E7EB', background: '#FFFFFF' }}>
+                  {QUICK_EMOJIS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => {
+                        setDraft((prev) => `${prev}${emoji}`)
+                        setShowEmojiPicker(false)
+                      }}
+                      className="h-8 w-8 rounded hover:bg-slate-100"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Type message..."
+              rows={2}
+              className="flex-1 rounded-lg border px-3 py-2 text-sm outline-none resize-none"
+              style={{ borderColor: '#D1D5DB' }}
+            />
+
+            <button
+              onClick={handleSend}
+              disabled={!selectedPhone || !draft.trim() || sending}
+              className="h-10 px-4 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
+              style={{ background: SEA_GREEN }}
+              type="button"
+            >
+              {sending ? 'Sending…' : 'Send'}
+            </button>
+          </div>
+
+          <div className="mt-2 flex items-center justify-between">
+            <p className="text-[11px]" style={{ color: '#6B7280' }}>
+              Sends as text only if user messaged in last 24h.
+            </p>
+            {loading && (
+              <p className="text-[11px]" style={{ color: SEA_GREEN }}>
+                Refreshing…
+              </p>
+            )}
+          </div>
+        </div>
+      </main>
+    </div>
+  )
+}
