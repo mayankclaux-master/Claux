@@ -28,6 +28,33 @@ type WhatsAppTextSendInput = {
   text: string
 }
 
+export type MetaTemplateOption = {
+  id?: string
+  name: string
+  language?: string
+  category?: string
+  previewText?: string
+}
+
+type MetaTemplateComponent = {
+  type?: string
+  text?: string
+}
+
+type MetaTemplateRecord = {
+  id?: string
+  name?: string
+  language?: string
+  category?: string
+  status?: string
+  components?: MetaTemplateComponent[]
+}
+
+function hasTemplateVariables(text: string | undefined): boolean {
+  const value = String(text ?? '')
+  return /\{\{\d+\}\}/.test(value)
+}
+
 export async function sendWhatsAppTemplate({
   to,
   templateName,
@@ -71,6 +98,55 @@ export async function sendWhatsAppTemplate({
   }
 
   return data
+}
+
+export async function fetchApprovedWhatsAppTemplates(): Promise<MetaTemplateOption[]> {
+  const token = process.env.WHATSAPP_TOKEN
+  const businessId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID ?? process.env.WHATSAPP_BUSINESS_ID
+
+  if (!token || !businessId) {
+    throw new Error('Missing WhatsApp configuration: WHATSAPP_TOKEN or WHATSAPP_BUSINESS_ACCOUNT_ID')
+  }
+
+  const response = await fetch(
+    `https://graph.facebook.com/v21.0/${businessId}/message_templates?fields=id,name,language,category,status,components&limit=200`,
+    {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      cache: 'no-store',
+    }
+  )
+
+  const data = (await response.json().catch(() => ({}))) as {
+    data?: MetaTemplateRecord[]
+    error?: MetaError
+  }
+
+  if (!response.ok) {
+    const reason = data?.error?.message || 'Unknown Meta API error'
+    throw new Error(`Meta template list fetch failed: ${reason}`)
+  }
+
+  const templates = Array.isArray(data.data) ? data.data : []
+
+  return templates
+    .filter((template) => String(template.status ?? '').toUpperCase() === 'APPROVED')
+    .map((template) => {
+      const components = Array.isArray(template.components) ? template.components : []
+      const bodyText = components.find((component) => String(component.type ?? '').toUpperCase() === 'BODY')?.text
+
+      return {
+        id: template.id,
+        name: String(template.name ?? '').trim(),
+        language: template.language,
+        category: template.category,
+        previewText: String(bodyText ?? '').trim() || undefined,
+      }
+    })
+    .filter((template) => template.name)
+    .filter((template) => !hasTemplateVariables(template.previewText))
 }
 
 export async function sendWhatsAppText({ to, text }: WhatsAppTextSendInput): Promise<MetaSendResponse> {

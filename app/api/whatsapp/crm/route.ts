@@ -1,9 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { sendWhatsAppText } from '@/lib/whatsapp/meta-api'
+import { fetchApprovedWhatsAppTemplates, sendWhatsAppTemplate, sendWhatsAppText } from '@/lib/whatsapp/meta-api'
 
 const LEADS_TABLE = 'wa_seo_leads'
 const LOGS_TABLE = 'wa_seo_logs'
+const QUICK_REPLIES_TABLE = 'wa_quick_replies'
 
 type LeadRow = {
   phone_number: string
@@ -31,6 +32,12 @@ type LogRow = {
   created_at?: string | null
 }
 
+type QuickReplyItem = {
+  id: string
+  label: string
+  content: string
+}
+
 function makeDb() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -44,6 +51,19 @@ function makeDb() {
 
 function normalizePhone(input: unknown): string {
   return String(input ?? '').trim()
+}
+
+function normalizeQuickReply(row: Record<string, unknown>, index: number): QuickReplyItem | null {
+  const label = String(row.shortcut ?? row.label ?? row.title ?? row.name ?? '').trim()
+  const content = String(row.content ?? row.body ?? row.text ?? row.message ?? '').trim()
+
+  if (!content) return null
+
+  return {
+    id: String(row.id ?? `quick-${index}`),
+    label: label || content.slice(0, 40),
+    content,
+  }
 }
 
 function isInboundButtonClick(log: LogRow): boolean {
@@ -68,6 +88,30 @@ export async function GET(request: Request): Promise<NextResponse> {
 
   const { searchParams } = new URL(request.url)
   const selectedPhone = normalizePhone(searchParams.get('phone'))
+  const mode = String(searchParams.get('mode') ?? '').trim().toLowerCase()
+
+  if (mode === 'quick_replies') {
+    const { data, error } = await db.from(QUICK_REPLIES_TABLE).select('*').limit(100)
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    const quickReplies = (Array.isArray(data) ? data : [])
+      .map((row, index) => normalizeQuickReply((row ?? {}) as Record<string, unknown>, index))
+      .filter((row): row is QuickReplyItem => Boolean(row))
+
+    return NextResponse.json({ quickReplies })
+  }
+
+  if (mode === 'templates') {
+    try {
+      const templates = await fetchApprovedWhatsAppTemplates()
+      return NextResponse.json({ templates })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to fetch templates.'
+      return NextResponse.json({ error: message }, { status: 500 })
+    }
+  }
 
   const [leadsResult, logsResult] = await Promise.all([
     db.from(LEADS_TABLE).select('phone_number, current_stage, full_name'),
@@ -142,12 +186,52 @@ export async function POST(request: Request): Promise<NextResponse> {
   const db = makeDb()
   if (!db) return NextResponse.json({ error: 'Server configuration missing.' }, { status: 500 })
 
-  const body = (await request.json().catch(() => ({}))) as { phone_number?: string; text?: string }
+  const body = (await request.json().catch(() => ({}))) as {
+    phone_number?: string
+    text?: string
+    type?: 'text' | 'template'
+    template_name?: string
+    language_code?: string
+  }
   const phoneNumber = normalizePhone(body.phone_number)
   const text = String(body.text ?? '').trim()
+  const messageType = String(body.type ?? 'text').trim().toLowerCase()
+  const templateName = String(body.template_name ?? '').trim()
+  const languageCode = String(body.language_code ?? '').trim() || 'en'
 
-  if (!phoneNumber || !text) {
-    return NextResponse.json({ error: 'phone_number and text are required.' }, { status: 400 })
+  if (!phoneNumber) {
+    return NextResponse.json({ error: 'phone_number is required.' }, { status: 400 })
+  }
+
+  if (messageType !== 'text' && messageType !== 'template') {
+    return NextResponse.json({ error: 'type must be text or template.' }, { status: 400 })
+  }
+
+  if (messageType === 'template') {
+    if (!templateName) {
+      return NextResponse.json({ error: 'template_name is required for type=template.' }, { status: 400 })
+    }
+
+    const metaResponse = await sendWhatsAppTemplate({
+      to: phoneNumber,
+      templateName,
+      languageCode,
+    })
+
+    await db.from(LOGS_TABLE).insert({
+      wa_id: phoneNumber,
+      direction: 'outbound',
+      message_body: null,
+      template_name: templateName,
+      payload: metaResponse,
+      lead_phone: phoneNumber,
+    })
+
+    return NextResponse.json({ success: true, sent_type: 'template', metaResponse })
+  }
+
+  if (!text) {
+    return NextResponse.json({ error: 'text is required for type=text.' }, { status: 400 })
   }
 
   const { data: lastInbound, error: inboundError } = await db
@@ -198,7 +282,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     lead_phone: phoneNumber,
   })
 
-  return NextResponse.json({ success: true, metaResponse })
+  return NextResponse.json({ success: true, sent_type: 'text', metaResponse })
 }
 
 export async function PATCH(request: Request): Promise<NextResponse> {

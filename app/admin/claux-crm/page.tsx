@@ -1,6 +1,7 @@
 'use client'
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import QuickRepliesMenu from '@/components/QuickRepliesMenu'
 
 type LeadItem = {
   phone_number: string
@@ -23,6 +24,20 @@ type CrmResponse = {
   leads: LeadItem[]
   selectedPhone: string
   messages: MessageItem[]
+}
+
+type QuickReplyItem = {
+  id: string
+  label: string
+  content: string
+}
+
+type TemplateItem = {
+  id?: string
+  name: string
+  language?: string
+  category?: string
+  previewText?: string
 }
 
 const ADMIN_ID = 'mayank_admin'
@@ -133,9 +148,18 @@ export default function ClauxCrmPage() {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [emojiPopoverPos, setEmojiPopoverPos] = useState<{ top: number; left: number } | null>(null)
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false)
+  const [templatePopoverPos, setTemplatePopoverPos] = useState<{ top: number; left: number } | null>(null)
+
+  const [quickReplies, setQuickReplies] = useState<QuickReplyItem[]>([])
+  const [templates, setTemplates] = useState<TemplateItem[]>([])
+  const [templatesLoading, setTemplatesLoading] = useState(false)
+  const [selectedTemplate, setSelectedTemplate] = useState<TemplateItem | null>(null)
 
   const emojiTriggerRef = useRef<HTMLButtonElement | null>(null)
   const emojiPopoverRef = useRef<HTMLDivElement | null>(null)
+  const templateTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const templatePopoverRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -144,6 +168,24 @@ export default function ClauxCrmPage() {
   }, [])
 
   const selectedLead = useMemo(() => leads.find((lead) => lead.phone_number === selectedPhone) ?? null, [leads, selectedPhone])
+
+  const quickReplyQuery = useMemo(() => {
+    const value = draft.trimStart()
+    if (!value.startsWith('/')) return null
+    return value.slice(1).trim().toLowerCase()
+  }, [draft])
+
+  const filteredQuickReplies = useMemo(() => {
+    if (quickReplyQuery === null) return []
+    if (!quickReplyQuery) return quickReplies.slice(0, 8)
+
+    return quickReplies
+      .filter((item) => {
+        const target = `${item.label} ${item.content}`.toLowerCase()
+        return target.includes(quickReplyQuery)
+      })
+      .slice(0, 8)
+  }, [quickReplyQuery, quickReplies])
 
   const fetchCrm = async (phone = selectedPhone) => {
     setLoading(true)
@@ -171,6 +213,39 @@ export default function ClauxCrmPage() {
     }
   }
 
+  const toggleTemplatePicker = async () => {
+    if (showTemplatePicker) {
+      setShowTemplatePicker(false)
+      return
+    }
+
+    const rect = templateTriggerRef.current?.getBoundingClientRect()
+    if (rect) {
+      setTemplatePopoverPos({
+        top: Math.max(12, rect.top - 320),
+        left: Math.max(12, rect.left - 180),
+      })
+    }
+
+    setShowTemplatePicker(true)
+
+    if (templates.length) return
+
+    setTemplatesLoading(true)
+    try {
+      const response = await fetch('/api/whatsapp/crm?mode=templates', { cache: 'no-store' })
+      const data = (await response.json().catch(() => ({}))) as { templates?: TemplateItem[]; error?: string }
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to fetch templates')
+      }
+      setTemplates(Array.isArray(data.templates) ? data.templates : [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch templates')
+    } finally {
+      setTemplatesLoading(false)
+    }
+  }
+
   useEffect(() => {
     if (!authed) return
 
@@ -183,18 +258,41 @@ export default function ClauxCrmPage() {
   }, [authed, selectedPhone])
 
   useEffect(() => {
-    if (!showEmojiPicker) return
+    if (!authed) return
+
+    const fetchQuickReplies = async () => {
+      try {
+        const response = await fetch('/api/whatsapp/crm?mode=quick_replies', { cache: 'no-store' })
+        const data = (await response.json().catch(() => ({}))) as { quickReplies?: QuickReplyItem[] }
+        if (!response.ok) return
+        setQuickReplies(Array.isArray(data.quickReplies) ? data.quickReplies : [])
+      } catch {
+      }
+    }
+
+    fetchQuickReplies()
+  }, [authed])
+
+  useEffect(() => {
+    if (!showEmojiPicker && !showTemplatePicker) return
 
     const onPointerDown = (event: MouseEvent) => {
       const target = event.target as Node
-      if (emojiPopoverRef.current?.contains(target)) return
-      if (emojiTriggerRef.current?.contains(target)) return
+
+      const inEmojiPopover = emojiPopoverRef.current?.contains(target)
+      const inEmojiTrigger = emojiTriggerRef.current?.contains(target)
+      const inTemplatePopover = templatePopoverRef.current?.contains(target)
+      const inTemplateTrigger = templateTriggerRef.current?.contains(target)
+
+      if (inEmojiPopover || inEmojiTrigger || inTemplatePopover || inTemplateTrigger) return
+
       setShowEmojiPicker(false)
+      setShowTemplatePicker(false)
     }
 
     window.addEventListener('mousedown', onPointerDown)
     return () => window.removeEventListener('mousedown', onPointerDown)
-  }, [showEmojiPicker])
+  }, [showEmojiPicker, showTemplatePicker])
 
   const filteredLeads = useMemo(() => {
     const query = searchQuery.trim()
@@ -231,22 +329,37 @@ export default function ClauxCrmPage() {
 
   const handleSend = async () => {
     const text = draft.trim()
-    if (!selectedPhone || !text || sending) return
+    const templateToSend = selectedTemplate
+    if (!selectedPhone || sending) return
+    if (!templateToSend && !text) return
 
     setSending(true)
     setError('')
     setWarning('')
 
     try {
+      const payload = templateToSend
+        ? {
+            phone_number: selectedPhone,
+            type: 'template',
+            template_name: templateToSend.name,
+            language_code: templateToSend.language || 'en',
+          }
+        : {
+            phone_number: selectedPhone,
+            type: 'text',
+            text,
+          }
+
       const response = await fetch('/api/whatsapp/crm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone_number: selectedPhone, text }),
+        body: JSON.stringify(payload),
       })
 
       const data = (await response.json().catch(() => ({}))) as { error?: string; requires_template?: boolean }
       if (!response.ok) {
-        if (response.status === 409 && data.requires_template) {
+        if (!templateToSend && response.status === 409 && data.requires_template) {
           setWarning(data.error || 'Last user message is older than 24 hours. Use a template.')
           return
         }
@@ -254,6 +367,8 @@ export default function ClauxCrmPage() {
       }
 
       setDraft('')
+      setSelectedTemplate(null)
+      setShowTemplatePicker(false)
       await fetchCrm(selectedPhone)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send message.')
@@ -481,8 +596,38 @@ export default function ClauxCrmPage() {
             </p>
           )}
 
-          <div className="flex items-end gap-2">
-            <div className="relative">
+          {selectedTemplate && (
+            <div className="mb-2 rounded-lg border px-3 py-2" style={{ borderColor: '#CFE8E1', background: '#F7FCFA' }}>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold" style={{ color: SEA_GREEN }}>
+                  Template Preview: {selectedTemplate.name}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setSelectedTemplate(null)}
+                  className="text-xs"
+                  style={{ color: '#6B7280' }}
+                >
+                  Clear
+                </button>
+              </div>
+              <p className="text-xs mt-1" style={{ color: '#4B5563' }}>
+                {selectedTemplate.previewText || 'Template message will be sent as approved in Meta.'}
+              </p>
+            </div>
+          )}
+
+          <div className="relative">
+            <QuickRepliesMenu
+              open={quickReplyQuery !== null}
+              items={filteredQuickReplies}
+              onSelect={(item) => {
+                setDraft(item.content)
+              }}
+            />
+
+            <div className="flex items-end gap-2 rounded-xl border p-2" style={{ borderColor: '#D7E4E0', background: '#FFFFFF' }}>
+              <div className="relative">
               <button
                 ref={emojiTriggerRef}
                 onClick={() => {
@@ -535,24 +680,94 @@ export default function ClauxCrmPage() {
               )}
             </div>
 
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="Type message..."
-              rows={2}
-              className="flex-1 rounded-lg border px-3 py-2 text-sm outline-none resize-none"
-              style={{ borderColor: '#D1D5DB' }}
-            />
+              <div className="relative">
+                <button
+                  ref={templateTriggerRef}
+                  onClick={toggleTemplatePicker}
+                  className="h-10 w-10 rounded-lg border text-base"
+                  style={{ borderColor: '#D1D5DB', background: '#FFFFFF' }}
+                  type="button"
+                  title="Send Template"
+                >
+                  📄
+                </button>
+                {showTemplatePicker && (
+                  <div
+                    ref={templatePopoverRef}
+                    className="fixed w-80 rounded-lg border shadow-sm"
+                    style={{
+                      borderColor: '#E5E7EB',
+                      background: '#FFFFFF',
+                      top: templatePopoverPos?.top ?? 12,
+                      left: templatePopoverPos?.left ?? 12,
+                      zIndex: 85,
+                    }}
+                  >
+                    <div className="px-3 py-2 border-b" style={{ borderColor: '#E5E7EB' }}>
+                      <p className="text-xs font-semibold" style={{ color: SEA_GREEN }}>
+                        Approved Templates
+                      </p>
+                      <p className="text-[11px]" style={{ color: '#6B7280' }}>
+                        Showing templates without variables.
+                      </p>
+                    </div>
+                    <div className="max-h-72 overflow-y-auto p-1">
+                      {templatesLoading && (
+                        <p className="px-2 py-2 text-xs" style={{ color: '#6B7280' }}>
+                          Loading templates...
+                        </p>
+                      )}
+                      {!templatesLoading && !templates.length && (
+                        <p className="px-2 py-2 text-xs" style={{ color: '#6B7280' }}>
+                          No eligible templates found.
+                        </p>
+                      )}
+                      {!templatesLoading &&
+                        templates.map((template) => (
+                          <button
+                            key={`${template.id ?? template.name}-${template.language ?? ''}`}
+                            type="button"
+                            onClick={() => {
+                              setSelectedTemplate(template)
+                              setShowTemplatePicker(false)
+                            }}
+                            className="w-full text-left rounded-md px-2 py-2 hover:bg-slate-50"
+                          >
+                            <p className="text-xs font-semibold" style={{ color: '#0F172A' }}>
+                              {template.name}
+                            </p>
+                            <p className="text-[11px]" style={{ color: '#6B7280' }}>
+                              {(template.category || 'UTILITY').toUpperCase()} • {(template.language || 'en').toLowerCase()}
+                            </p>
+                            <p className="text-[11px] mt-0.5 truncate" style={{ color: '#4B5563' }}>
+                              {template.previewText || 'No preview text'}
+                            </p>
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </div>
 
-            <button
-              onClick={handleSend}
-              disabled={!selectedPhone || !draft.trim() || sending}
-              className="h-10 px-4 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
-              style={{ background: SEA_GREEN }}
-              type="button"
-            >
-              {sending ? 'Sending…' : 'Send'}
-            </button>
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder="Type message... (use / for quick replies)"
+                rows={2}
+                className="flex-1 rounded-lg border px-3 py-2 text-sm outline-none resize-none"
+                style={{ borderColor: '#D1D5DB' }}
+              />
+
+              <button
+                onClick={handleSend}
+                disabled={!selectedPhone || (!draft.trim() && !selectedTemplate) || sending}
+                className="h-10 px-4 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
+                style={{ background: SEA_GREEN }}
+                type="button"
+              >
+                {sending ? 'Sending…' : selectedTemplate ? 'Send Template' : 'Send'}
+              </button>
+            </div>
           </div>
 
           <div className="mt-2 flex items-center justify-between">
