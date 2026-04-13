@@ -105,6 +105,7 @@ export async function GET(request: Request): Promise<NextResponse> {
 
   if (mode === 'templates') {
     try {
+      console.log('API KEY CHECK:', !!process.env.WHATSAPP_TOKEN)
       const token = process.env.WHATSAPP_TOKEN
       const businessAccountId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID
       if (!token || !businessAccountId) {

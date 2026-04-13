@@ -40,6 +40,8 @@ type TemplateItem = {
   previewText?: string
 }
 
+type LeadFilterKey = 'all' | 'hot' | 'new' | 'pipeline' | 'action' | 'converted'
+
 const ADMIN_ID = 'mayank_admin'
 const ADMIN_PASS = 'claux_war_room_2026'
 const SESSION_KEY = 'claux_crm_session'
@@ -50,6 +52,21 @@ const WA_GREEN = '#25D366'
 const HOT_ORANGE = '#FF8C00'
 
 const QUICK_EMOJIS = ['😀', '👍', '🔥', '✅', '💬', '🚀', '🙂', '🎯']
+
+const FILTER_PILLS: Array<{
+  key: LeadFilterKey
+  label: string
+  accent: string
+  background: string
+  border: string
+}> = [
+  { key: 'all', label: 'All', accent: '#334155', background: '#F8FAFC', border: '#E2E8F0' },
+  { key: 'hot', label: 'Hot (5+ clicks)', accent: '#C2410C', background: '#FFF7ED', border: '#FED7AA' },
+  { key: 'new', label: 'New (Welcome)', accent: '#1D4ED8', background: '#EFF6FF', border: '#BFDBFE' },
+  { key: 'pipeline', label: 'Pipeline (Demo/Offer)', accent: '#C2410C', background: '#FFF7ED', border: '#FED7AA' },
+  { key: 'action', label: 'Action (Human Handoff)', accent: '#B91C1C', background: '#FEF2F2', border: '#FECACA' },
+  { key: 'converted', label: 'Converted', accent: '#15803D', background: '#F0FDF4', border: '#BBF7D0' },
+]
 
 function fmtDate(value: string | null | undefined): string {
   if (!value) return 'No activity yet'
@@ -147,6 +164,7 @@ export default function ClauxCrmPage() {
   const [updatingStage, setUpdatingStage] = useState(false)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [activeFilter, setActiveFilter] = useState<LeadFilterKey>('all')
   const [emojiPopoverPos, setEmojiPopoverPos] = useState<{ top: number; left: number } | null>(null)
   const [showTemplatePicker, setShowTemplatePicker] = useState(false)
   const [templatePopoverPos, setTemplatePopoverPos] = useState<{ top: number; left: number } | null>(null)
@@ -295,23 +313,35 @@ export default function ClauxCrmPage() {
   }, [showEmojiPicker, showTemplatePicker])
 
   const filteredLeads = useMemo(() => {
-    const query = searchQuery.trim()
+    const query = searchQuery.trim().toLowerCase()
+    const byFilter = leads.filter((lead) => {
+      const stage = String(lead.current_stage ?? '').trim().toLowerCase()
+      const hot = (lead.button_click_count || 0) >= 5
+
+      if (activeFilter === 'hot') return hot
+      if (activeFilter === 'new') return stage === 'welcome'
+      if (activeFilter === 'pipeline') return stage === 'demo_sent' || stage === 'offer_sent'
+      if (activeFilter === 'action') return stage === 'human_handoff'
+      if (activeFilter === 'converted') return stage === 'converted'
+      return true
+    })
+
     const filtered = query
-      ? leads.filter((lead) => lead.phone_number.toLowerCase().includes(query.toLowerCase()))
-      : leads
+      ? byFilter.filter((lead) => {
+          const phone = lead.phone_number.toLowerCase()
+          const name = String(lead.full_name ?? '').toLowerCase()
+          return phone.includes(query) || name.includes(query)
+        })
+      : byFilter
 
     return [...filtered].sort((a, b) => {
-      const aHot = (a.interaction_count || 0) > 5 ? 1 : 0
-      const bHot = (b.interaction_count || 0) > 5 ? 1 : 0
-      if (aHot !== bHot) return bHot - aHot
-
       const aTime = a.last_interaction_at ? new Date(a.last_interaction_at).getTime() : 0
       const bTime = b.last_interaction_at ? new Date(b.last_interaction_at).getTime() : 0
       if (aTime !== bTime) return bTime - aTime
 
       return (b.interaction_count || 0) - (a.interaction_count || 0)
     })
-  }, [leads, searchQuery])
+  }, [leads, searchQuery, activeFilter])
 
   const handleLogin = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -463,12 +493,32 @@ export default function ClauxCrmPage() {
             className="mt-3 w-full rounded-lg border px-3 py-2 text-xs outline-none"
             style={{ borderColor: '#D1D5DB' }}
           />
+          <div className="mt-3 flex flex-wrap gap-2">
+            {FILTER_PILLS.map((pill) => {
+              const active = activeFilter === pill.key
+              return (
+                <button
+                  key={pill.key}
+                  type="button"
+                  onClick={() => setActiveFilter(pill.key)}
+                  className="rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors"
+                  style={{
+                    color: active ? '#FFFFFF' : pill.accent,
+                    background: active ? pill.accent : pill.background,
+                    borderColor: active ? pill.accent : pill.border,
+                  }}
+                >
+                  {pill.label}
+                </button>
+              )
+            })}
+          </div>
         </div>
 
         <div className="overflow-y-auto flex-1">
           {filteredLeads.map((lead) => {
             const active = selectedPhone === lead.phone_number
-            const hasHighInteractions = (lead.interaction_count || 0) > 5
+            const hasHighInteractions = (lead.button_click_count || 0) >= 5
             const displayName = lead.full_name || lead.phone_number
             const stageBadge = getStageBadge(lead.current_stage)
 
