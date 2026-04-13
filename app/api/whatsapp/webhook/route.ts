@@ -28,6 +28,7 @@ type InboundContact = {
 type WebhookMessageEvent = {
   message: InboundMessage
   profileName?: string
+  valuePayload?: unknown
 }
 
 const LEADS_TABLE = 'wa_seo_leads'
@@ -120,6 +121,8 @@ async function ensureLeadAndStage(
   fullName?: string
 ): Promise<void> {
   const trimmedFullName = String(fullName ?? '').trim()
+  console.log('Final Name Check:', trimmedFullName || null)
+
   const upsertPayload: Record<string, unknown> = {
     phone_number: waId,
     current_stage: stage,
@@ -137,6 +140,13 @@ async function ensureLeadAndStage(
 
     if (upsertError) {
       console.error('[whatsapp-webhook] Failed to upsert lead stage:', upsertError)
+    }
+
+    if (trimmedFullName) {
+      const { error: forceNameError } = await db.from(LEADS_TABLE).update({ full_name: trimmedFullName }).eq('phone_number', waId)
+      if (forceNameError) {
+        console.error('[whatsapp-webhook] Failed force-updating lead name:', forceNameError)
+      }
     }
   } catch (error) {
     console.error('[whatsapp-webhook] Lead stage update threw error:', error)
@@ -165,7 +175,9 @@ function getWebhookMessages(body: any): WebhookMessageEvent[] {
     const changes = Array.isArray(entry?.changes) ? entry.changes : []
     for (const change of changes) {
       const contacts = Array.isArray(change?.value?.contacts) ? (change.value.contacts as InboundContact[]) : []
+      const firstContactName = String(contacts[0]?.profile?.name ?? '').trim()
       const profileNameByWaId = new Map<string, string>()
+      const valuePayload = change?.value ?? null
 
       for (const contact of contacts) {
         const waId = String(contact?.wa_id ?? '').trim()
@@ -178,11 +190,12 @@ function getWebhookMessages(body: any): WebhookMessageEvent[] {
       for (const message of incoming) {
         const inbound = message as InboundMessage
         const fromWaId = String(inbound.from ?? '').trim()
-        const profileName = profileNameByWaId.get(fromWaId)
+        const profileName = profileNameByWaId.get(fromWaId) || firstContactName || undefined
 
         messages.push({
           message: inbound,
           profileName,
+          valuePayload,
         })
       }
     }
@@ -238,7 +251,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   const events = getWebhookMessages(body)
 
   for (const event of events) {
-    const { message, profileName } = event
+    const { message, profileName, valuePayload } = event
     const waId = String(message.from ?? '').trim()
     if (!waId) continue
 
@@ -253,7 +266,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       waId,
       direction: 'inbound',
       messageText: inboundText,
-      payloadData: message,
+      payloadData: valuePayload ?? message,
     })
 
     const { data: lead } = await db
