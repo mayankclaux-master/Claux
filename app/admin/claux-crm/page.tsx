@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 
 type LeadItem = {
   phone_number: string
@@ -98,6 +98,22 @@ function messagePreview(message: MessageItem): string {
   return '[No inbound text]'
 }
 
+function getStageBadge(stage: string | null | undefined): { label: string; background: string; color: string } {
+  const normalized = String(stage ?? '').trim().toLowerCase()
+
+  if (normalized === 'welcome') return { label: 'welcome', background: '#DBEAFE', color: '#1D4ED8' }
+  if (normalized === 'demo_sent') return { label: 'demo_sent', background: '#F3E8FF', color: '#7E22CE' }
+  if (normalized === 'offer_sent') return { label: 'offer_sent', background: '#FFEDD5', color: '#C2410C' }
+  if (normalized === 'converted') return { label: 'converted', background: '#DCFCE7', color: '#15803D' }
+  if (normalized === 'human_handoff') return { label: 'human_handoff', background: '#FEE2E2', color: '#B91C1C' }
+
+  return {
+    label: normalized || 'unknown',
+    background: '#E6F4EE',
+    color: SEA_GREEN,
+  }
+}
+
 export default function ClauxCrmPage() {
   const [userId, setUserId] = useState('')
   const [password, setPassword] = useState('')
@@ -115,6 +131,11 @@ export default function ClauxCrmPage() {
   const [sending, setSending] = useState(false)
   const [updatingStage, setUpdatingStage] = useState(false)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [emojiPopoverPos, setEmojiPopoverPos] = useState<{ top: number; left: number } | null>(null)
+
+  const emojiTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const emojiPopoverRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -160,6 +181,39 @@ export default function ClauxCrmPage() {
 
     return () => window.clearInterval(timer)
   }, [authed, selectedPhone])
+
+  useEffect(() => {
+    if (!showEmojiPicker) return
+
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (emojiPopoverRef.current?.contains(target)) return
+      if (emojiTriggerRef.current?.contains(target)) return
+      setShowEmojiPicker(false)
+    }
+
+    window.addEventListener('mousedown', onPointerDown)
+    return () => window.removeEventListener('mousedown', onPointerDown)
+  }, [showEmojiPicker])
+
+  const filteredLeads = useMemo(() => {
+    const query = searchQuery.trim()
+    const filtered = query
+      ? leads.filter((lead) => lead.phone_number.toLowerCase().includes(query.toLowerCase()))
+      : leads
+
+    return [...filtered].sort((a, b) => {
+      const aHot = (a.interaction_count || 0) > 5 ? 1 : 0
+      const bHot = (b.interaction_count || 0) > 5 ? 1 : 0
+      if (aHot !== bHot) return bHot - aHot
+
+      const aTime = a.last_interaction_at ? new Date(a.last_interaction_at).getTime() : 0
+      const bTime = b.last_interaction_at ? new Date(b.last_interaction_at).getTime() : 0
+      if (aTime !== bTime) return bTime - aTime
+
+      return (b.interaction_count || 0) - (a.interaction_count || 0)
+    })
+  }, [leads, searchQuery])
 
   const handleLogin = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -285,16 +339,23 @@ export default function ClauxCrmPage() {
             CLAUX CRM
           </h2>
           <p className="text-xs" style={{ color: '#6B7280' }}>
-            Leads ({leads.length})
+            Leads ({filteredLeads.length})
           </p>
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by phone number"
+            className="mt-3 w-full rounded-lg border px-3 py-2 text-xs outline-none"
+            style={{ borderColor: '#D1D5DB' }}
+          />
         </div>
 
         <div className="overflow-y-auto flex-1">
-          {leads.map((lead) => {
+          {filteredLeads.map((lead) => {
             const active = selectedPhone === lead.phone_number
-            const isHot = (lead.current_stage || '').toLowerCase().includes('hot')
             const hasHighInteractions = (lead.interaction_count || 0) > 5
             const displayName = lead.full_name || lead.phone_number
+            const stageBadge = getStageBadge(lead.current_stage)
 
             return (
               <button
@@ -311,18 +372,18 @@ export default function ClauxCrmPage() {
                     {displayName}
                   </p>
                   <span
-                    className="text-[11px] px-2 py-0.5 rounded-full"
-                    style={{ background: '#E6F4EE', color: SEA_GREEN }}
+                    className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1 text-[10px] font-semibold"
+                    style={{ background: '#DCFCE7', color: SEA_GREEN }}
                   >
-                    {lead.interaction_count || 0} interactions
+                    {lead.interaction_count || 0}
                   </span>
                 </div>
                 <p className="text-xs mt-0.5" style={{ color: '#6B7280' }}>
                   {lead.phone_number}
                 </p>
                 <div className="flex items-center justify-between mt-1">
-                  <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: isHot ? '#FFE8CC' : '#DFF6E8', color: isHot ? HOT_ORANGE : SEA_GREEN }}>
-                    {lead.current_stage || 'unknown'}
+                  <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: stageBadge.background, color: stageBadge.color }}>
+                    {stageBadge.label}
                   </span>
                   <span className="text-[11px]" style={{ color: '#6B7280' }}>
                     {fmtDate(lead.last_interaction_at)}
@@ -332,9 +393,9 @@ export default function ClauxCrmPage() {
             )
           })}
 
-          {!leads.length && (
+          {!filteredLeads.length && (
             <p className="px-4 py-6 text-sm" style={{ color: '#6B7280' }}>
-              No leads found yet.
+              No matching leads.
             </p>
           )}
         </div>
@@ -423,7 +484,22 @@ export default function ClauxCrmPage() {
           <div className="flex items-end gap-2">
             <div className="relative">
               <button
-                onClick={() => setShowEmojiPicker((prev) => !prev)}
+                ref={emojiTriggerRef}
+                onClick={() => {
+                  if (showEmojiPicker) {
+                    setShowEmojiPicker(false)
+                    return
+                  }
+
+                  const rect = emojiTriggerRef.current?.getBoundingClientRect()
+                  if (rect) {
+                    setEmojiPopoverPos({
+                      top: Math.max(12, rect.top - 146),
+                      left: Math.max(12, rect.left),
+                    })
+                  }
+                  setShowEmojiPicker(true)
+                }}
                 className="h-10 w-10 rounded-lg border text-lg"
                 style={{ borderColor: '#D1D5DB', background: '#FFFFFF' }}
                 type="button"
@@ -431,7 +507,17 @@ export default function ClauxCrmPage() {
                 🙂
               </button>
               {showEmojiPicker && (
-                <div className="absolute bottom-12 left-0 rounded-lg border p-2 grid grid-cols-4 gap-1 shadow-sm" style={{ borderColor: '#E5E7EB', background: '#FFFFFF' }}>
+                <div
+                  ref={emojiPopoverRef}
+                  className="fixed rounded-lg border p-2 grid grid-cols-4 gap-1 shadow-sm"
+                  style={{
+                    borderColor: '#E5E7EB',
+                    background: '#FFFFFF',
+                    top: emojiPopoverPos?.top ?? 12,
+                    left: emojiPopoverPos?.left ?? 12,
+                    zIndex: 80,
+                  }}
+                >
                   {QUICK_EMOJIS.map((emoji) => (
                     <button
                       key={emoji}

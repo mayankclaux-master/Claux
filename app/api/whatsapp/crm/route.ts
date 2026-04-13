@@ -153,8 +153,8 @@ export async function POST(request: Request): Promise<NextResponse> {
   const { data: lastInbound, error: inboundError } = await db
     .from(LOGS_TABLE)
     .select('created_at')
-    .eq('lead_phone', phoneNumber)
     .eq('direction', 'inbound')
+    .or(`lead_phone.eq.${phoneNumber},wa_id.eq.${phoneNumber}`)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -163,8 +163,22 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: inboundError.message }, { status: 500 })
   }
 
-  const lastInboundAt = lastInbound?.created_at ? new Date(lastInbound.created_at).getTime() : 0
-  const within24Hours = lastInboundAt > 0 && Date.now() - lastInboundAt <= 24 * 60 * 60 * 1000
+  const nowMs = Date.now()
+  const windowMs = 24 * 60 * 60 * 1000
+  const cutoffMs = nowMs - windowMs
+  const parsedLastInboundMs = lastInbound?.created_at ? new Date(lastInbound.created_at).getTime() : Number.NaN
+  const lastInboundMs = Number.isFinite(parsedLastInboundMs) ? parsedLastInboundMs : null
+  const hoursSinceInbound = lastInboundMs === null ? null : Number(((nowMs - lastInboundMs) / (60 * 60 * 1000)).toFixed(2))
+  const within24Hours = lastInboundMs !== null && lastInboundMs >= cutoffMs
+
+  console.log('[crm-24h-check]', {
+    phoneNumber,
+    lastInboundAt: lastInbound?.created_at ?? null,
+    now: new Date(nowMs).toISOString(),
+    cutoff: new Date(cutoffMs).toISOString(),
+    hoursSinceInbound,
+    within24Hours,
+  })
 
   if (!within24Hours) {
     return NextResponse.json(
