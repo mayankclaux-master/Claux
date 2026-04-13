@@ -60,24 +60,19 @@ function normalizeRouteKey(value: string): string {
 async function logToWaSeo(
   db: any,
   logInput: {
-    waId?: string
+    waId: string
     direction: 'inbound' | 'outbound'
-    messageType?: string
     messageText?: string
     templateName?: string
-    metaMessageId?: string
     payloadData: unknown
   }
 ): Promise<void> {
-  const logMessageId = logInput.metaMessageId || logInput.waId || null
-
   const detailedInsert = {
-    wa_id: logMessageId,
+    wa_id: logInput.waId,
     direction: logInput.direction,
-    message_type: logInput.messageType ?? null,
-    message_text: logInput.messageText ?? null,
+    message_body: logInput.messageText ?? null,
     template_name: logInput.templateName ?? null,
-    meta_message_id: logInput.metaMessageId ?? null,
+    lead_phone: logInput.waId,
     payload: logInput.payloadData,
   }
 
@@ -85,8 +80,9 @@ async function logToWaSeo(
   if (!error) return
 
   const fallbackInsert = {
-    wa_id: logMessageId,
+    wa_id: logInput.waId,
     direction: logInput.direction,
+    lead_phone: logInput.waId,
     payload: logInput.payloadData,
   }
 
@@ -96,11 +92,25 @@ async function logToWaSeo(
   }
 }
 
-async function ensureLeadAndStage(db: any, waId: string, stage: string): Promise<void> {
+async function ensureLeadAndStage(
+  db: any,
+  waId: string,
+  stage: string,
+  metadata: Record<string, unknown>,
+  fullName?: string
+): Promise<void> {
   try {
     const { error: upsertError } = await db
       .from(LEADS_TABLE)
-      .upsert({ phone_number: waId, current_stage: stage }, { onConflict: 'phone_number' })
+      .upsert(
+        {
+          phone_number: waId,
+          current_stage: stage,
+          metadata,
+          full_name: (fullName || '').trim() || waId,
+        },
+        { onConflict: 'phone_number' }
+      )
 
     if (upsertError) {
       console.error('[whatsapp-webhook] Failed to upsert lead stage:', upsertError)
@@ -178,13 +188,16 @@ export async function POST(request: Request): Promise<NextResponse> {
     if (!waId) continue
 
     const inboundText = getInboundText(message)
+    const leadMetadata = {
+      message_id: message.id ?? null,
+      message_type: message.type ?? 'unknown',
+      last_inbound_text: inboundText || null,
+    }
 
     await logToWaSeo(db, {
       waId,
       direction: 'inbound',
-      messageType: message.type ?? 'unknown',
       messageText: inboundText,
-      metaMessageId: message.id,
       payloadData: message,
     })
 
@@ -203,7 +216,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     if (route) {
       console.log('[DEBUG_FLOW] Step 2: Attempting DB write for:', waId)
-      await ensureLeadAndStage(db, waId, route.stage)
+      await ensureLeadAndStage(db, waId, route.stage, leadMetadata)
 
       try {
         console.log('[DEBUG_FLOW] Step 3: Meta Send Start for template:', route.templateName)
@@ -218,9 +231,8 @@ export async function POST(request: Request): Promise<NextResponse> {
         await logToWaSeo(db, {
           waId,
           direction: 'outbound',
-          messageType: 'template',
+          messageText: undefined,
           templateName: route.templateName,
-          metaMessageId: sendResult.messages?.[0]?.id,
           payloadData: sendResult,
         })
       } catch (error) {
@@ -234,14 +246,13 @@ export async function POST(request: Request): Promise<NextResponse> {
       try {
         const sendResult = await sendWhatsAppTemplate({ to: waId, templateName: 'claux_stage1_welcome' })
 
-        await ensureLeadAndStage(db, waId, 'welcome')
+        await ensureLeadAndStage(db, waId, 'welcome', leadMetadata)
 
         await logToWaSeo(db, {
           waId,
           direction: 'outbound',
-          messageType: 'template',
+          messageText: undefined,
           templateName: 'claux_stage1_welcome',
-          metaMessageId: sendResult.messages?.[0]?.id,
           payloadData: sendResult,
         })
       } catch (error) {
