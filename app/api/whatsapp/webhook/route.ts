@@ -117,7 +117,30 @@ function parseClaudeOutput(text: string): ClaudeAgentOutput | null {
       call_intelligence_notes: String(parsed.call_intelligence_notes ?? '').trim() || undefined,
     }
   } catch {
-    return null
+    const replyMatch = text.match(/"reply_text"\s*:\s*"([\s\S]*?)"\s*(?:,|\})/i)
+    const rawReply = replyMatch?.[1]
+    if (!rawReply) return null
+
+    const replyText = rawReply
+      .replace(/\\n/g, '\n')
+      .replace(/\\"/g, '"')
+      .replace(/\\t/g, '\t')
+      .trim()
+
+    if (!replyText) return null
+
+    const handoffMatch = text.match(/"needs_human_handoff"\s*:\s*(true|false)/i)
+    const notesMatch = text.match(/"call_intelligence_notes"\s*:\s*"([\s\S]*?)"\s*(?:,|\})/i)
+
+    return {
+      reply_text: replyText,
+      needs_human_handoff: String(handoffMatch?.[1] ?? '').toLowerCase() === 'true',
+      call_intelligence_notes: notesMatch?.[1]
+        ?.replace(/\\n/g, '\n')
+        .replace(/\\"/g, '"')
+        .replace(/\\t/g, '\t')
+        .trim() || undefined,
+    }
   }
 }
 
@@ -179,6 +202,7 @@ async function runClaudeSalesAgent(input: {
     '6) call_intelligence_notes must be concise markdown with sections: Context Brief, Call Strategy (Hook + ROI Script), Closing Tip.',
     '7) Execute this 8-step activation sequence before every reply: read full memory, identify segment, identify journey stage, identify emotional state, identify unresolved thread, identify relevant milestone, select best approach, craft original response.',
     '8) Anti-Amnesia Rule: reference specific earlier details from chat memory when relevant.',
+    '9) You are a consultant. Your output to the lead must be natural Hinglish/English. Your internal reasoning must stay internal.',
     '',
     '=== CLAUX SALES MANUAL ===',
     salesManual,
@@ -251,7 +275,7 @@ async function runClaudeSalesAgent(input: {
 
     if (!parsed) {
       return {
-        reply_text: textOutput || 'Thanks for your message. Our team will assist you shortly.',
+        reply_text: 'Thanks for your message. I can help you with plans, pricing, or a quick strategy call. What would you like to know first?',
         needs_human_handoff: false,
       }
     }
