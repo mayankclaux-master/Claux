@@ -39,6 +39,7 @@ type ConversationLog = {
   message_body?: string | null
   template_name?: string | null
   created_at?: string | null
+  payload?: unknown
 }
 
 type ClaudeAgentOutput = {
@@ -49,6 +50,7 @@ type ClaudeAgentOutput = {
 
 const LEADS_TABLE = 'wa_seo_leads'
 const LOGS_TABLE = 'wa_seo_logs'
+const PROCESSED_WEBHOOKS_TABLE = 'processed_webhooks'
 
 const SALES_MANUAL_PATH = path.join(process.cwd(), 'lib/ai-training/claux_sales_manual.md')
 const INTEL_MANUAL_PATH = path.join(process.cwd(), 'lib/ai-training/claux_intelligence_manual.md')
@@ -118,6 +120,150 @@ function similarityRatio(a: string, b: string): number {
 
 function isTooSimilarToRecentOutbound(candidate: string, recentOutbounds: string[]): boolean {
   return recentOutbounds.some((prev) => similarityRatio(candidate, prev) > 0.6)
+}
+
+function hasGenericOpener(text: string): boolean {
+  return /^\s*(thanks|thank you|noted|okay|ok|sure|great|got it)\b/i.test(String(text ?? '').trim())
+}
+
+function extractMeaningfulTokens(text: string): string[] {
+  const stopwords = new Set([
+    'the',
+    'and',
+    'for',
+    'with',
+    'that',
+    'this',
+    'from',
+    'your',
+    'have',
+    'will',
+    'you',
+    'about',
+    'just',
+    'want',
+    'need',
+    'like',
+    'are',
+    'was',
+    'were',
+    'our',
+    'can',
+  ])
+
+  return String(text ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((token) => token.length >= 4 && !stopwords.has(token))
+}
+
+function startsWithBusinessAssessment(replyText: string, inboundText: string): boolean {
+  const firstSentence = String(replyText ?? '').trim().split(/[.!?\n]/)[0]?.toLowerCase() ?? ''
+  if (!firstSentence) return false
+
+  if (/(from what you shared|from your message|given your|for your|looking at your|based on your|i can see)/i.test(firstSentence)) {
+    return true
+  }
+
+  const inboundTokens = extractMeaningfulTokens(inboundText).slice(0, 6)
+  return inboundTokens.some((token) => firstSentence.includes(token))
+}
+
+type ConversionMilestone = 'work_hours_edge' | 'demo_video' | 'roi_anchor' | 'none'
+
+function detectMilestone(text: string): ConversionMilestone {
+  const value = String(text ?? '').toLowerCase()
+  if (!value) return 'none'
+
+  if (/(2400|2,400|300\s*hours|100\+\s*sop|work-hour edge|execution edge)/i.test(value)) return 'work_hours_edge'
+  if (/(watch demo|demo|5 minute ka demo|live demo)/i.test(value)) return 'demo_video'
+  if (/(2\.1\s*lakh|save|saving|₹\s*7,499|roi)/i.test(value)) return 'roi_anchor'
+  return 'none'
+}
+
+function nextMilestone(milestone: ConversionMilestone): ConversionMilestone {
+  if (milestone === 'work_hours_edge') return 'demo_video'
+  if (milestone === 'demo_video') return 'roi_anchor'
+  return 'none'
+}
+
+function buildMilestoneGuard(recentOutbounds: string[]): { forbidden: ConversionMilestone; forced: ConversionMilestone } {
+  const counts = new Map<ConversionMilestone, number>()
+  for (const message of recentOutbounds) {
+    const milestone = detectMilestone(message)
+    if (milestone === 'none') continue
+    counts.set(milestone, (counts.get(milestone) ?? 0) + 1)
+  }
+
+  for (const milestone of ['work_hours_edge', 'demo_video', 'roi_anchor'] as ConversionMilestone[]) {
+    if ((counts.get(milestone) ?? 0) >= 2) {
+      return { forbidden: milestone, forced: nextMilestone(milestone) }
+    }
+  }
+
+  return { forbidden: 'none', forced: 'none' }
+}
+
+function mentionsMilestone(text: string, milestone: ConversionMilestone): boolean {
+  if (milestone === 'none') return false
+  return detectMilestone(text) === milestone
+}
+
+function isFallbackOrRescueLog(log: ConversationLog): boolean {
+  if (String(log.direction ?? '').toLowerCase() !== 'outbound') return false
+  const payload = log.payload as Record<string, unknown> | null
+  if (payload && typeof payload === 'object') {
+    if (payload.rescue_mode === true) return true
+    const reason = String(payload.reason ?? '').toLowerCase()
+    if (reason.includes('fallback') || reason.includes('ai_provider')) return true
+  }
+
+  const body = String(log.message_body ?? '').toLowerCase()
+  return body.includes('thanks for your message') || body.includes('i can help you with plans')
+}
+
+type VerticalProfile = {
+  key: 'hospitality' | 'healthcare' | 'legal' | 'finance' | 'generic'
+  roiInstruction: string
+}
+
+function detectVerticalProfile(inboundText: string, memoryLogs: ConversationLog[]): VerticalProfile {
+  const corpus = [inboundText, ...memoryLogs.map((log) => String(log.message_body ?? ''))].join(' ').toLowerCase()
+
+  if (/(hotel|resort|stay|homestay|villa|guest\s*house|hostel|booking\.com|makemytrip|mmt|ota)/i.test(corpus)) {
+    return {
+      key: 'hospitality',
+      roiInstruction:
+        'Use hospitality ROI framing: agencies cost money, OTAs (Booking/MMT) can take ~20% commission, and Claux SEO drives direct booking revenue.',
+    }
+  }
+
+  if (/(doctor|clinic|hospital|dentist|physio|patient)/i.test(corpus)) {
+    return {
+      key: 'healthcare',
+      roiInstruction: 'Use healthcare ROI framing: stronger local search visibility increases qualified patient inquiries and lowers dependency on paid ads.',
+    }
+  }
+
+  if (/(lawyer|law firm|advocate|legal)/i.test(corpus)) {
+    return {
+      key: 'legal',
+      roiInstruction: 'Use legal ROI framing: trust-first discoverability captures high-intent consultation demand and reduces referral volatility.',
+    }
+  }
+
+  if (/(ca\b|chartered accountant|tax|gst|audit firm)/i.test(corpus)) {
+    return {
+      key: 'finance',
+      roiInstruction: 'Use CA/finance ROI framing: predictable inbound around compliance seasons lowers acquisition cost and improves client quality.',
+    }
+  }
+
+  return {
+    key: 'generic',
+    roiInstruction: 'Use role-specific business ROI framing, not generic claims.',
+  }
 }
 
 async function getTrainingManuals(): Promise<{ salesManual: string; intelligenceManual: string }> {
@@ -208,7 +354,7 @@ function renderConversationMemory(logs: ConversationLog[]): string {
 async function getRecentLeadMemory(db: any, waId: string): Promise<ConversationLog[]> {
   const { data, error } = await db
     .from(LOGS_TABLE)
-    .select('direction, message_body, template_name, created_at')
+    .select('direction, message_body, template_name, created_at, payload')
     .or(`lead_phone.eq.${waId},wa_id.eq.${waId}`)
     .order('created_at', { ascending: false })
     .limit(15)
@@ -218,7 +364,8 @@ async function getRecentLeadMemory(db: any, waId: string): Promise<ConversationL
     return []
   }
 
-  return (Array.isArray(data) ? data : []).reverse() as ConversationLog[]
+  const rows = (Array.isArray(data) ? data : []) as ConversationLog[]
+  return rows.filter((row) => !isFallbackOrRescueLog(row)).reverse()
 }
 
 async function runClaudeSalesAgent(input: {
@@ -245,35 +392,23 @@ async function runClaudeSalesAgent(input: {
     .map((log) => String(log.message_body ?? '').trim())
     .filter(Boolean)
     .slice(-3)
+  const verticalProfile = detectVerticalProfile(input.inboundText, input.memoryLogs)
+  const milestoneGuard = buildMilestoneGuard(recentOutboundMessages)
 
   const systemPrompt = [
     'You are Pooja from the Claux Team.',
-    'Rules:',
-    '1) Identity lock: You are a sharp, wise, high-energy 25-year-old woman named Pooja from the Claux Team.',
-    '2) Gender grammar lock: always use feminine Hindi phrasing (e.g., "karti hoon", never "karta hoon").',
-    '3) Never mention AI, bot, model, system, or agent. You are always a human consultant from Claux.',
-    '4) Tone calibration: warm Hinglish for rapport + Bandra-style professional English for authority and clarity.',
-    '5) One high-intent question per message to keep momentum. Never ask multiple questions.',
-    '6) Keep replies concise, direct, and conversion-focused. No long technical lectures.',
-    '7) CARS execution for EVERY reply: Assess the lead message first, Connect with their pain/emotion second, and Push one concrete next step (demo/call) third.',
-    '8) Conversion Hierarchy Goal 2 (Value-Gap): use Work-Hour Edge clearly — agencies roughly 300 hours/month vs Claux 2,400 hours/month execution powered by 100+ global SEO SOPs.',
-    '9) Conversion Hierarchy Goal 3 (Demo Pivot): if skeptical, push demo line: "Sir, 5 minute ka demo dekh lijiye, aapko khud dikh jayega ki agents live kaam kaise karte hain" and share https://claux.automizemedialabs.com/demo.',
-    '10) Conversion Hierarchy Goal 4 (Pricing Anchor): frame ₹7,499 as approximately ₹2.1 lakh/year saving versus traditional agencies.',
-    '11) Objection handling - Too Expensive: use ROI math that one new patient/client can recover the monthly fee.',
-    '12) Objection handling - Need to talk to Mayank: agree to arrange it, but qualify first by asking growth goals so Mr. Mayank is fully prepared.',
-    '13) Objection handling - Last agency failed: reframe Claux as a structural fix with transparent live agents, not a black-box agency.',
-    '14) If unsure, use this exact escalation line: "Sir, I’m not sure about this and don’t want to misguide you. Let me check and revert. Meanwhile, should I arrange a call with our Support Head, Mr. Mayank? He can help you with anything regarding Claux."',
-    '15) Conversion links to use naturally when relevant: Demo https://claux.automizemedialabs.com/demo | Pricing https://claux.automizemedialabs.com/pricing | Landing https://claux.automizemedialabs.com | Unlock Offer https://claux.automizemedialabs.com/partner-offer | FAQs https://claux.automizemedialabs.com/#faq',
-    '16) Detect human handoff if lead asks for a call, shows frustration, asks advanced customization, or requests Mr. Mayank.',
-    '16b) If lead shares a URL/website link or a location pin, mark needs_human_handoff=true and acknowledge with: "Got the link! I\'m sharing this with Mayank ji right now so he can prepare your custom 200-point audit."',
-    '17) Internal brain rule: use an internal <thinking> block for Value-Gap Analysis and Objection Pre-emption before drafting final output. Never expose <thinking> in reply_text.',
-    '18) Never say "I am confused".',
-    '19) Output strict JSON only with keys: reply_text, needs_human_handoff, call_intelligence_notes.',
-    '20) call_intelligence_notes must be concise markdown with sections: Context Brief, Call Strategy (Hook + ROI Script), Closing Tip.',
-    '21) Execute this 8-step activation sequence before every reply: read full memory, identify segment, identify journey stage, identify emotional state, identify unresolved thread, identify relevant milestone, select best approach, craft original response.',
-    '22) Anti-Amnesia Rule: reference specific earlier details from chat memory when relevant.',
-    '23) Anti-Repetition Shield: compare your proposed reply_text against last 3 outbound messages; if similarity is above 60%, discard and regenerate with a new opening and new angle.',
-    '24) Strict persona lock: never use robotic lines like "Thanks for your message" or "I am an AI assistant".',
+    'Persona: 25-year-old high-acumen sales consultant. Never mention AI/bot/model/system.',
+    'Language hierarchy: PRIMARY = Global Professional English (consultant-grade clarity and authority). SECONDARY = warm Hinglish only for emotional connection.',
+    'Opening lock: Never start with generic openers like "Thanks", "Noted", "Okay". Start every reply with a CARS Assessment of the lead\'s specific business context.',
+    'CARS mandate for every reply: Assess -> Connect -> Recommend next step (demo/call).',
+    'One clear question max. Keep concise and conversion-focused.',
+    'Conversion hierarchy: Work-Hour Edge (2,400h + 100+ SOPs) -> Demo Pivot -> ROI Anchor.',
+    'Detect human handoff for calls, frustration, advanced customization, or Mayank requests.',
+    'If lead shares URL/location, set needs_human_handoff=true and use exact line: "Got the link! I\'m sharing this with Mayank ji right now so he can prepare your custom 200-point audit."',
+    'Output strict JSON only: reply_text, needs_human_handoff, call_intelligence_notes.',
+    'call_intelligence_notes markdown sections: Context Brief, Call Strategy (Hook + ROI Script), Closing Tip.',
+    'Anti-repetition: if similar to last outbound messages, regenerate with a new opening and angle.',
+    'Anti-robotic rule: never use support-bot language.',
     '',
     '=== CLAUX SALES MANUAL ===',
     salesManual,
@@ -287,6 +422,11 @@ async function runClaudeSalesAgent(input: {
     `Latest inbound message: ${input.inboundText}`,
     `Lead inbound reply count so far: ${leadReplyCount}`,
     `Latest inbound contains URL or location signal: ${input.latestMessageHasUrlOrLocation ? 'yes' : 'no'}`,
+    `Vertical Router selected: ${verticalProfile.key}`,
+    `Vertical ROI instruction: ${verticalProfile.roiInstruction}`,
+    milestoneGuard.forbidden !== 'none'
+      ? `Semantic Pivot Guard: ${milestoneGuard.forbidden} was used at least twice. You are forbidden from using it again. Move to ${milestoneGuard.forced}.`
+      : 'Semantic Pivot Guard: none active.',
     '',
     'Last 3 outbound messages by Pooja (for anti-repetition check):',
     recentOutboundMessages.length ? recentOutboundMessages.map((line, index) => `${index + 1}) ${line}`).join('\n') : 'None',
@@ -362,6 +502,27 @@ async function runClaudeSalesAgent(input: {
         regenerationHint =
           'Your previous draft was rejected because it was too similar to earlier outbound messages (>60%). Generate a fresh opening, fresh phrasing, and a different angle while keeping persona + CARS compliance.'
         lastError = 'Reply rejected by anti-repetition shield.'
+        continue
+      }
+
+      if (hasGenericOpener(parsed.reply_text)) {
+        regenerationHint =
+          'Your previous draft started with a banned generic opener (Thanks/Noted/Okay). Start directly with business-specific CARS assessment in consultant-grade English.'
+        lastError = 'Reply rejected by opener guard.'
+        continue
+      }
+
+      if (!startsWithBusinessAssessment(parsed.reply_text, input.inboundText)) {
+        regenerationHint =
+          'Your previous draft did not open with a specific business assessment. Start by referencing the lead\'s exact business context, then continue CARS.'
+        lastError = 'Reply rejected by assessment guard.'
+        continue
+      }
+
+      if (milestoneGuard.forbidden !== 'none' && mentionsMilestone(parsed.reply_text, milestoneGuard.forbidden)) {
+        regenerationHint =
+          `Your previous draft repeated forbidden milestone ${milestoneGuard.forbidden}. Move to ${milestoneGuard.forced} now.`
+        lastError = 'Reply rejected by semantic pivot guard.'
         continue
       }
 
@@ -517,68 +678,66 @@ function getWebhookMessages(body: any): WebhookMessageEvent[] {
   return messages
 }
 
-export async function GET(request: Request): Promise<Response> {
-  const { searchParams } = new URL(request.url)
-  const mode = searchParams.get('hub.mode')
-  const verifyToken = searchParams.get('hub.verify_token')
-  const hubChallenge = searchParams.get('hub.challenge') ?? ''
-
-  console.log(`DEBUG: Expected [${process.env.WHATSAPP_VERIFY_TOKEN}] - Received [${verifyToken}]`)
-
-  if (mode === 'subscribe' && verifyToken && verifyToken.trim() === process.env.WHATSAPP_VERIFY_TOKEN?.trim()) {
-    return new Response(hubChallenge, {
-      status: 200,
-      headers: {
-        'Content-Type': 'text/plain',
-      },
-    })
+function runInBackground(task: Promise<void>): void {
+  const globalWaitUntil = (globalThis as { waitUntil?: (promise: Promise<unknown>) => void }).waitUntil
+  if (typeof globalWaitUntil === 'function') {
+    globalWaitUntil(task)
+    return
   }
 
-  return new Response('Verification failed', {
-    status: 403,
-    headers: {
-      'Content-Type': 'text/plain',
-    },
+  void task.catch((error) => {
+    console.error('[whatsapp-webhook] background task failed:', error)
   })
 }
 
-export async function POST(request: Request): Promise<NextResponse> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+async function markWebhookProcessed(
+  db: any,
+  input: { messageId: string; waId: string; payload: unknown }
+): Promise<'new' | 'duplicate' | 'error'> {
+  const { error } = await db.from(PROCESSED_WEBHOOKS_TABLE).insert({
+    message_id: input.messageId,
+    wa_id: input.waId,
+    payload: input.payload,
+    processed_at: new Date().toISOString(),
+  })
 
-  if (!supabaseUrl || !serviceRoleKey) {
-    return NextResponse.json({ error: 'Server configuration missing.' }, { status: 500 })
-  }
+  if (!error) return 'new'
+  if (String((error as { code?: string }).code ?? '') === '23505') return 'duplicate'
 
-  const db = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  }) as any
+  console.error('[whatsapp-webhook] processed_webhooks insert failed:', error)
+  return 'error'
+}
 
-  const body = await request.json().catch(() => null)
-  if (!body) {
-    return NextResponse.json({ error: 'Invalid webhook payload.' }, { status: 400 })
-  }
-
-  console.log('[whatsapp-webhook] Incoming POST body:', JSON.stringify(body))
-
-  const events = getWebhookMessages(body)
-  console.log('[whatsapp-webhook][trace] webhook:events-extracted', { eventsCount: events.length })
-
+async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Promise<void> {
   for (const event of events) {
     const { message, profileName, valuePayload } = event
     const waId = String(message.from ?? '').trim()
+    const messageId = String(message.id ?? '').trim()
     if (!waId) {
       console.log('[whatsapp-webhook][trace] webhook:event-skipped-no-waid')
       continue
     }
 
-    const inboundDirection = 'inbound'
+    if (messageId) {
+      const dedupeState = await markWebhookProcessed(db, {
+        messageId,
+        waId,
+        payload: valuePayload ?? message,
+      })
 
+      if (dedupeState === 'duplicate') {
+        console.log('[whatsapp-webhook][trace] webhook:event-skipped-duplicate', { waId, messageId })
+        continue
+      }
+    }
+
+    const inboundDirection = 'inbound'
     const inboundText = getInboundText(message)
     const highIntentFromUrlOrLocation = hasUrl(inboundText) || isLocationShared(message)
     console.log('[whatsapp-webhook][trace] webhook:event-start', {
       waId,
       messageType: message.type ?? 'unknown',
+      messageId: messageId || null,
       hasInboundText: Boolean(inboundText),
       inboundLength: inboundText.length,
       highIntentFromUrlOrLocation,
@@ -641,13 +800,6 @@ export async function POST(request: Request): Promise<NextResponse> {
           ].join('\n')
         : callNotes
 
-      console.log('[whatsapp-webhook][trace] ai-flow:claude-output', {
-        waId,
-        needs_human_handoff: needsHumanHandoff,
-        replyLength: outboundText.length,
-        hasCallNotes: Boolean(handoffNotes),
-      })
-
       if (needsHumanHandoff) {
         await ensureLeadAndStage(
           db,
@@ -671,25 +823,18 @@ export async function POST(request: Request): Promise<NextResponse> {
         continue
       }
 
-      console.log('[whatsapp-webhook][trace] ai-flow:send-whatsapp:start', { waId, outboundLength: outboundText.length })
       const sendResult = await sendWhatsAppText({ to: waId, text: outboundText })
-      console.log('[whatsapp-webhook][trace] ai-flow:send-whatsapp:ok', {
-        waId,
-        messageId: sendResult?.messages?.[0]?.id ?? null,
-      })
-
       await logToWaSeo(db, {
         waId,
         direction: 'outbound',
         messageText: outboundText,
         payloadData: sendResult,
       })
-      console.log('[whatsapp-webhook][trace] ai-flow:outbound-log:ok', { waId })
     } catch (error) {
       console.error('[whatsapp-webhook] AI response flow failed:', error)
       const rescueReply = highIntentFromUrlOrLocation
         ? "Got the link! I'm sharing this with Mayank ji right now so he can prepare your custom 200-point audit."
-        : 'Noted. Main Mayank ji ke saath is context ko align karke aapko custom next step bhejti hoon. Kya 10-min quick strategy call lock kar dein?'
+        : 'I reviewed your context and want Mayank ji to map a precise growth plan. Should I lock a 10-minute strategy call for you?'
 
       await ensureLeadAndStage(
         db,
@@ -717,6 +862,69 @@ export async function POST(request: Request): Promise<NextResponse> {
       })
     }
   }
+}
 
-  return NextResponse.json({ received: true })
+export async function GET(request: Request): Promise<Response> {
+  const { searchParams } = new URL(request.url)
+  const mode = searchParams.get('hub.mode')
+  const verifyToken = searchParams.get('hub.verify_token')
+  const hubChallenge = searchParams.get('hub.challenge') ?? ''
+
+  console.log(`DEBUG: Expected [${process.env.WHATSAPP_VERIFY_TOKEN}] - Received [${verifyToken}]`)
+
+  if (mode === 'subscribe' && verifyToken && verifyToken.trim() === process.env.WHATSAPP_VERIFY_TOKEN?.trim()) {
+    return new Response(hubChallenge, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/plain',
+      },
+    })
+  }
+
+  return new Response('Verification failed', {
+    status: 403,
+    headers: {
+      'Content-Type': 'text/plain',
+    },
+  })
+}
+
+export async function POST(request: Request): Promise<NextResponse> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    return NextResponse.json({ error: 'Server configuration missing.' }, { status: 500 })
+  }
+
+  const db = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  }) as any
+
+  const body = await request.json().catch(() => null)
+  if (!body) {
+    return NextResponse.json({ error: 'Invalid webhook payload.' }, { status: 400 })
+  }
+
+  const events = getWebhookMessages(body)
+  const messageIds = Array.from(new Set(events.map((event) => String(event.message.id ?? '').trim()).filter(Boolean)))
+
+  if (messageIds.length > 0) {
+    const { data: processedRows, error: processedError } = await db
+      .from(PROCESSED_WEBHOOKS_TABLE)
+      .select('message_id')
+      .in('message_id', messageIds)
+
+    if (processedError) {
+      console.error('[whatsapp-webhook] processed_webhooks check failed:', processedError)
+    } else {
+      const seenIds = new Set((Array.isArray(processedRows) ? processedRows : []).map((row: { message_id?: string }) => String(row.message_id ?? '').trim()))
+      if (messageIds.every((id) => seenIds.has(id))) {
+        return NextResponse.json({ success: true, deduped: true })
+      }
+    }
+  }
+
+  runInBackground(processWebhookEvents(db, events))
+  return NextResponse.json({ success: true })
 }
