@@ -873,7 +873,16 @@ async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Pro
         continue
       }
 
-      const sendResult = await sendWhatsAppText({ to: waId, text: outboundText })
+      // WAR ACTION (temporary mute): outbound send intentionally disabled.
+      // const sendResult = await sendWhatsAppText({ to: waId, text: outboundText })
+      const sendResult = {
+        muted: true,
+        channel: 'whatsapp',
+        reason: 'war_action_temporary_mute',
+        to: waId,
+        text: outboundText,
+        muted_at: new Date().toISOString(),
+      }
       await logToWaSeo(db, {
         waId,
         direction: 'outbound',
@@ -907,7 +916,16 @@ async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Pro
         profileName
       )
 
-      const sendResult = await sendWhatsAppText({ to: waId, text: rescueReply })
+      // WAR ACTION (temporary mute): outbound send intentionally disabled.
+      // const sendResult = await sendWhatsAppText({ to: waId, text: rescueReply })
+      const sendResult = {
+        muted: true,
+        channel: 'whatsapp',
+        reason: 'war_action_temporary_mute',
+        to: waId,
+        text: rescueReply,
+        muted_at: new Date().toISOString(),
+      }
       await logToWaSeo(db, {
         waId,
         direction: 'outbound',
