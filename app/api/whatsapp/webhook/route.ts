@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { NextResponse } from 'next/server'
+import { after, NextResponse } from 'next/server'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { sendWhatsAppText } from '@/lib/whatsapp/meta-api'
@@ -682,15 +682,28 @@ function getWebhookMessages(body: any): WebhookMessageEvent[] {
 }
 
 function runInBackground(taskFactory: () => Promise<void>): void {
-  const task = taskFactory().catch((error) => {
-    console.error('[whatsapp-webhook] background task failed:', error)
-  })
+  const runTask = async () => {
+    try {
+      await taskFactory()
+    } catch (error) {
+      console.error('[whatsapp-webhook] background task failed:', error)
+    }
+  }
+
+  try {
+    after(runTask)
+    return
+  } catch {
+    console.warn('[whatsapp-webhook] next.after unavailable, falling back to waitUntil/direct execution')
+  }
 
   const globalWaitUntil = (globalThis as { waitUntil?: (promise: Promise<unknown>) => void }).waitUntil
   if (typeof globalWaitUntil === 'function') {
-    globalWaitUntil(task)
+    globalWaitUntil(runTask())
     return
   }
+
+  void runTask()
 }
 
 async function markWebhookProcessed(
