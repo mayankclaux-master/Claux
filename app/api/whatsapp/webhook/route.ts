@@ -561,7 +561,16 @@ export async function POST(request: Request): Promise<NextResponse> {
       })
 
       if (ai.needs_human_handoff) {
-        await ensureLeadAndStage(db, waId, 'human_handoff', leadMetadata, profileName)
+        await ensureLeadAndStage(
+          db,
+          waId,
+          'human_handoff',
+          {
+            ...leadMetadata,
+            handover_at: new Date().toISOString(),
+          },
+          profileName
+        )
         if (ai.call_intelligence_notes) {
           await saveCallIntelligenceNotes(db, waId, ai.call_intelligence_notes)
         }

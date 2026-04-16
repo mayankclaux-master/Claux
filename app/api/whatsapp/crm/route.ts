@@ -11,6 +11,7 @@ type LeadRow = {
   current_stage: string | null
   full_name?: string | null
   call_intelligence_notes?: string | null
+  metadata?: Record<string, unknown> | null
 }
 
 type LeadItem = {
@@ -18,6 +19,7 @@ type LeadItem = {
   full_name: string | null
   current_stage: string
   call_intelligence_notes?: string | null
+  handover_at?: string | null
   last_interaction_at: string | null
   interaction_count: number
   button_click_count: number
@@ -85,6 +87,32 @@ function isInboundButtonClick(log: LogRow): boolean {
   return interactiveType === 'button_reply' || interactiveType === 'list_reply'
 }
 
+function extractHandoverAt(lead: LeadRow, fallbackValue: string | null): string | null {
+  const metadata = lead.metadata
+  const fromMetadata = metadata && typeof metadata === 'object' ? String((metadata as Record<string, unknown>).handover_at ?? '').trim() : ''
+  if (fromMetadata) return fromMetadata
+  return fallbackValue
+}
+
+function isWithinHandoverRange(handoverAt: string | null, timeRange: 'today' | '7d' | 'all'): boolean {
+  if (timeRange === 'all') return true
+  if (!handoverAt) return false
+
+  const handoverMs = new Date(handoverAt).getTime()
+  if (!Number.isFinite(handoverMs)) return false
+
+  const now = new Date()
+  const nowMs = now.getTime()
+
+  if (timeRange === 'today') {
+    const start = new Date(now)
+    start.setHours(0, 0, 0, 0)
+    return handoverMs >= start.getTime() && handoverMs <= nowMs
+  }
+
+  return handoverMs >= nowMs - 7 * 24 * 60 * 60 * 1000 && handoverMs <= nowMs
+}
+
 export async function GET(request: Request): Promise<NextResponse> {
   const db = makeDb()
   if (!db) return NextResponse.json({ error: 'Server configuration missing.' }, { status: 500 })
@@ -92,6 +120,8 @@ export async function GET(request: Request): Promise<NextResponse> {
   const { searchParams } = new URL(request.url)
   const selectedPhone = normalizePhone(searchParams.get('phone'))
   const mode = String(searchParams.get('mode') ?? '').trim().toLowerCase()
+  const timeRangeRaw = String(searchParams.get('time_range') ?? '').trim().toLowerCase()
+  const timeRange: 'today' | '7d' | 'all' = timeRangeRaw === 'today' ? 'today' : timeRangeRaw === '7d' ? '7d' : 'all'
 
   if (mode === 'quick_replies') {
     const { data, error } = await db.from(QUICK_REPLIES_TABLE).select('*').limit(100)
@@ -128,7 +158,7 @@ export async function GET(request: Request): Promise<NextResponse> {
 
   if (mode === 'handoff') {
     const [leadsResult, logsResult] = await Promise.all([
-      db.from(LEADS_TABLE).select('phone_number, current_stage, full_name, call_intelligence_notes').eq('current_stage', 'human_handoff'),
+      db.from(LEADS_TABLE).select('phone_number, current_stage, full_name, call_intelligence_notes, metadata').eq('current_stage', 'human_handoff'),
       db
         .from(LOGS_TABLE)
         .select('id, lead_phone, wa_id, direction, message_body, template_name, payload, created_at')
@@ -185,10 +215,12 @@ export async function GET(request: Request): Promise<NextResponse> {
         current_stage: lead.current_stage ?? 'human_handoff',
         call_intelligence_notes: lead.call_intelligence_notes ?? null,
         last_interaction_at: latestByPhone.get(lead.phone_number) ?? null,
+        handover_at: extractHandoverAt(lead, latestByPhone.get(lead.phone_number) ?? null),
         interaction_count: interactionCountByPhone.get(lead.phone_number) ?? 0,
         button_click_count: buttonClicksByPhone.get(lead.phone_number) ?? 0,
         watched_demo: watchedDemoByPhone.get(lead.phone_number) ?? false,
       }))
+      .filter((lead) => isWithinHandoverRange(lead.handover_at ?? null, timeRange))
       .sort((a, b) => {
         const aTime = a.last_interaction_at ? new Date(a.last_interaction_at).getTime() : 0
         const bTime = b.last_interaction_at ? new Date(b.last_interaction_at).getTime() : 0
@@ -196,6 +228,50 @@ export async function GET(request: Request): Promise<NextResponse> {
       })
 
     return NextResponse.json({ leads: handoffLeads })
+  }
+
+  if (mode === 'handoff_detail') {
+    if (!selectedPhone) {
+      return NextResponse.json({ error: 'phone is required for mode=handoff_detail.' }, { status: 400 })
+    }
+
+    const [leadResult, logsResult] = await Promise.all([
+      db
+        .from(LEADS_TABLE)
+        .select('phone_number, current_stage, full_name, call_intelligence_notes, metadata')
+        .eq('phone_number', selectedPhone)
+        .maybeSingle(),
+      db
+        .from(LOGS_TABLE)
+        .select('id, lead_phone, wa_id, direction, message_body, template_name, payload, created_at')
+        .or(`lead_phone.eq.${selectedPhone},wa_id.eq.${selectedPhone}`)
+        .order('created_at', { ascending: true })
+        .limit(250),
+    ])
+
+    if (leadResult.error) {
+      return NextResponse.json({ error: leadResult.error.message }, { status: 500 })
+    }
+
+    if (logsResult.error) {
+      return NextResponse.json({ error: logsResult.error.message }, { status: 500 })
+    }
+
+    const lead = (leadResult.data ?? null) as LeadRow | null
+    const messages = (logsResult.data ?? []) as LogRow[]
+
+    return NextResponse.json({
+      lead: lead
+        ? {
+            phone_number: lead.phone_number,
+            full_name: lead.full_name ?? null,
+            current_stage: lead.current_stage ?? 'unknown',
+            call_intelligence_notes: lead.call_intelligence_notes ?? null,
+            handover_at: extractHandoverAt(lead, null),
+          }
+        : null,
+      messages,
+    })
   }
 
   const [leadsResult, logsResult] = await Promise.all([

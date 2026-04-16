@@ -7,8 +7,28 @@ type HandoffLead = {
   full_name: string | null
   current_stage: string
   call_intelligence_notes?: string | null
+  handover_at?: string | null
   last_interaction_at: string | null
   interaction_count: number
+}
+
+type HandoffMessage = {
+  id?: string | number
+  direction?: string | null
+  message_body?: string | null
+  template_name?: string | null
+  created_at?: string | null
+}
+
+type HandoffDetailResponse = {
+  lead: {
+    phone_number: string
+    full_name: string | null
+    current_stage: string
+    call_intelligence_notes?: string | null
+    handover_at?: string | null
+  } | null
+  messages: HandoffMessage[]
 }
 
 const BG = '#F8FAFC'
@@ -44,17 +64,22 @@ function parseNoteSections(notes: string | null | undefined): { context: string;
 
 export default function CallHubPage() {
   const [loading, setLoading] = useState(false)
+  const [detailLoading, setDetailLoading] = useState(false)
   const [error, setError] = useState('')
+  const [detailError, setDetailError] = useState('')
   const [leads, setLeads] = useState<HandoffLead[]>([])
   const [updatingPhone, setUpdatingPhone] = useState('')
   const [debugMode, setDebugMode] = useState(false)
+  const [timeRange, setTimeRange] = useState<'today' | '7d'>('today')
+  const [selectedPhone, setSelectedPhone] = useState('')
+  const [detail, setDetail] = useState<HandoffDetailResponse | null>(null)
 
   const fetchHandoffLeads = async () => {
     setLoading(true)
     setError('')
 
     try {
-      const response = await fetch('/api/whatsapp/crm?mode=handoff', { cache: 'no-store' })
+      const response = await fetch(`/api/whatsapp/crm?mode=handoff&time_range=${timeRange}`, { cache: 'no-store' })
       const data = (await response.json().catch(() => ({}))) as { leads?: HandoffLead[]; error?: string }
 
       if (!response.ok) {
@@ -69,8 +94,34 @@ export default function CallHubPage() {
     }
   }
 
+  const fetchHandoffDetail = async (phoneNumber: string) => {
+    if (!phoneNumber) return
+
+    setSelectedPhone(phoneNumber)
+    setDetailLoading(true)
+    setDetailError('')
+
+    try {
+      const response = await fetch(`/api/whatsapp/crm?mode=handoff_detail&phone=${encodeURIComponent(phoneNumber)}`, { cache: 'no-store' })
+      const data = (await response.json().catch(() => ({}))) as HandoffDetailResponse & { error?: string }
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to load lead details.')
+      }
+
+      setDetail({
+        lead: data.lead ?? null,
+        messages: Array.isArray(data.messages) ? data.messages : [],
+      })
+    } catch (err) {
+      setDetailError(err instanceof Error ? err.message : 'Failed to load lead details.')
+      setDetail(null)
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
   useEffect(() => {
-    fetchHandoffLeads()
+    void fetchHandoffLeads()
 
     const handleVisibility = () => {
       if (!document.hidden) {
@@ -91,7 +142,7 @@ export default function CallHubPage() {
       document.removeEventListener('visibilitychange', handleVisibility)
       window.removeEventListener('focus', handleFocus)
     }
-  }, [])
+  }, [timeRange])
 
   const markConverted = async (phoneNumber: string) => {
     if (!phoneNumber || updatingPhone) return
@@ -155,6 +206,16 @@ export default function CallHubPage() {
               Refresh Queue
             </button>
 
+            <select
+              value={timeRange}
+              onChange={(event) => setTimeRange(event.target.value === '7d' ? '7d' : 'today')}
+              className="rounded-lg border px-3 py-2 text-xs font-semibold"
+              style={{ borderColor: '#CBD5E1', color: '#0F172A', background: '#FFFFFF' }}
+            >
+              <option value="today">Today</option>
+              <option value="7d">Last 7 Days</option>
+            </select>
+
             <button
               type="button"
               onClick={() => setDebugMode((prev) => !prev)}
@@ -184,9 +245,13 @@ export default function CallHubPage() {
               <article
                 key={lead.phone_number}
                 className="rounded-2xl border bg-white p-4 shadow-sm"
+                onClick={() => {
+                  void fetchHandoffDetail(lead.phone_number)
+                }}
                 style={{
                   borderColor: '#E2E8F0',
                   boxShadow: '0 2px 10px rgba(15, 23, 42, 0.06)',
+                  cursor: 'pointer',
                 }}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -199,6 +264,9 @@ export default function CallHubPage() {
                     </p>
                     <p className="text-[11px] mt-1" style={{ color: '#64748B' }}>
                       Last Active: {fmtDate(lead.last_interaction_at)}
+                    </p>
+                    <p className="text-[11px] mt-1" style={{ color: '#64748B' }}>
+                      Handover At: {fmtDate(lead.handover_at ?? null)}
                     </p>
                   </div>
 
@@ -241,6 +309,7 @@ export default function CallHubPage() {
                 <div className="mt-4 flex flex-wrap gap-2">
                   <a
                     href={`tel:${lead.phone_number}`}
+                    onClick={(event) => event.stopPropagation()}
                     className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white"
                     style={{ background: '#EA580C' }}
                   >
@@ -251,6 +320,7 @@ export default function CallHubPage() {
                     type="button"
                     onClick={() => markConverted(lead.phone_number)}
                     disabled={updatingPhone === lead.phone_number}
+                    onMouseDown={(event) => event.stopPropagation()}
                     className="rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                     style={{ background: SEA_GREEN }}
                   >
@@ -265,6 +335,96 @@ export default function CallHubPage() {
         {!orderedLeads.length && !loading && (
           <div className="mt-5 rounded-xl border px-4 py-8 text-center text-sm" style={{ borderColor: '#E2E8F0', background: '#FFFFFF', color: '#6B7280' }}>
             No leads in human handoff queue.
+          </div>
+        )}
+
+        {selectedPhone && (
+          <div className="fixed inset-0 z-40 flex items-end justify-end bg-black/30 p-0 md:p-4" onClick={() => setSelectedPhone('')}>
+            <aside
+              className="h-[85vh] w-full max-w-2xl overflow-hidden rounded-t-2xl border bg-white shadow-2xl md:h-full md:rounded-2xl"
+              style={{ borderColor: '#E2E8F0' }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: '#E2E8F0' }}>
+                <div>
+                  <h3 className="text-sm font-bold" style={{ color: '#0F172A' }}>
+                    Lead Detail · {detail?.lead?.full_name || detail?.lead?.phone_number || selectedPhone}
+                  </h3>
+                  <p className="text-xs" style={{ color: '#64748B' }}>
+                    Handover At: {fmtDate(detail?.lead?.handover_at ?? null)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPhone('')}
+                  className="rounded-lg border px-3 py-1.5 text-xs font-semibold"
+                  style={{ borderColor: '#CBD5E1', color: '#1E293B' }}
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="grid h-[calc(100%-58px)] grid-cols-1 gap-0 md:grid-cols-2">
+                <div className="border-r p-4" style={{ borderColor: '#E2E8F0' }}>
+                  <h4 className="text-xs font-semibold uppercase" style={{ color: '#334155' }}>
+                    Call Intelligence Notes
+                  </h4>
+                  <pre className="mt-2 max-h-[70vh] whitespace-pre-wrap text-xs leading-relaxed" style={{ color: '#334155' }}>
+                    {detail?.lead?.call_intelligence_notes || 'No call intelligence notes available.'}
+                  </pre>
+                </div>
+
+                <div className="p-4">
+                  <h4 className="text-xs font-semibold uppercase" style={{ color: '#334155' }}>
+                    Full Chat Log
+                  </h4>
+
+                  {detailLoading && (
+                    <p className="mt-2 text-xs" style={{ color: '#64748B' }}>
+                      Loading conversation…
+                    </p>
+                  )}
+
+                  {detailError && (
+                    <p className="mt-2 text-xs" style={{ color: '#DC2626' }}>
+                      {detailError}
+                    </p>
+                  )}
+
+                  <div className="mt-2 max-h-[70vh] space-y-2 overflow-y-auto pr-1">
+                    {(detail?.messages || []).map((message, index) => {
+                      const inbound = String(message.direction ?? '').toLowerCase() === 'inbound'
+                      const body = String(message.message_body ?? '').trim()
+                      const template = String(message.template_name ?? '').trim()
+
+                      return (
+                        <div
+                          key={String(message.id ?? `${message.created_at ?? ''}-${index}`)}
+                          className="rounded-lg border px-3 py-2"
+                          style={{
+                            borderColor: inbound ? '#BAE6FD' : '#BBF7D0',
+                            background: inbound ? '#F0F9FF' : '#F0FDF4',
+                          }}
+                        >
+                          <p className="text-[10px] font-semibold uppercase" style={{ color: '#475569' }}>
+                            {inbound ? 'Lead' : 'Pooja'} · {fmtDate(message.created_at ?? null)}
+                          </p>
+                          <p className="mt-1 whitespace-pre-wrap text-xs" style={{ color: '#0F172A' }}>
+                            {body || (template ? `[Template: ${template}]` : '[No text]')}
+                          </p>
+                        </div>
+                      )
+                    })}
+
+                    {!detailLoading && !(detail?.messages || []).length && (
+                      <p className="text-xs" style={{ color: '#64748B' }}>
+                        No logs found for this lead.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </aside>
           </div>
         )}
       </div>
