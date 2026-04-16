@@ -13,7 +13,6 @@ type HandoffLead = {
 
 const BG = '#F8FAFC'
 const SEA_GREEN = '#075E54'
-const HOT_ORANGE = '#FF8C00'
 
 function fmtDate(value: string | null | undefined): string {
   if (!value) return 'No activity yet'
@@ -48,6 +47,7 @@ export default function CallHubPage() {
   const [error, setError] = useState('')
   const [leads, setLeads] = useState<HandoffLead[]>([])
   const [updatingPhone, setUpdatingPhone] = useState('')
+  const [debugMode, setDebugMode] = useState(false)
 
   const fetchHandoffLeads = async () => {
     setLoading(true)
@@ -121,13 +121,16 @@ export default function CallHubPage() {
 
   const orderedLeads = useMemo(() => {
     return leads
-      .filter((lead) => String(lead.current_stage ?? '').trim().toLowerCase() === 'human_handoff')
+      .filter((lead) => {
+        if (debugMode) return true
+        return String(lead.current_stage ?? '').trim().toLowerCase() === 'human_handoff'
+      })
       .sort((a, b) => {
       const aTime = a.last_interaction_at ? new Date(a.last_interaction_at).getTime() : 0
       const bTime = b.last_interaction_at ? new Date(b.last_interaction_at).getTime() : 0
       return bTime - aTime
     })
-  }, [leads])
+  }, [leads, debugMode])
 
   return (
     <div className="min-h-screen px-4 py-6 md:px-8" style={{ background: BG }}>
@@ -150,6 +153,19 @@ export default function CallHubPage() {
               style={{ background: SEA_GREEN }}
             >
               Refresh Queue
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setDebugMode((prev) => !prev)}
+              className="rounded-lg border px-3 py-2 text-xs font-semibold"
+              style={{
+                borderColor: '#CBD5E1',
+                color: debugMode ? '#991B1B' : '#1E293B',
+                background: debugMode ? '#FEE2E2' : '#FFFFFF',
+              }}
+            >
+              {debugMode ? 'Debug Mode: ON (All Leads)' : 'Debug Mode: OFF'}
             </button>
           </div>
 
