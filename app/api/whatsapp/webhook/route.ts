@@ -1,11 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { sendWhatsAppTemplate } from '@/lib/whatsapp/meta-api'
-
-type RoutingDecision = {
-  templateName: string
-  stage: string
-}
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
+import { sendWhatsAppText } from '@/lib/whatsapp/meta-api'
 
 type InboundMessage = {
   id?: string
@@ -31,22 +28,24 @@ type WebhookMessageEvent = {
   valuePayload?: unknown
 }
 
+type ConversationLog = {
+  direction?: string | null
+  message_body?: string | null
+  template_name?: string | null
+  created_at?: string | null
+}
+
+type ClaudeAgentOutput = {
+  reply_text: string
+  needs_human_handoff: boolean
+  call_intelligence_notes?: string
+}
+
 const LEADS_TABLE = 'wa_seo_leads'
 const LOGS_TABLE = 'wa_seo_logs'
 
-const ROUTING_TABLE: Record<string, RoutingDecision> = {
-  'watch demo': {
-    templateName: 'claux_stage2_path_a',
-    stage: 'demo_sent',
-  },
-  'see what claux does': {
-    templateName: 'claux_stage2_path_b',
-    stage: 'features_sent',
-  },
-  'see pricing': { templateName: 'claux_stage3_decision', stage: 'decision_sent' },
-  'see offer price': { templateName: 'claux_stage4_path_a', stage: 'offer_sent' },
-  'talk to us': { templateName: 'claux_stage4_path_b', stage: 'human_handoff' },
-}
+const SALES_MANUAL_PATH = path.join(process.cwd(), 'lib/ai-training/claux_sales_manual.md')
+const INTEL_MANUAL_PATH = path.join(process.cwd(), 'lib/ai-training/claux_intelligence_manual.md')
 
 function prettifyButtonLabel(value: string | undefined): string {
   const raw = String(value ?? '').trim()
@@ -74,8 +73,165 @@ function getInboundText(message: InboundMessage): string {
   return interactiveTitle || ''
 }
 
-function normalizeRouteKey(value: string): string {
-  return value.trim().toLowerCase()
+async function getTrainingManuals(): Promise<{ salesManual: string; intelligenceManual: string }> {
+  const [salesManual, intelligenceManual] = await Promise.all([
+    readFile(SALES_MANUAL_PATH, 'utf8').catch(() => ''),
+    readFile(INTEL_MANUAL_PATH, 'utf8').catch(() => ''),
+  ])
+
+  if (!salesManual || !intelligenceManual) {
+    console.warn('[whatsapp-webhook] AI training manuals missing or empty from lib/ai-training.')
+  }
+
+  return {
+    salesManual,
+    intelligenceManual,
+  }
+}
+
+function cleanClaudeJson(input: string): string {
+  const trimmed = input.trim()
+  if (!trimmed.startsWith('```')) return trimmed
+  return trimmed.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+}
+
+function parseClaudeOutput(text: string): ClaudeAgentOutput | null {
+  try {
+    const parsed = JSON.parse(cleanClaudeJson(text)) as ClaudeAgentOutput
+    const replyText = String(parsed.reply_text ?? '').trim()
+    if (!replyText) return null
+
+    return {
+      reply_text: replyText,
+      needs_human_handoff: Boolean(parsed.needs_human_handoff),
+      call_intelligence_notes: String(parsed.call_intelligence_notes ?? '').trim() || undefined,
+    }
+  } catch {
+    return null
+  }
+}
+
+function renderConversationMemory(logs: ConversationLog[]): string {
+  if (!logs.length) return 'No prior messages found.'
+
+  return logs
+    .map((log) => {
+      const direction = String(log.direction ?? '').toLowerCase() === 'inbound' ? 'Lead' : 'Agent'
+      const body = String(log.message_body ?? '').trim()
+      const templateName = String(log.template_name ?? '').trim()
+      const value = body || (templateName ? `[Template: ${templateName}]` : '[No text]')
+      return `${direction}: ${value}`
+    })
+    .join('\n')
+}
+
+async function getRecentLeadMemory(db: any, waId: string): Promise<ConversationLog[]> {
+  const { data, error } = await db
+    .from(LOGS_TABLE)
+    .select('direction, message_body, template_name, created_at')
+    .or(`lead_phone.eq.${waId},wa_id.eq.${waId}`)
+    .order('created_at', { ascending: false })
+    .limit(15)
+
+  if (error) {
+    console.error('[whatsapp-webhook] Failed fetching lead memory:', error)
+    return []
+  }
+
+  return (Array.isArray(data) ? data : []).reverse() as ConversationLog[]
+}
+
+async function runClaudeSalesAgent(input: {
+  profileName?: string
+  inboundText: string
+  memoryLogs: ConversationLog[]
+}): Promise<ClaudeAgentOutput> {
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) {
+    throw new Error('Missing Anthropic configuration: ANTHROPIC_API_KEY')
+  }
+
+  const { salesManual, intelligenceManual } = await getTrainingManuals()
+  const systemPrompt = [
+    'You are the CLAUX WhatsApp Sales Agent.',
+    'Rules:',
+    '1) Match user language and tone naturally (English/Hinglish/Hindi).',
+    '2) Follow One Question Rule: ask at most one question in each reply.',
+    '3) Be concise, clear, and sales-focused.',
+    '4) Detect human handoff if lead asks for a call, shows frustration, or has complex objections/requirements.',
+    '5) Output strict JSON only with keys: reply_text, needs_human_handoff, call_intelligence_notes.',
+    '6) call_intelligence_notes must be concise markdown with sections: Context Brief, Call Strategy (Hook + ROI Script), Closing Tip.',
+    '7) Execute this 8-step activation sequence before every reply: read full memory, identify segment, identify journey stage, identify emotional state, identify unresolved thread, identify relevant milestone, select best approach, craft original response.',
+    '8) Anti-Amnesia Rule: reference specific earlier details from chat memory when relevant.',
+    '',
+    '=== CLAUX SALES MANUAL ===',
+    salesManual,
+    '',
+    '=== CLAUX INTELLIGENCE MANUAL ===',
+    intelligenceManual,
+  ].join('\n')
+
+  const userPrompt = [
+    `Lead Name: ${String(input.profileName ?? '').trim() || 'Unknown'}`,
+    `Latest inbound message: ${input.inboundText}`,
+    '',
+    'Recent conversation memory (last 15 logs):',
+    renderConversationMemory(input.memoryLogs),
+  ].join('\n')
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-3-5-sonnet-latest',
+      max_tokens: 600,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
+    }),
+  })
+
+  const payload = (await response.json().catch(() => ({}))) as {
+    content?: Array<{ type?: string; text?: string }>
+    error?: { message?: string }
+  }
+
+  if (!response.ok) {
+    throw new Error(payload?.error?.message || 'Claude API request failed.')
+  }
+
+  const textOutput = (payload.content ?? [])
+    .filter((item) => item?.type === 'text')
+    .map((item) => String(item.text ?? ''))
+    .join('\n')
+    .trim()
+
+  const parsed = parseClaudeOutput(textOutput)
+  if (!parsed) {
+    return {
+      reply_text: textOutput || 'Thanks for your message. Our team will assist you shortly.',
+      needs_human_handoff: false,
+    }
+  }
+
+  return parsed
+}
+
+async function saveCallIntelligenceNotes(db: any, waId: string, notes: string): Promise<void> {
+  const trimmedNotes = String(notes ?? '').trim()
+  if (!trimmedNotes) return
+
+  try {
+    const { error } = await db.from(LEADS_TABLE).update({ call_intelligence_notes: trimmedNotes }).eq('phone_number', waId)
+    if (error) {
+      console.error('[whatsapp-webhook] Failed to save call intelligence notes:', error)
+    }
+  } catch (error) {
+    console.error('[whatsapp-webhook] Saving call intelligence notes threw error:', error)
+  }
 }
 
 async function logToWaSeo(
@@ -255,6 +411,8 @@ export async function POST(request: Request): Promise<NextResponse> {
     const waId = String(message.from ?? '').trim()
     if (!waId) continue
 
+    const inboundDirection = 'inbound'
+
     const inboundText = getInboundText(message)
     const leadMetadata = {
       message_id: message.id ?? null,
@@ -264,7 +422,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     await logToWaSeo(db, {
       waId,
-      direction: 'inbound',
+      direction: inboundDirection,
       messageText: inboundText,
       payloadData: valuePayload ?? message,
     })
@@ -275,63 +433,43 @@ export async function POST(request: Request): Promise<NextResponse> {
       .eq('phone_number', waId)
       .maybeSingle()
 
-    const detectedAction = normalizeRouteKey(inboundText)
-    console.log('[DEBUG_FLOW] Step 1: Action detected:', detectedAction)
-    const route = ROUTING_TABLE[detectedAction]
-    const currentStage = (lead?.current_stage as string | null | undefined) ?? null
-
-    console.log('[STAGE_CHECK]', { waId, detectedAction, currentStage })
-
-    if (route) {
-      console.log('[DEBUG_FLOW] Step 2: Attempting DB write for:', waId)
-      await ensureLeadAndStage(db, waId, route.stage, leadMetadata, profileName)
-
-      try {
-        console.log('[DEBUG_FLOW] Step 3: Meta Send Start for template:', route.templateName)
-        const metaRes = await sendWhatsAppTemplate({
-          to: waId,
-          templateName: route.templateName,
-        })
-        console.log('[DEBUG_FLOW] Step 4: Meta Response Status:', (metaRes as any)?.status)
-
-        const sendResult = metaRes
-
-        await logToWaSeo(db, {
-          waId,
-          direction: 'outbound',
-          messageText: undefined,
-          templateName: route.templateName,
-          payloadData: sendResult,
-        })
-      } catch (error) {
-        console.error('[whatsapp-webhook] Failed sending routed template:', error)
-      }
-
-      continue
-    }
-
-    if (lead) {
+    if (!lead) {
+      await ensureLeadAndStage(db, waId, 'welcome', leadMetadata, profileName)
+    } else {
       await ensureLeadName(db, waId, profileName)
     }
 
-    if (!lead) {
-      try {
-        const sendResult = await sendWhatsAppTemplate({ to: waId, templateName: 'claux_stage1_welcome' })
+    if (!inboundText) {
+      continue
+    }
 
-        await ensureLeadAndStage(db, waId, 'welcome', leadMetadata, profileName)
+    try {
+      const memoryLogs = await getRecentLeadMemory(db, waId)
+      const ai = await runClaudeSalesAgent({
+        profileName,
+        inboundText,
+        memoryLogs,
+      })
 
-        await logToWaSeo(db, {
-          waId,
-          direction: 'outbound',
-          messageText: undefined,
-          templateName: 'claux_stage1_welcome',
-          payloadData: sendResult,
-        })
-      } catch (error) {
-        console.error('[whatsapp-webhook] Failed sending welcome template:', error)
+      if (ai.needs_human_handoff) {
+        await ensureLeadAndStage(db, waId, 'human_handoff', leadMetadata, profileName)
+        if (ai.call_intelligence_notes) {
+          await saveCallIntelligenceNotes(db, waId, ai.call_intelligence_notes)
+        }
       }
 
-      continue
+      const outboundText = String(ai.reply_text ?? '').trim()
+      if (!outboundText) continue
+
+      const sendResult = await sendWhatsAppText({ to: waId, text: outboundText })
+      await logToWaSeo(db, {
+        waId,
+        direction: 'outbound',
+        messageText: outboundText,
+        payloadData: sendResult,
+      })
+    } catch (error) {
+      console.error('[whatsapp-webhook] AI response flow failed:', error)
     }
   }
 

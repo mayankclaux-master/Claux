@@ -10,15 +10,18 @@ type LeadRow = {
   phone_number: string
   current_stage: string | null
   full_name?: string | null
+  call_intelligence_notes?: string | null
 }
 
 type LeadItem = {
   phone_number: string
   full_name: string | null
   current_stage: string
+  call_intelligence_notes?: string | null
   last_interaction_at: string | null
   interaction_count: number
   button_click_count: number
+  watched_demo?: boolean
 }
 
 type LogRow = {
@@ -123,8 +126,80 @@ export async function GET(request: Request): Promise<NextResponse> {
     }
   }
 
+  if (mode === 'handoff') {
+    const [leadsResult, logsResult] = await Promise.all([
+      db.from(LEADS_TABLE).select('phone_number, current_stage, full_name, call_intelligence_notes').eq('current_stage', 'human_handoff'),
+      db
+        .from(LOGS_TABLE)
+        .select('id, lead_phone, wa_id, direction, message_body, template_name, payload, created_at')
+        .order('created_at', { ascending: false })
+        .limit(1500),
+    ])
+
+    if (leadsResult.error) {
+      return NextResponse.json({ error: leadsResult.error.message }, { status: 500 })
+    }
+
+    if (logsResult.error) {
+      return NextResponse.json({ error: logsResult.error.message }, { status: 500 })
+    }
+
+    const leads = (leadsResult.data ?? []) as LeadRow[]
+    const logs = (logsResult.data ?? []) as LogRow[]
+    const latestByPhone = new Map<string, string>()
+    const interactionCountByPhone = new Map<string, number>()
+    const buttonClicksByPhone = new Map<string, number>()
+    const watchedDemoByPhone = new Map<string, boolean>()
+
+    for (const row of logs) {
+      const phone = normalizePhone(row.lead_phone || row.wa_id)
+      if (!phone) continue
+
+      interactionCountByPhone.set(phone, (interactionCountByPhone.get(phone) ?? 0) + 1)
+
+      if (isInboundButtonClick(row)) {
+        buttonClicksByPhone.set(phone, (buttonClicksByPhone.get(phone) ?? 0) + 1)
+      }
+
+      const inboundText = String(row.message_body ?? '').trim().toLowerCase()
+      const templateName = String(row.template_name ?? '').trim().toLowerCase()
+      const watchedDemo =
+        inboundText.includes('watch demo') || templateName === 'claux_stage2_path_a' || watchedDemoByPhone.get(phone) === true
+      if (watchedDemo) {
+        watchedDemoByPhone.set(phone, true)
+      }
+
+      const createdAt = row.created_at ? new Date(row.created_at).getTime() : 0
+      const currentLatest = latestByPhone.get(phone)
+      const currentLatestMs = currentLatest ? new Date(currentLatest).getTime() : 0
+
+      if (!currentLatest || createdAt > currentLatestMs) {
+        latestByPhone.set(phone, row.created_at ?? new Date(0).toISOString())
+      }
+    }
+
+    const handoffLeads: LeadItem[] = leads
+      .map((lead) => ({
+        phone_number: lead.phone_number,
+        full_name: lead.full_name ?? null,
+        current_stage: lead.current_stage ?? 'human_handoff',
+        call_intelligence_notes: lead.call_intelligence_notes ?? null,
+        last_interaction_at: latestByPhone.get(lead.phone_number) ?? null,
+        interaction_count: interactionCountByPhone.get(lead.phone_number) ?? 0,
+        button_click_count: buttonClicksByPhone.get(lead.phone_number) ?? 0,
+        watched_demo: watchedDemoByPhone.get(lead.phone_number) ?? false,
+      }))
+      .sort((a, b) => {
+        const aTime = a.last_interaction_at ? new Date(a.last_interaction_at).getTime() : 0
+        const bTime = b.last_interaction_at ? new Date(b.last_interaction_at).getTime() : 0
+        return bTime - aTime
+      })
+
+    return NextResponse.json({ leads: handoffLeads })
+  }
+
   const [leadsResult, logsResult] = await Promise.all([
-    db.from(LEADS_TABLE).select('phone_number, current_stage, full_name'),
+    db.from(LEADS_TABLE).select('phone_number, current_stage, full_name, call_intelligence_notes'),
     db
       .from(LOGS_TABLE)
       .select('id, lead_phone, wa_id, direction, message_body, template_name, payload, created_at')
@@ -169,6 +244,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     phone_number: lead.phone_number,
     full_name: lead.full_name ?? null,
     current_stage: lead.current_stage ?? 'unknown',
+    call_intelligence_notes: lead.call_intelligence_notes ?? null,
     last_interaction_at: latestByPhone.get(lead.phone_number) ?? null,
     interaction_count: interactionCountByPhone.get(lead.phone_number) ?? 0,
     button_click_count: buttonClicksByPhone.get(lead.phone_number) ?? 0,
