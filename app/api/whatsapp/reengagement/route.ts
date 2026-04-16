@@ -42,6 +42,14 @@ function normalizePhone(input: unknown): string {
   return String(input ?? '').trim()
 }
 
+function hasUrl(text: string): boolean {
+  return /(https?:\/\/\S+|www\.\S+)/i.test(String(text ?? '').trim())
+}
+
+function isLocationMention(text: string): boolean {
+  return /shared\s+location|location\s+received|latitude|longitude/i.test(String(text ?? '').trim())
+}
+
 function detectValueAngle(text: string): ValueAngle {
   const value = String(text ?? '').toLowerCase()
   if (!value) return 'other'
@@ -109,6 +117,7 @@ async function runReengagementClaude(input: {
   memoryLogs: LogRow[]
   lastOutboundText: string
   lastOutboundAngle: ValueAngle
+  latestInboundHasUrlOrLocation: boolean
 }): Promise<ClaudeReengagementOutput> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
@@ -139,12 +148,14 @@ async function runReengagementClaude(input: {
     `Lead name: ${String(input.leadName ?? '').trim() || 'Unknown'}`,
     `Last outbound message from Pooja: ${input.lastOutboundText || 'N/A'}`,
     `Last outbound value angle: ${input.lastOutboundAngle}`,
+    `Latest inbound has URL/location: ${input.latestInboundHasUrlOrLocation ? 'yes' : 'no'}`,
     '',
     'Recent conversation memory:',
     renderMemory(input.memoryLogs),
     '',
     'Pooja, generate a Smart Re-engagement Ping using a DIFFERENT value-prop than your last message. Use the 2,400-hour edge, the 100+ SOP authority, or the ₹2.1L saving math.',
     'Angle Cycling Rule: if the last outbound angle was price_saving, your new nudge MUST use work_hours_edge or sop_authority (not price_saving).',
+    'If latest inbound includes URL/location, acknowledge that you are reviewing it and push a quick strategy call with Mayank ji.',
   ].join('\n')
 
   const primaryModel = 'claude-3-5-sonnet-20240620'
@@ -293,6 +304,8 @@ export async function POST(request: Request): Promise<NextResponse> {
     const lastOutbound = thread.find((row) => String(row.direction ?? '').toLowerCase() === 'outbound')
     const lastOutboundText = String(lastOutbound?.message_body ?? '').trim()
     const lastOutboundAngle = detectValueAngle(lastOutboundText)
+    const latestInboundText = String(latest.message_body ?? '').trim()
+    const latestInboundHasUrlOrLocation = hasUrl(latestInboundText) || isLocationMention(latestInboundText)
 
     try {
       const memoryLogs = thread.slice(0, 15).reverse()
@@ -302,9 +315,13 @@ export async function POST(request: Request): Promise<NextResponse> {
         memoryLogs,
         lastOutboundText,
         lastOutboundAngle,
+        latestInboundHasUrlOrLocation,
       })
 
-      const outboundText = String(ai.reply_text ?? '').trim()
+      const leadName = String((lead as { full_name?: string | null }).full_name ?? '').trim()
+      const firstName = leadName.split(/\s+/).filter(Boolean)[0] || 'Bhai'
+      const websiteAwareNudge = `${firstName} bhai, website check kar rahi hoon—kaafi potential hai SEO ka. Should we jump on a quick strategy call?`
+      const outboundText = String(latestInboundHasUrlOrLocation ? websiteAwareNudge : ai.reply_text ?? '').trim()
       if (!outboundText) {
         skipped.push({ phone, reason: 'empty_ai_reply' })
         continue
@@ -320,8 +337,9 @@ export async function POST(request: Request): Promise<NextResponse> {
         template_name: null,
         payload: {
           automated_nudge: true,
-          nudge_type: 'reengagement_2h_24h',
+          nudge_type: latestInboundHasUrlOrLocation ? 'reengagement_website_followup' : 'reengagement_2h_24h',
           value_prop_used: ai.value_prop_used ?? null,
+          latest_inbound_url_or_location: latestInboundHasUrlOrLocation,
           send_result: sendResult,
         },
       })

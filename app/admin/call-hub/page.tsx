@@ -7,6 +7,7 @@ type HandoffLead = {
   full_name: string | null
   current_stage: string
   call_intelligence_notes?: string | null
+  high_intent?: boolean
   handover_at?: string | null
   last_interaction_at: string | null
   interaction_count: number
@@ -26,6 +27,7 @@ type HandoffDetailResponse = {
     full_name: string | null
     current_stage: string
     call_intelligence_notes?: string | null
+    high_intent?: boolean
     handover_at?: string | null
   } | null
   messages: HandoffMessage[]
@@ -271,6 +273,11 @@ export default function CallHubPage() {
                   </div>
 
                   <div className="flex flex-col items-end gap-1">
+                    {lead.high_intent && (
+                      <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: '#FEF3C7', color: '#92400E' }}>
+                        High Intent
+                      </span>
+                    )}
                     <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: '#F1F5F9', color: '#334155' }}>
                       Interactions: {lead.interaction_count || 0}
                     </span>
@@ -353,6 +360,11 @@ export default function CallHubPage() {
                   <p className="text-xs" style={{ color: '#64748B' }}>
                     Handover At: {fmtDate(detail?.lead?.handover_at ?? null)}
                   </p>
+                  {detail?.lead?.high_intent && (
+                    <p className="text-[11px] font-semibold" style={{ color: '#92400E' }}>
+                      High Intent • URL/Location shared
+                    </p>
+                  )}
                 </div>
                 <button
                   type="button"

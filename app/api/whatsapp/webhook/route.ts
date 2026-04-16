@@ -9,6 +9,12 @@ type InboundMessage = {
   from?: string
   type?: string
   text?: { body?: string }
+  location?: {
+    latitude?: number
+    longitude?: number
+    name?: string
+    address?: string
+  }
   button?: { text?: string; payload?: string }
   interactive?: {
     type?: 'button_reply' | 'list_reply'
@@ -61,6 +67,12 @@ function getInboundText(message: InboundMessage): string {
   const textBody = message.text?.body?.trim()
   if (textBody) return textBody
 
+  const locationName = String(message.location?.name ?? '').trim()
+  const locationAddress = String(message.location?.address ?? '').trim()
+  if (locationName || locationAddress || message.type === 'location') {
+    return `Shared location: ${locationName || locationAddress || 'Location received'}`
+  }
+
   const buttonText = message.button?.text?.trim() || prettifyButtonLabel(message.button?.payload)
   if (buttonText) return buttonText
 
@@ -71,6 +83,41 @@ function getInboundText(message: InboundMessage): string {
     prettifyButtonLabel(message.interactive?.list_reply?.id)
 
   return interactiveTitle || ''
+}
+
+function hasUrl(text: string): boolean {
+  return /(https?:\/\/\S+|www\.\S+)/i.test(String(text ?? '').trim())
+}
+
+function isLocationShared(message: InboundMessage): boolean {
+  return Boolean(message.location) || String(message.type ?? '').toLowerCase() === 'location'
+}
+
+function normalizeForSimilarity(value: string): string[] {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+}
+
+function similarityRatio(a: string, b: string): number {
+  const aTokens = new Set(normalizeForSimilarity(a))
+  const bTokens = new Set(normalizeForSimilarity(b))
+  if (!aTokens.size || !bTokens.size) return 0
+
+  let intersection = 0
+  for (const token of aTokens) {
+    if (bTokens.has(token)) intersection += 1
+  }
+
+  const union = new Set([...aTokens, ...bTokens]).size
+  if (!union) return 0
+  return intersection / union
+}
+
+function isTooSimilarToRecentOutbound(candidate: string, recentOutbounds: string[]): boolean {
+  return recentOutbounds.some((prev) => similarityRatio(candidate, prev) > 0.6)
 }
 
 async function getTrainingManuals(): Promise<{ salesManual: string; intelligenceManual: string }> {
@@ -178,6 +225,7 @@ async function runClaudeSalesAgent(input: {
   profileName?: string
   inboundText: string
   memoryLogs: ConversationLog[]
+  latestMessageHasUrlOrLocation: boolean
 }): Promise<ClaudeAgentOutput> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   console.log('[whatsapp-webhook][trace] runClaudeSalesAgent:start', {
@@ -192,6 +240,11 @@ async function runClaudeSalesAgent(input: {
 
   const { salesManual, intelligenceManual } = await getTrainingManuals()
   const leadReplyCount = input.memoryLogs.filter((log) => String(log.direction ?? '').toLowerCase() === 'inbound').length
+  const recentOutboundMessages = input.memoryLogs
+    .filter((log) => String(log.direction ?? '').toLowerCase() === 'outbound')
+    .map((log) => String(log.message_body ?? '').trim())
+    .filter(Boolean)
+    .slice(-3)
 
   const systemPrompt = [
     'You are Pooja from the Claux Team.',
@@ -202,7 +255,7 @@ async function runClaudeSalesAgent(input: {
     '4) Tone calibration: warm Hinglish for rapport + Bandra-style professional English for authority and clarity.',
     '5) One high-intent question per message to keep momentum. Never ask multiple questions.',
     '6) Keep replies concise, direct, and conversion-focused. No long technical lectures.',
-    '7) Conversion Hierarchy Goal 1 (Diagnosis): use CARS (Context, Assess, Relate, Sell) and validate pain immediately. Example: "Agency ne budget waste kiya, I totally get that frustration."',
+    '7) CARS execution for EVERY reply: Assess the lead message first, Connect with their pain/emotion second, and Push one concrete next step (demo/call) third.',
     '8) Conversion Hierarchy Goal 2 (Value-Gap): use Work-Hour Edge clearly — agencies roughly 300 hours/month vs Claux 2,400 hours/month execution powered by 100+ global SEO SOPs.',
     '9) Conversion Hierarchy Goal 3 (Demo Pivot): if skeptical, push demo line: "Sir, 5 minute ka demo dekh lijiye, aapko khud dikh jayega ki agents live kaam kaise karte hain" and share https://claux.automizemedialabs.com/demo.',
     '10) Conversion Hierarchy Goal 4 (Pricing Anchor): frame ₹7,499 as approximately ₹2.1 lakh/year saving versus traditional agencies.',
@@ -212,12 +265,15 @@ async function runClaudeSalesAgent(input: {
     '14) If unsure, use this exact escalation line: "Sir, I’m not sure about this and don’t want to misguide you. Let me check and revert. Meanwhile, should I arrange a call with our Support Head, Mr. Mayank? He can help you with anything regarding Claux."',
     '15) Conversion links to use naturally when relevant: Demo https://claux.automizemedialabs.com/demo | Pricing https://claux.automizemedialabs.com/pricing | Landing https://claux.automizemedialabs.com | Unlock Offer https://claux.automizemedialabs.com/partner-offer | FAQs https://claux.automizemedialabs.com/#faq',
     '16) Detect human handoff if lead asks for a call, shows frustration, asks advanced customization, or requests Mr. Mayank.',
+    '16b) If lead shares a URL/website link or a location pin, mark needs_human_handoff=true and acknowledge with: "Got the link! I\'m sharing this with Mayank ji right now so he can prepare your custom 200-point audit."',
     '17) Internal brain rule: use an internal <thinking> block for Value-Gap Analysis and Objection Pre-emption before drafting final output. Never expose <thinking> in reply_text.',
     '18) Never say "I am confused".',
     '19) Output strict JSON only with keys: reply_text, needs_human_handoff, call_intelligence_notes.',
     '20) call_intelligence_notes must be concise markdown with sections: Context Brief, Call Strategy (Hook + ROI Script), Closing Tip.',
     '21) Execute this 8-step activation sequence before every reply: read full memory, identify segment, identify journey stage, identify emotional state, identify unresolved thread, identify relevant milestone, select best approach, craft original response.',
     '22) Anti-Amnesia Rule: reference specific earlier details from chat memory when relevant.',
+    '23) Anti-Repetition Shield: compare your proposed reply_text against last 3 outbound messages; if similarity is above 60%, discard and regenerate with a new opening and new angle.',
+    '24) Strict persona lock: never use robotic lines like "Thanks for your message" or "I am an AI assistant".',
     '',
     '=== CLAUX SALES MANUAL ===',
     salesManual,
@@ -230,6 +286,10 @@ async function runClaudeSalesAgent(input: {
     `Lead Name: ${String(input.profileName ?? '').trim() || 'Unknown'}`,
     `Latest inbound message: ${input.inboundText}`,
     `Lead inbound reply count so far: ${leadReplyCount}`,
+    `Latest inbound contains URL or location signal: ${input.latestMessageHasUrlOrLocation ? 'yes' : 'no'}`,
+    '',
+    'Last 3 outbound messages by Pooja (for anti-repetition check):',
+    recentOutboundMessages.length ? recentOutboundMessages.map((line, index) => `${index + 1}) ${line}`).join('\n') : 'None',
     '',
     'Recent conversation memory (last 15 logs):',
     renderConversationMemory(input.memoryLogs),
@@ -241,22 +301,26 @@ async function runClaudeSalesAgent(input: {
   const modelCandidates = Array.from(new Set([primaryModel, fallbackModel]))
 
   let lastError = 'Claude API request failed.'
+  let regenerationHint = ''
 
-  for (const model of modelCandidates) {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: 600,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }],
-      }),
-    })
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const attemptPrompt = [userPrompt, regenerationHint].filter(Boolean).join('\n\n')
+
+    for (const model of modelCandidates) {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 600,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: attemptPrompt }],
+        }),
+      })
 
     const payload = (await response.json().catch(() => ({}))) as {
       content?: Array<{ type?: string; text?: string }>
@@ -271,32 +335,38 @@ async function runClaudeSalesAgent(input: {
       contentBlocks: Array.isArray(payload?.content) ? payload.content.length : 0,
     })
 
-    if (!response.ok) {
-      lastError = payload?.error?.message || `Claude API request failed for model ${model}.`
-      continue
-    }
-
-    const textOutput = (payload.content ?? [])
-      .filter((item) => item?.type === 'text')
-      .map((item) => String(item.text ?? ''))
-      .join('\n')
-      .trim()
-
-    const parsed = parseClaudeOutput(textOutput)
-    console.log('[whatsapp-webhook][trace] claude:parsed', {
-      model,
-      parsed: Boolean(parsed),
-      textOutputLength: textOutput.length,
-    })
-
-    if (!parsed) {
-      return {
-        reply_text: 'Thanks for your message. I can help you with plans, pricing, or a quick strategy call. What would you like to know first?',
-        needs_human_handoff: false,
+      if (!response.ok) {
+        lastError = payload?.error?.message || `Claude API request failed for model ${model}.`
+        continue
       }
-    }
 
-    return parsed
+      const textOutput = (payload.content ?? [])
+        .filter((item) => item?.type === 'text')
+        .map((item) => String(item.text ?? ''))
+        .join('\n')
+        .trim()
+
+      const parsed = parseClaudeOutput(textOutput)
+      console.log('[whatsapp-webhook][trace] claude:parsed', {
+        model,
+        parsed: Boolean(parsed),
+        textOutputLength: textOutput.length,
+      })
+
+      if (!parsed) {
+        lastError = 'Claude returned non-JSON output.'
+        continue
+      }
+
+      if (isTooSimilarToRecentOutbound(parsed.reply_text, recentOutboundMessages)) {
+        regenerationHint =
+          'Your previous draft was rejected because it was too similar to earlier outbound messages (>60%). Generate a fresh opening, fresh phrasing, and a different angle while keeping persona + CARS compliance.'
+        lastError = 'Reply rejected by anti-repetition shield.'
+        continue
+      }
+
+      return parsed
+    }
   }
 
   throw new Error(lastError)
@@ -505,11 +575,13 @@ export async function POST(request: Request): Promise<NextResponse> {
     const inboundDirection = 'inbound'
 
     const inboundText = getInboundText(message)
+    const highIntentFromUrlOrLocation = hasUrl(inboundText) || isLocationShared(message)
     console.log('[whatsapp-webhook][trace] webhook:event-start', {
       waId,
       messageType: message.type ?? 'unknown',
       hasInboundText: Boolean(inboundText),
       inboundLength: inboundText.length,
+      highIntentFromUrlOrLocation,
       profileName: profileName ?? null,
     })
 
@@ -517,6 +589,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       message_id: message.id ?? null,
       message_type: message.type ?? 'unknown',
       last_inbound_text: inboundText || null,
+      high_intent: highIntentFromUrlOrLocation,
     }
 
     const { data: lead } = await db
@@ -552,15 +625,30 @@ export async function POST(request: Request): Promise<NextResponse> {
         profileName,
         inboundText,
         memoryLogs,
-      })
-      console.log('[whatsapp-webhook][trace] ai-flow:claude-output', {
-        waId,
-        needs_human_handoff: ai.needs_human_handoff,
-        replyLength: String(ai.reply_text ?? '').trim().length,
-        hasCallNotes: Boolean(String(ai.call_intelligence_notes ?? '').trim()),
+        latestMessageHasUrlOrLocation: highIntentFromUrlOrLocation,
       })
 
-      if (ai.needs_human_handoff) {
+      const forcedHighIntentReply =
+        "Got the link! I'm sharing this with Mayank ji right now so he can prepare your custom 200-point audit."
+      const needsHumanHandoff = ai.needs_human_handoff || highIntentFromUrlOrLocation
+      const outboundText = String(highIntentFromUrlOrLocation ? forcedHighIntentReply : ai.reply_text ?? '').trim()
+      const callNotes = String(ai.call_intelligence_notes ?? '').trim()
+      const handoffNotes = highIntentFromUrlOrLocation
+        ? [
+            'Context Brief: Lead shared a URL/location signal and is high-intent for audit-level conversation.',
+            'Call Strategy: Open with gratitude for the asset shared, confirm quick review findings, and move to a strategy call with Mayank ji.',
+            'Closing Tip: Lock a specific call slot and ask one qualifying business-goal question.',
+          ].join('\n')
+        : callNotes
+
+      console.log('[whatsapp-webhook][trace] ai-flow:claude-output', {
+        waId,
+        needs_human_handoff: needsHumanHandoff,
+        replyLength: outboundText.length,
+        hasCallNotes: Boolean(handoffNotes),
+      })
+
+      if (needsHumanHandoff) {
         await ensureLeadAndStage(
           db,
           waId,
@@ -568,15 +656,16 @@ export async function POST(request: Request): Promise<NextResponse> {
           {
             ...leadMetadata,
             handover_at: new Date().toISOString(),
+            high_intent: highIntentFromUrlOrLocation,
+            handoff_reason: highIntentFromUrlOrLocation ? 'url_or_location_shared' : 'ai_handoff',
           },
           profileName
         )
-        if (ai.call_intelligence_notes) {
-          await saveCallIntelligenceNotes(db, waId, ai.call_intelligence_notes)
+        if (handoffNotes) {
+          await saveCallIntelligenceNotes(db, waId, handoffNotes)
         }
       }
 
-      const outboundText = String(ai.reply_text ?? '').trim()
       if (!outboundText) {
         console.log('[whatsapp-webhook][trace] ai-flow:skip-send-empty-reply', { waId })
         continue
@@ -598,6 +687,34 @@ export async function POST(request: Request): Promise<NextResponse> {
       console.log('[whatsapp-webhook][trace] ai-flow:outbound-log:ok', { waId })
     } catch (error) {
       console.error('[whatsapp-webhook] AI response flow failed:', error)
+      const rescueReply = highIntentFromUrlOrLocation
+        ? "Got the link! I'm sharing this with Mayank ji right now so he can prepare your custom 200-point audit."
+        : 'Noted. Main Mayank ji ke saath is context ko align karke aapko custom next step bhejti hoon. Kya 10-min quick strategy call lock kar dein?'
+
+      await ensureLeadAndStage(
+        db,
+        waId,
+        'human_handoff',
+        {
+          ...leadMetadata,
+          handover_at: new Date().toISOString(),
+          high_intent: highIntentFromUrlOrLocation,
+          handoff_reason: highIntentFromUrlOrLocation ? 'url_or_location_shared' : 'ai_provider_fallback',
+        },
+        profileName
+      )
+
+      const sendResult = await sendWhatsAppText({ to: waId, text: rescueReply })
+      await logToWaSeo(db, {
+        waId,
+        direction: 'outbound',
+        messageText: rescueReply,
+        payloadData: {
+          rescue_mode: true,
+          reason: 'ai_provider_unavailable',
+          send_result: sendResult,
+        },
+      })
     }
   }
 

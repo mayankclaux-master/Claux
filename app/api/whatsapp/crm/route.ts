@@ -19,6 +19,7 @@ type LeadItem = {
   full_name: string | null
   current_stage: string
   call_intelligence_notes?: string | null
+  high_intent?: boolean
   handover_at?: string | null
   last_interaction_at: string | null
   interaction_count: number
@@ -92,6 +93,12 @@ function extractHandoverAt(lead: LeadRow, fallbackValue: string | null): string 
   const fromMetadata = metadata && typeof metadata === 'object' ? String((metadata as Record<string, unknown>).handover_at ?? '').trim() : ''
   if (fromMetadata) return fromMetadata
   return fallbackValue
+}
+
+function extractHighIntent(lead: LeadRow): boolean {
+  const metadata = lead.metadata
+  if (!metadata || typeof metadata !== 'object') return false
+  return Boolean((metadata as Record<string, unknown>).high_intent)
 }
 
 function isWithinHandoverRange(handoverAt: string | null, timeRange: 'today' | '7d' | 'all'): boolean {
@@ -214,6 +221,7 @@ export async function GET(request: Request): Promise<NextResponse> {
         full_name: lead.full_name ?? null,
         current_stage: lead.current_stage ?? 'human_handoff',
         call_intelligence_notes: lead.call_intelligence_notes ?? null,
+        high_intent: extractHighIntent(lead),
         last_interaction_at: latestByPhone.get(lead.phone_number) ?? null,
         handover_at: extractHandoverAt(lead, latestByPhone.get(lead.phone_number) ?? null),
         interaction_count: interactionCountByPhone.get(lead.phone_number) ?? 0,
@@ -267,6 +275,7 @@ export async function GET(request: Request): Promise<NextResponse> {
             full_name: lead.full_name ?? null,
             current_stage: lead.current_stage ?? 'unknown',
             call_intelligence_notes: lead.call_intelligence_notes ?? null,
+            high_intent: extractHighIntent(lead),
             handover_at: extractHandoverAt(lead, null),
           }
         : null,
