@@ -25,6 +25,8 @@ type ClaudeReengagementOutput = {
   value_prop_used?: string
 }
 
+type ValueAngle = 'price_saving' | 'work_hours_edge' | 'sop_authority' | 'other'
+
 function makeDb() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -38,6 +40,25 @@ function makeDb() {
 
 function normalizePhone(input: unknown): string {
   return String(input ?? '').trim()
+}
+
+function detectValueAngle(text: string): ValueAngle {
+  const value = String(text ?? '').toLowerCase()
+  if (!value) return 'other'
+
+  if (/(price|pricing|budget|cost|expensive|₹|7499|2\.1|lakh|saving|save)/i.test(value)) {
+    return 'price_saving'
+  }
+
+  if (/(2400|2,400|300\s*hours|hour edge|execution edge)/i.test(value)) {
+    return 'work_hours_edge'
+  }
+
+  if (/(100\+|sop|sops|authority)/i.test(value)) {
+    return 'sop_authority'
+  }
+
+  return 'other'
 }
 
 function parseClaudeOutput(rawText: string): ClaudeReengagementOutput | null {
@@ -74,6 +95,11 @@ async function getTrainingManuals(): Promise<{ salesManual: string; intelligence
     readFile(INTEL_MANUAL_PATH, 'utf8').catch(() => ''),
   ])
 
+  console.log('[reengagement] manuals-loaded', {
+    salesLength: salesManual.length,
+    intelligenceLength: intelligenceManual.length,
+  })
+
   return { salesManual, intelligenceManual }
 }
 
@@ -82,6 +108,7 @@ async function runReengagementClaude(input: {
   leadName?: string | null
   memoryLogs: LogRow[]
   lastOutboundText: string
+  lastOutboundAngle: ValueAngle
 }): Promise<ClaudeReengagementOutput> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
@@ -111,11 +138,13 @@ async function runReengagementClaude(input: {
     `Lead phone: ${input.phone}`,
     `Lead name: ${String(input.leadName ?? '').trim() || 'Unknown'}`,
     `Last outbound message from Pooja: ${input.lastOutboundText || 'N/A'}`,
+    `Last outbound value angle: ${input.lastOutboundAngle}`,
     '',
     'Recent conversation memory:',
     renderMemory(input.memoryLogs),
     '',
     'Pooja, generate a Smart Re-engagement Ping using a DIFFERENT value-prop than your last message. Use the 2,400-hour edge, the 100+ SOP authority, or the ₹2.1L saving math.',
+    'Angle Cycling Rule: if the last outbound angle was price_saving, your new nudge MUST use work_hours_edge or sop_authority (not price_saving).',
   ].join('\n')
 
   const primaryModel = 'claude-3-5-sonnet-20240620'
@@ -173,12 +202,18 @@ export async function POST(request: Request): Promise<NextResponse> {
   if (!db) return NextResponse.json({ error: 'Server configuration missing.' }, { status: 500 })
 
   const expectedSecret = String(process.env.REENGAGEMENT_CRON_SECRET ?? '').trim()
+  if (!expectedSecret) {
+    return NextResponse.json({ error: 'Server configuration missing: REENGAGEMENT_CRON_SECRET' }, { status: 500 })
+  }
+
   const authHeader = String(request.headers.get('authorization') ?? '').trim()
   const requestSecret = authHeader.toLowerCase().startsWith('bearer ') ? authHeader.slice(7).trim() : ''
 
-  if (expectedSecret && requestSecret !== expectedSecret) {
+  if (!authHeader.toLowerCase().startsWith('bearer ') || requestSecret !== expectedSecret) {
     return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 })
   }
+
+  console.log('[CRON-TRIGGER] Re-engagement cycle started')
 
   const nowMs = Date.now()
   const minAgeMs = 2 * 60 * 60 * 1000
@@ -257,6 +292,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     const lastOutbound = thread.find((row) => String(row.direction ?? '').toLowerCase() === 'outbound')
     const lastOutboundText = String(lastOutbound?.message_body ?? '').trim()
+    const lastOutboundAngle = detectValueAngle(lastOutboundText)
 
     try {
       const memoryLogs = thread.slice(0, 15).reverse()
@@ -265,6 +301,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         leadName: String((lead as { full_name?: string | null }).full_name ?? '').trim() || null,
         memoryLogs,
         lastOutboundText,
+        lastOutboundAngle,
       })
 
       const outboundText = String(ai.reply_text ?? '').trim()
