@@ -151,6 +151,11 @@ export async function sendWhatsAppText({ to, text }: WhatsAppTextSendInput): Pro
     throw new Error('Missing WhatsApp configuration: WHATSAPP_TOKEN or WHATSAPP_PHONE_ID')
   }
 
+  console.log('[META_SEND_TEXT_DEBUG] credentials', {
+    phoneId,
+    tokenPrefix: token.slice(0, 10),
+  })
+
   const payload = {
     messaging_product: 'whatsapp',
     to,
@@ -173,6 +178,9 @@ export async function sendWhatsAppText({ to, text }: WhatsAppTextSendInput): Pro
 
   if (!response.ok) {
     const reason = data?.error?.message || 'Unknown Meta API error'
+    if (/object with id .* does not exist/i.test(reason)) {
+      console.error('CHECK META CONSOLE: Is Phone ID 814084471085545 correct for this App?')
+    }
     throw new Error(`Meta text send failed: ${reason}`)
   }
 

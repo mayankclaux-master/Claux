@@ -74,10 +74,20 @@ function getInboundText(message: InboundMessage): string {
 }
 
 async function getTrainingManuals(): Promise<{ salesManual: string; intelligenceManual: string }> {
+  console.log('[whatsapp-webhook][trace] getTrainingManuals:start', {
+    salesPath: SALES_MANUAL_PATH,
+    intelligencePath: INTEL_MANUAL_PATH,
+  })
+
   const [salesManual, intelligenceManual] = await Promise.all([
     readFile(SALES_MANUAL_PATH, 'utf8').catch(() => ''),
     readFile(INTEL_MANUAL_PATH, 'utf8').catch(() => ''),
   ])
+
+  console.log('[whatsapp-webhook][trace] getTrainingManuals:loaded', {
+    salesLength: salesManual.length,
+    intelligenceLength: intelligenceManual.length,
+  })
 
   if (!salesManual || !intelligenceManual) {
     console.warn('[whatsapp-webhook] AI training manuals missing or empty from lib/ai-training.')
@@ -147,6 +157,12 @@ async function runClaudeSalesAgent(input: {
   memoryLogs: ConversationLog[]
 }): Promise<ClaudeAgentOutput> {
   const apiKey = process.env.ANTHROPIC_API_KEY
+  console.log('[whatsapp-webhook][trace] runClaudeSalesAgent:start', {
+    hasAnthropicKey: Boolean(apiKey),
+    inboundLength: input.inboundText.length,
+    memoryCount: input.memoryLogs.length,
+  })
+
   if (!apiKey) {
     throw new Error('Missing Anthropic configuration: ANTHROPIC_API_KEY')
   }
@@ -179,45 +195,71 @@ async function runClaudeSalesAgent(input: {
     renderConversationMemory(input.memoryLogs),
   ].join('\n')
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-3-5-sonnet-latest',
-      max_tokens: 600,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }],
-    }),
-  })
+  const primaryModel = 'claude-3-5-sonnet-20240620'
+  const envFallbackModel = String(process.env.ANTHROPIC_FALLBACK_MODEL ?? '').trim()
+  const fallbackModel = envFallbackModel || 'claude-sonnet-4-6'
+  const modelCandidates = Array.from(new Set([primaryModel, fallbackModel]))
 
-  const payload = (await response.json().catch(() => ({}))) as {
-    content?: Array<{ type?: string; text?: string }>
-    error?: { message?: string }
-  }
+  let lastError = 'Claude API request failed.'
 
-  if (!response.ok) {
-    throw new Error(payload?.error?.message || 'Claude API request failed.')
-  }
+  for (const model of modelCandidates) {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 600,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+      }),
+    })
 
-  const textOutput = (payload.content ?? [])
-    .filter((item) => item?.type === 'text')
-    .map((item) => String(item.text ?? ''))
-    .join('\n')
-    .trim()
-
-  const parsed = parseClaudeOutput(textOutput)
-  if (!parsed) {
-    return {
-      reply_text: textOutput || 'Thanks for your message. Our team will assist you shortly.',
-      needs_human_handoff: false,
+    const payload = (await response.json().catch(() => ({}))) as {
+      content?: Array<{ type?: string; text?: string }>
+      error?: { message?: string }
     }
+
+    console.log('[whatsapp-webhook][trace] claude:response', {
+      model,
+      status: response.status,
+      ok: response.ok,
+      errorMessage: payload?.error?.message ?? null,
+      contentBlocks: Array.isArray(payload?.content) ? payload.content.length : 0,
+    })
+
+    if (!response.ok) {
+      lastError = payload?.error?.message || `Claude API request failed for model ${model}.`
+      continue
+    }
+
+    const textOutput = (payload.content ?? [])
+      .filter((item) => item?.type === 'text')
+      .map((item) => String(item.text ?? ''))
+      .join('\n')
+      .trim()
+
+    const parsed = parseClaudeOutput(textOutput)
+    console.log('[whatsapp-webhook][trace] claude:parsed', {
+      model,
+      parsed: Boolean(parsed),
+      textOutputLength: textOutput.length,
+    })
+
+    if (!parsed) {
+      return {
+        reply_text: textOutput || 'Thanks for your message. Our team will assist you shortly.',
+        needs_human_handoff: false,
+      }
+    }
+
+    return parsed
   }
 
-  return parsed
+  throw new Error(lastError)
 }
 
 async function saveCallIntelligenceNotes(db: any, waId: string, notes: string): Promise<void> {
@@ -405,27 +447,32 @@ export async function POST(request: Request): Promise<NextResponse> {
   console.log('[whatsapp-webhook] Incoming POST body:', JSON.stringify(body))
 
   const events = getWebhookMessages(body)
+  console.log('[whatsapp-webhook][trace] webhook:events-extracted', { eventsCount: events.length })
 
   for (const event of events) {
     const { message, profileName, valuePayload } = event
     const waId = String(message.from ?? '').trim()
-    if (!waId) continue
+    if (!waId) {
+      console.log('[whatsapp-webhook][trace] webhook:event-skipped-no-waid')
+      continue
+    }
 
     const inboundDirection = 'inbound'
 
     const inboundText = getInboundText(message)
+    console.log('[whatsapp-webhook][trace] webhook:event-start', {
+      waId,
+      messageType: message.type ?? 'unknown',
+      hasInboundText: Boolean(inboundText),
+      inboundLength: inboundText.length,
+      profileName: profileName ?? null,
+    })
+
     const leadMetadata = {
       message_id: message.id ?? null,
       message_type: message.type ?? 'unknown',
       last_inbound_text: inboundText || null,
     }
-
-    await logToWaSeo(db, {
-      waId,
-      direction: inboundDirection,
-      messageText: inboundText,
-      payloadData: valuePayload ?? message,
-    })
 
     const { data: lead } = await db
       .from(LEADS_TABLE)
@@ -439,16 +486,33 @@ export async function POST(request: Request): Promise<NextResponse> {
       await ensureLeadName(db, waId, profileName)
     }
 
+    await logToWaSeo(db, {
+      waId,
+      direction: inboundDirection,
+      messageText: inboundText,
+      payloadData: valuePayload ?? message,
+    })
+
     if (!inboundText) {
+      console.log('[whatsapp-webhook][trace] webhook:event-skipped-empty-text', { waId })
       continue
     }
 
     try {
+      console.log('[whatsapp-webhook][trace] ai-flow:start', { waId })
       const memoryLogs = await getRecentLeadMemory(db, waId)
+      console.log('[whatsapp-webhook][trace] ai-flow:memory-loaded', { waId, memoryCount: memoryLogs.length })
+
       const ai = await runClaudeSalesAgent({
         profileName,
         inboundText,
         memoryLogs,
+      })
+      console.log('[whatsapp-webhook][trace] ai-flow:claude-output', {
+        waId,
+        needs_human_handoff: ai.needs_human_handoff,
+        replyLength: String(ai.reply_text ?? '').trim().length,
+        hasCallNotes: Boolean(String(ai.call_intelligence_notes ?? '').trim()),
       })
 
       if (ai.needs_human_handoff) {
@@ -459,15 +523,25 @@ export async function POST(request: Request): Promise<NextResponse> {
       }
 
       const outboundText = String(ai.reply_text ?? '').trim()
-      if (!outboundText) continue
+      if (!outboundText) {
+        console.log('[whatsapp-webhook][trace] ai-flow:skip-send-empty-reply', { waId })
+        continue
+      }
 
+      console.log('[whatsapp-webhook][trace] ai-flow:send-whatsapp:start', { waId, outboundLength: outboundText.length })
       const sendResult = await sendWhatsAppText({ to: waId, text: outboundText })
+      console.log('[whatsapp-webhook][trace] ai-flow:send-whatsapp:ok', {
+        waId,
+        messageId: sendResult?.messages?.[0]?.id ?? null,
+      })
+
       await logToWaSeo(db, {
         waId,
         direction: 'outbound',
         messageText: outboundText,
         payloadData: sendResult,
       })
+      console.log('[whatsapp-webhook][trace] ai-flow:outbound-log:ok', { waId })
     } catch (error) {
       console.error('[whatsapp-webhook] AI response flow failed:', error)
     }

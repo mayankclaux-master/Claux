@@ -73,8 +73,26 @@ export default function CallHubPage() {
 
   useEffect(() => {
     fetchHandoffLeads()
+
+    const handleVisibility = () => {
+      if (!document.hidden) {
+        void fetchHandoffLeads()
+      }
+    }
+
+    const handleFocus = () => {
+      void fetchHandoffLeads()
+    }
+
     const timer = window.setInterval(fetchHandoffLeads, 8000)
-    return () => window.clearInterval(timer)
+    document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('focus', handleFocus)
+
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('focus', handleFocus)
+    }
   }, [])
 
   const markConverted = async (phoneNumber: string) => {
