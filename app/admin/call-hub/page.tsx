@@ -9,8 +9,6 @@ type HandoffLead = {
   call_intelligence_notes?: string | null
   last_interaction_at: string | null
   interaction_count: number
-  button_click_count: number
-  watched_demo?: boolean
 }
 
 const BG = '#F8FAFC'
@@ -39,7 +37,7 @@ function parseNoteSections(notes: string | null | undefined): { context: string;
   const closingMatch = value.match(/closing\s*tip\s*[:\-]\s*([\s\S]*?)$/i)
 
   return {
-    context: contextMatch?.[1]?.trim() || value,
+    context: contextMatch?.[1]?.trim() || 'No context brief generated yet.',
     strategy: strategyMatch?.[1]?.trim() || 'Use the lead context to position a clear ROI-first call hook.',
     closing: closingMatch?.[1]?.trim() || 'Confirm next step and lock a specific follow-up action.',
   }
@@ -122,7 +120,9 @@ export default function CallHubPage() {
   }
 
   const orderedLeads = useMemo(() => {
-    return [...leads].sort((a, b) => {
+    return leads
+      .filter((lead) => String(lead.current_stage ?? '').trim().toLowerCase() === 'human_handoff')
+      .sort((a, b) => {
       const aTime = a.last_interaction_at ? new Date(a.last_interaction_at).getTime() : 0
       const bTime = b.last_interaction_at ? new Date(b.last_interaction_at).getTime() : 0
       return bTime - aTime
@@ -163,15 +163,14 @@ export default function CallHubPage() {
         <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
           {orderedLeads.map((lead) => {
             const notes = parseNoteSections(lead.call_intelligence_notes)
-            const hot = Boolean(lead.watched_demo) || (lead.button_click_count || 0) >= 5
 
             return (
               <article
                 key={lead.phone_number}
                 className="rounded-2xl border bg-white p-4 shadow-sm"
                 style={{
-                  borderColor: hot ? '#FDBA74' : '#E2E8F0',
-                  boxShadow: hot ? '0 6px 20px rgba(251, 146, 60, 0.18)' : '0 2px 10px rgba(15, 23, 42, 0.06)',
+                  borderColor: '#E2E8F0',
+                  boxShadow: '0 2px 10px rgba(15, 23, 42, 0.06)',
                 }}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -188,11 +187,6 @@ export default function CallHubPage() {
                   </div>
 
                   <div className="flex flex-col items-end gap-1">
-                    {hot && (
-                      <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: '#FFF7ED', color: HOT_ORANGE }}>
-                        HOT LEAD
-                      </span>
-                    )}
                     <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: '#F1F5F9', color: '#334155' }}>
                       Interactions: {lead.interaction_count || 0}
                     </span>
