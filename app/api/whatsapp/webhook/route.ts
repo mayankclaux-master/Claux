@@ -386,6 +386,8 @@ async function runClaudeSalesAgent(input: {
   }
 
   const { salesManual, intelligenceManual } = await getTrainingManuals()
+  const conversationLength = input.memoryLogs.length
+  const isGreetingStage = conversationLength < 2
   const leadReplyCount = input.memoryLogs.filter((log) => String(log.direction ?? '').toLowerCase() === 'inbound').length
   const recentOutboundMessages = input.memoryLogs
     .filter((log) => String(log.direction ?? '').toLowerCase() === 'outbound')
@@ -397,8 +399,9 @@ async function runClaudeSalesAgent(input: {
 
   const systemPrompt = [
     'You are Pooja from the Claux Team.',
+    'Primary Language: High-Authority Indian Professional English.',
     'Persona: 25-year-old high-acumen sales consultant. Never mention AI/bot/model/system.',
-    'Language hierarchy: PRIMARY = Global Professional English (consultant-grade clarity and authority). SECONDARY = warm Hinglish only for emotional connection.',
+    'Secondary Language: Warm Hinglish only for emotional connection.',
     'Opening lock: Never start with generic openers like "Thanks", "Noted", "Okay". Start every reply with a CARS Assessment of the lead\'s specific business context.',
     'CARS mandate for every reply: Assess -> Connect -> Recommend next step (demo/call).',
     'One clear question max. Keep concise and conversion-focused.',
@@ -505,14 +508,14 @@ async function runClaudeSalesAgent(input: {
         continue
       }
 
-      if (hasGenericOpener(parsed.reply_text)) {
+      if (!isGreetingStage && hasGenericOpener(parsed.reply_text)) {
         regenerationHint =
           'Your previous draft started with a banned generic opener (Thanks/Noted/Okay). Start directly with business-specific CARS assessment in consultant-grade English.'
         lastError = 'Reply rejected by opener guard.'
         continue
       }
 
-      if (!startsWithBusinessAssessment(parsed.reply_text, input.inboundText)) {
+      if (!isGreetingStage && !startsWithBusinessAssessment(parsed.reply_text, input.inboundText)) {
         regenerationHint =
           'Your previous draft did not open with a specific business assessment. Start by referencing the lead\'s exact business context, then continue CARS.'
         lastError = 'Reply rejected by assessment guard.'
@@ -678,16 +681,16 @@ function getWebhookMessages(body: any): WebhookMessageEvent[] {
   return messages
 }
 
-function runInBackground(task: Promise<void>): void {
+function runInBackground(taskFactory: () => Promise<void>): void {
+  const task = taskFactory().catch((error) => {
+    console.error('[whatsapp-webhook] background task failed:', error)
+  })
+
   const globalWaitUntil = (globalThis as { waitUntil?: (promise: Promise<unknown>) => void }).waitUntil
   if (typeof globalWaitUntil === 'function') {
     globalWaitUntil(task)
     return
   }
-
-  void task.catch((error) => {
-    console.error('[whatsapp-webhook] background task failed:', error)
-  })
 }
 
 async function markWebhookProcessed(
@@ -716,19 +719,6 @@ async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Pro
     if (!waId) {
       console.log('[whatsapp-webhook][trace] webhook:event-skipped-no-waid')
       continue
-    }
-
-    if (messageId) {
-      const dedupeState = await markWebhookProcessed(db, {
-        messageId,
-        waId,
-        payload: valuePayload ?? message,
-      })
-
-      if (dedupeState === 'duplicate') {
-        console.log('[whatsapp-webhook][trace] webhook:event-skipped-duplicate', { waId, messageId })
-        continue
-      }
     }
 
     const inboundDirection = 'inbound'
@@ -830,6 +820,14 @@ async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Pro
         messageText: outboundText,
         payloadData: sendResult,
       })
+
+      if (messageId) {
+        await markWebhookProcessed(db, {
+          messageId,
+          waId,
+          payload: sendResult,
+        })
+      }
     } catch (error) {
       console.error('[whatsapp-webhook] AI response flow failed:', error)
       const rescueReply = highIntentFromUrlOrLocation
@@ -860,6 +858,14 @@ async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Pro
           send_result: sendResult,
         },
       })
+
+      if (messageId) {
+        await markWebhookProcessed(db, {
+          messageId,
+          waId,
+          payload: sendResult,
+        })
+      }
     }
   }
 }
@@ -925,6 +931,6 @@ export async function POST(request: Request): Promise<NextResponse> {
     }
   }
 
-  runInBackground(processWebhookEvents(db, events))
+  runInBackground(() => processWebhookEvents(db, events))
   return NextResponse.json({ success: true })
 }
