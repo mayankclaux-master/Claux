@@ -9,6 +9,16 @@ type InboundMessage = {
   from?: string
   type?: string
   text?: { body?: string }
+  referral?: {
+    source_id?: string
+    ad_id?: string
+    source_type?: string
+    source_url?: string
+    headline?: string
+    body?: string
+    media_type?: string
+    ctwa_clid?: string
+  }
   location?: {
     latitude?: number
     longitude?: number
@@ -386,9 +396,8 @@ async function runClaudeSalesAgent(input: {
   }
 
   const { salesManual, intelligenceManual } = await getTrainingManuals()
-  const conversationLength = input.memoryLogs.length
-  const isGreetingStage = conversationLength < 2
   const leadReplyCount = input.memoryLogs.filter((log) => String(log.direction ?? '').toLowerCase() === 'inbound').length
+  const isEarlyConversation = leadReplyCount < 3
   const recentOutboundMessages = input.memoryLogs
     .filter((log) => String(log.direction ?? '').toLowerCase() === 'outbound')
     .map((log) => String(log.message_body ?? '').trim())
@@ -501,21 +510,21 @@ async function runClaudeSalesAgent(input: {
         continue
       }
 
-      if (isTooSimilarToRecentOutbound(parsed.reply_text, recentOutboundMessages)) {
+      if (!isEarlyConversation && isTooSimilarToRecentOutbound(parsed.reply_text, recentOutboundMessages)) {
         regenerationHint =
           'Your previous draft was rejected because it was too similar to earlier outbound messages (>60%). Generate a fresh opening, fresh phrasing, and a different angle while keeping persona + CARS compliance.'
         lastError = 'Reply rejected by anti-repetition shield.'
         continue
       }
 
-      if (!isGreetingStage && hasGenericOpener(parsed.reply_text)) {
+      if (!isEarlyConversation && hasGenericOpener(parsed.reply_text)) {
         regenerationHint =
           'Your previous draft started with a banned generic opener (Thanks/Noted/Okay). Start directly with business-specific CARS assessment in consultant-grade English.'
         lastError = 'Reply rejected by opener guard.'
         continue
       }
 
-      if (!isGreetingStage && !startsWithBusinessAssessment(parsed.reply_text, input.inboundText)) {
+      if (!isEarlyConversation && !startsWithBusinessAssessment(parsed.reply_text, input.inboundText)) {
         regenerationHint =
           'Your previous draft did not open with a specific business assessment. Start by referencing the lead\'s exact business context, then continue CARS.'
         lastError = 'Reply rejected by assessment guard.'
@@ -709,18 +718,46 @@ function runInBackground(taskFactory: () => Promise<void>): void {
 async function markWebhookProcessed(
   db: any,
   input: { messageId: string; waId: string; payload: unknown }
-): Promise<'new' | 'duplicate' | 'error'> {
+): Promise<'updated' | 'missing' | 'error'> {
+  const { data, error } = await db
+    .from(PROCESSED_WEBHOOKS_TABLE)
+    .update({
+      wa_id: input.waId,
+      payload: input.payload,
+      processed_at: new Date().toISOString(),
+    })
+    .eq('message_id', input.messageId)
+    .select('message_id')
+    .maybeSingle()
+
+  if (error) {
+    console.error('[whatsapp-webhook] processed_webhooks update failed:', error)
+    return 'error'
+  }
+
+  if (!data) return 'missing'
+  return 'updated'
+}
+
+async function claimWebhookProcessing(
+  db: any,
+  input: { messageId: string; waId: string; payload: unknown }
+): Promise<'claimed' | 'duplicate' | 'error'> {
   const { error } = await db.from(PROCESSED_WEBHOOKS_TABLE).insert({
     message_id: input.messageId,
     wa_id: input.waId,
-    payload: input.payload,
+    payload: {
+      status: 'processing',
+      lock_created_at: new Date().toISOString(),
+      raw: input.payload,
+    },
     processed_at: new Date().toISOString(),
   })
 
-  if (!error) return 'new'
+  if (!error) return 'claimed'
   if (String((error as { code?: string }).code ?? '') === '23505') return 'duplicate'
 
-  console.error('[whatsapp-webhook] processed_webhooks insert failed:', error)
+  console.error('[whatsapp-webhook] processed_webhooks lock insert failed:', error)
   return 'error'
 }
 
@@ -737,6 +774,11 @@ async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Pro
     const inboundDirection = 'inbound'
     const inboundText = getInboundText(message)
     const highIntentFromUrlOrLocation = hasUrl(inboundText) || isLocationShared(message)
+    const referral = message.referral
+    const hasMetaAdReferral = Boolean(referral && typeof referral === 'object')
+    const adId = hasMetaAdReferral
+      ? String(referral?.ad_id ?? referral?.source_id ?? '').trim() || null
+      : null
     console.log('[whatsapp-webhook][trace] webhook:event-start', {
       waId,
       messageType: message.type ?? 'unknown',
@@ -744,6 +786,8 @@ async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Pro
       hasInboundText: Boolean(inboundText),
       inboundLength: inboundText.length,
       highIntentFromUrlOrLocation,
+      hasMetaAdReferral,
+      adId,
       profileName: profileName ?? null,
     })
 
@@ -752,6 +796,9 @@ async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Pro
       message_type: message.type ?? 'unknown',
       last_inbound_text: inboundText || null,
       high_intent: highIntentFromUrlOrLocation,
+      source: hasMetaAdReferral ? 'Meta Ad' : 'WhatsApp',
+      lead_status: hasMetaAdReferral ? 'New (Welcome)' : 'welcome',
+      ad_id: adId,
     }
 
     const { data: lead } = await db
@@ -845,7 +892,7 @@ async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Pro
       console.error('[whatsapp-webhook] AI response flow failed:', error)
       const rescueReply = highIntentFromUrlOrLocation
         ? "Got the link! I'm sharing this with Mayank ji right now so he can prepare your custom 200-point audit."
-        : 'I reviewed your context and want Mayank ji to map a precise growth plan. Should I lock a 10-minute strategy call for you?'
+        : "Hi, I'm Pooja. I'm analyzing your business details to see how our 9 AI agents can scale your growth. What is your primary goal for this month?"
 
       await ensureLeadAndStage(
         db,
@@ -926,21 +973,19 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   const events = getWebhookMessages(body)
-  const messageIds = Array.from(new Set(events.map((event) => String(event.message.id ?? '').trim()).filter(Boolean)))
+  for (const event of events) {
+    const messageId = String(event.message.id ?? '').trim()
+    if (!messageId) continue
 
-  if (messageIds.length > 0) {
-    const { data: processedRows, error: processedError } = await db
-      .from(PROCESSED_WEBHOOKS_TABLE)
-      .select('message_id')
-      .in('message_id', messageIds)
+    const waId = String(event.message.from ?? '').trim()
+    const lockState = await claimWebhookProcessing(db, {
+      messageId,
+      waId,
+      payload: event.valuePayload ?? event.message,
+    })
 
-    if (processedError) {
-      console.error('[whatsapp-webhook] processed_webhooks check failed:', processedError)
-    } else {
-      const seenIds = new Set((Array.isArray(processedRows) ? processedRows : []).map((row: { message_id?: string }) => String(row.message_id ?? '').trim()))
-      if (messageIds.every((id) => seenIds.has(id))) {
-        return NextResponse.json({ success: true, deduped: true })
-      }
+    if (lockState === 'duplicate') {
+      return NextResponse.json({ success: true, deduped: true })
     }
   }
 
