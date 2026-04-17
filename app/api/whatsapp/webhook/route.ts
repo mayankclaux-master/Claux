@@ -403,8 +403,8 @@ async function runManagedSalesAgent(phoneNumber: string, userMessage: string): P
       model: 'claude-3-5-sonnet-20241022',
       metadata: {
         session_id: waId,
+        first_query: inboundText,
       },
-      messages: [{ role: 'user', content: inboundText }],
     }
 
     console.log('ANTHROPIC_REQUEST_RAW:', {
@@ -855,7 +855,14 @@ async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Pro
       //   })
       // }
     } catch (err: any) {
-      console.error('CRITICAL_WEBHOOK_ERROR:', err?.message, err?.stack)
+      const criticalErrorPayload = {
+        name: err?.name ?? null,
+        message: err?.message ?? String(err),
+        stack: err?.stack ?? null,
+        code: err?.code ?? null,
+        cause: err?.cause ?? null,
+      }
+      console.error('CRITICAL_WEBHOOK_ERROR:', criticalErrorPayload)
       const rescueReply = highIntentFromUrlOrLocation
         ? "Got the link! I'm sharing this with Mayank ji right now so he can prepare your custom 200-point audit."
         : 'Our AI partner is temporarily unavailable. Mayank ji will review your requirements and get back to you shortly.'
