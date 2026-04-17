@@ -393,18 +393,24 @@ async function runManagedSalesAgent(phoneNumber: string, userMessage: string): P
     const response = await fetch('https://api.anthropic.com/v1/agents/agent_011Ca8w3KeKPJ1xLuEC31FPR/sessions', {
       method: 'POST',
       headers: {
+        'x-api-key': process.env.ANTHROPIC_API_KEY as string,
+        'anthropic-version': '2023-06-01',
         'anthropic-beta': 'managed-agents-2026-04-10',
         'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY as string,
       },
       body: JSON.stringify({
         model: 'claude-3-5-sonnet-20241022',
+        environment_id: 'env_01KyC1GAJrx6EnejWbn9jYrN',
         metadata: {
           session_id: waId,
         },
         messages: [{ role: 'user', content: inboundText }],
       }),
     })
+
+    if (!response.ok) {
+      throw new Error(`Anthropic API Error: ${response.status} - ${await response.text()}`)
+    }
 
     const rawResponseText = await response.text()
     console.log('ANTHROPIC_RAW_RESPONSE:', rawResponseText)
@@ -415,15 +421,6 @@ async function runManagedSalesAgent(phoneNumber: string, userMessage: string): P
       output?: Array<{ type?: string; text?: string }>
       error?: { message?: string }
       message?: string
-    }
-
-    if (!response.ok) {
-      const anthopicErrorMessage = payload?.error?.message || payload?.message || 'Managed Agent request failed.'
-      console.error('[whatsapp-webhook] Managed Agent API non-OK response:', {
-        status: response.status,
-        message: anthopicErrorMessage,
-      })
-      throw new Error(anthopicErrorMessage)
     }
 
     const outputFromContent = (payload.content ?? [])
