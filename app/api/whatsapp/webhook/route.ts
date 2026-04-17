@@ -391,6 +391,7 @@ async function runManagedSalesAgent(phoneNumber: string, userMessage: string): P
   try {
     console.log('DEBUG: MAPPING SUCCESSFUL - PREPARING AI FETCH')
     const requestUrl = 'https://api.anthropic.com/v1/sessions'
+    console.log('Handshake attempt with 2-key minimal schema')
     const requestHeaders = {
       'x-api-key': process.env.ANTHROPIC_API_KEY as string,
       'anthropic-version': '2023-06-01',
@@ -400,12 +401,17 @@ async function runManagedSalesAgent(phoneNumber: string, userMessage: string): P
     const requestBody = {
       agent: 'agent_011Ca8w3KeKPJ1xLuEC31FPR',
       environment_id: 'env_01KyC1GAJrx6EnejWbn9jYrN',
-      model: 'claude-3-5-sonnet-20241022',
-      metadata: {
-        session_id: waId,
-        first_query: inboundText,
-      },
     }
+    const requestBodySerialized = JSON.stringify(requestBody)
+
+    console.log('ANTHROPIC_REQUEST_BODY_TYPES:', {
+      phoneNumber_type: typeof phoneNumber,
+      userMessage_type: typeof userMessage,
+      waId_type: typeof waId,
+      inboundText_type: typeof inboundText,
+      agent_type: typeof requestBody.agent,
+      environment_id_type: typeof requestBody.environment_id,
+    })
 
     console.log('ANTHROPIC_REQUEST_RAW:', {
       url: requestUrl,
@@ -415,12 +421,13 @@ async function runManagedSalesAgent(phoneNumber: string, userMessage: string): P
         'x-api-key': '[REDACTED]',
       },
       body: requestBody,
+      body_serialized: requestBodySerialized,
     })
 
     const response = await fetch(requestUrl, {
       method: 'POST',
       headers: requestHeaders,
-      body: JSON.stringify(requestBody),
+      body: requestBodySerialized,
     })
 
     const anthropicRequestId = response.headers.get('x-anthropic-request-id')
@@ -430,18 +437,62 @@ async function runManagedSalesAgent(phoneNumber: string, userMessage: string): P
     })
 
     if (!response.ok) {
-      throw new Error(`Anthropic API Error: ${response.status} - ${await response.text()}`)
+      const nonOkRawText = await response.text()
+      let nonOkJson: unknown = null
+      try {
+        nonOkJson = nonOkRawText ? JSON.parse(nonOkRawText) : null
+      } catch {
+        nonOkJson = null
+      }
+
+      console.error('ANTHROPIC_NON_OK_RESPONSE:', {
+        status: response.status,
+        request_id: anthropicRequestId ?? null,
+        raw_text: nonOkRawText,
+        json: nonOkJson,
+      })
+
+      throw new Error(`Anthropic API Error: ${response.status} - ${nonOkRawText}`)
     }
 
     const rawResponseText = await response.text()
     console.log('ANTHROPIC_RAW_RESPONSE:', rawResponseText)
 
     const payload = (rawResponseText ? JSON.parse(rawResponseText) : {}) as {
+      id?: string
+      type?: string
+      status?: string
       content?: Array<{ type?: string; text?: string }>
       output_text?: string
       output?: Array<{ type?: string; text?: string }>
       error?: { message?: string }
       message?: string
+    }
+
+    const createdSessionId = String(payload.id ?? '').trim()
+    if (createdSessionId) {
+      const step2DraftUrl = `https://api.anthropic.com/v1/sessions/${createdSessionId}/events`
+      const step2DraftBody = {
+        event: {
+          type: 'user_message',
+          text: inboundText,
+        },
+      }
+
+      console.log('MANAGED_AGENT_STEP1_SUCCESS_SESSION:', {
+        session_id: createdSessionId,
+        session_object: payload,
+      })
+      console.log('MANAGED_AGENT_STEP2_DRAFT_ONLY:', {
+        url: step2DraftUrl,
+        method: 'POST',
+        headers: {
+          ...requestHeaders,
+          'x-api-key': '[REDACTED]',
+        },
+        body: step2DraftBody,
+        body_serialized: JSON.stringify(step2DraftBody),
+      })
     }
 
     const outputFromContent = (payload.content ?? [])
