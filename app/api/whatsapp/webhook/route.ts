@@ -380,29 +380,35 @@ async function getRecentLeadMemory(db: any, waId: string): Promise<ConversationL
 
 async function runManagedSalesAgent(phoneNumber: string, userMessage: string): Promise<ClaudeAgentOutput> {
   console.log('DEBUG: ENTERING MANAGED AGENT PATH')
+  const waId = String(phoneNumber ?? '').trim() || 'unknown'
+  const inboundText = String(userMessage ?? '').trim()
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
     throw new Error('Missing Anthropic configuration: ANTHROPIC_API_KEY')
   }
 
   try {
+    console.log('DEBUG: MAPPING SUCCESSFUL - PREPARING AI FETCH')
     const response = await fetch('https://api.anthropic.com/v1/agents/agent_011Ca8w3KeKPJ1xLuEC31FPR/sessions', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
         'anthropic-beta': 'managed-agents-2026-04-01',
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY as string,
       },
       body: JSON.stringify({
+        model: 'claude-3-5-sonnet-20241022',
         metadata: {
-          session_id: phoneNumber,
+          session_id: waId,
         },
-        messages: [{ role: 'user', content: userMessage }],
+        messages: [{ role: 'user', content: inboundText }],
       }),
     })
 
-    const payload = (await response.json().catch(() => ({}))) as {
+    const rawResponseText = await response.text()
+    console.log('ANTHROPIC_RAW_RESPONSE:', rawResponseText)
+
+    const payload = (rawResponseText ? JSON.parse(rawResponseText) : {}) as {
       content?: Array<{ type?: string; text?: string }>
       output_text?: string
       output?: Array<{ type?: string; text?: string }>
@@ -649,46 +655,56 @@ async function markWebhookProcessed(
   db: any,
   input: { messageId: string; waId: string; payload: unknown }
 ): Promise<'updated' | 'missing' | 'error'> {
-  const { data, error } = await db
-    .from(PROCESSED_WEBHOOKS_TABLE)
-    .update({
-      wa_id: input.waId,
-      payload: input.payload,
-      processed_at: new Date().toISOString(),
-    })
-    .eq('message_id', input.messageId)
-    .select('message_id')
-    .maybeSingle()
+  try {
+    const { data, error } = await db
+      .from(PROCESSED_WEBHOOKS_TABLE)
+      .update({
+        wa_id: input.waId,
+        payload: input.payload,
+        processed_at: new Date().toISOString(),
+      })
+      .eq('message_id', input.messageId)
+      .select('message_id')
+      .maybeSingle()
 
-  if (error) {
-    console.error('[whatsapp-webhook] processed_webhooks update failed:', error)
+    if (error) {
+      console.error('[DB_LOCK_ERROR] processed_webhooks update failed:', error)
+      return 'error'
+    }
+
+    if (!data) return 'missing'
+    return 'updated'
+  } catch (error) {
+    console.error('[DB_LOCK_ERROR] processed_webhooks update threw:', error)
     return 'error'
   }
-
-  if (!data) return 'missing'
-  return 'updated'
 }
 
 async function claimWebhookProcessing(
   db: any,
   input: { messageId: string; waId: string; payload: unknown }
 ): Promise<'claimed' | 'duplicate' | 'error'> {
-  const { error } = await db.from(PROCESSED_WEBHOOKS_TABLE).insert({
-    message_id: input.messageId,
-    wa_id: input.waId,
-    payload: {
-      status: 'processing',
-      lock_created_at: new Date().toISOString(),
-      raw: input.payload,
-    },
-    processed_at: new Date().toISOString(),
-  })
+  try {
+    const { error } = await db.from(PROCESSED_WEBHOOKS_TABLE).insert({
+      message_id: input.messageId,
+      wa_id: input.waId,
+      payload: {
+        status: 'processing',
+        lock_created_at: new Date().toISOString(),
+        raw: input.payload,
+      },
+      processed_at: new Date().toISOString(),
+    })
 
-  if (!error) return 'claimed'
-  if (String((error as { code?: string }).code ?? '') === '23505') return 'duplicate'
+    if (!error) return 'claimed'
+    if (String((error as { code?: string }).code ?? '') === '23505') return 'duplicate'
 
-  console.error('[whatsapp-webhook] processed_webhooks lock insert failed:', error)
-  return 'error'
+    console.error('[DB_LOCK_ERROR] processed_webhooks lock insert failed:', error)
+    return 'error'
+  } catch (error) {
+    console.error('[DB_LOCK_ERROR] processed_webhooks lock insert threw:', error)
+    return 'error'
+  }
 }
 
 async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Promise<void> {
