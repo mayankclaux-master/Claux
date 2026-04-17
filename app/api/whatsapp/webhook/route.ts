@@ -379,6 +379,7 @@ async function getRecentLeadMemory(db: any, waId: string): Promise<ConversationL
 }
 
 async function runManagedSalesAgent(phoneNumber: string, userMessage: string): Promise<ClaudeAgentOutput> {
+  console.log('DEBUG: ENTERING MANAGED AGENT PATH')
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
     throw new Error('Missing Anthropic configuration: ANTHROPIC_API_KEY')
@@ -456,6 +457,7 @@ async function runClaudeSalesAgent(input: {
   memoryLogs: ConversationLog[]
   latestMessageHasUrlOrLocation: boolean
 }): Promise<ClaudeAgentOutput> {
+  console.log('DEBUG: ENTERING OLD POOJA PATH')
   const apiKey = process.env.ANTHROPIC_API_KEY
   console.log('[whatsapp-webhook][trace] runClaudeSalesAgent:start', {
     hasAnthropicKey: Boolean(apiKey),
@@ -758,12 +760,7 @@ async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Pro
       const memoryLogs = await getRecentLeadMemory(db, waId)
       console.log('[whatsapp-webhook][trace] ai-flow:memory-loaded', { waId, memoryCount: memoryLogs.length })
 
-      // const ai = await runClaudeSalesAgent({
-      //   profileName,
-      //   inboundText,
-      //   memoryLogs,
-      //   latestMessageHasUrlOrLocation: highIntentFromUrlOrLocation,
-      // })
+      // Managed-agent-only path: keep legacy local prompt function out of webhook runtime.
       const ai = await runManagedSalesAgent(waId, inboundText)
 
       const forcedHighIntentReply =
@@ -821,7 +818,7 @@ async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Pro
       console.error('[whatsapp-webhook] AI response flow failed:', error)
       const rescueReply = highIntentFromUrlOrLocation
         ? "Got the link! I'm sharing this with Mayank ji right now so he can prepare your custom 200-point audit."
-        : "Hi, I'm Pooja. I'm analyzing your business details to see how our 9 AI agents can scale your growth. What is your primary goal for this month?"
+        : 'Our AI partner is temporarily unavailable. Mayank ji will review your requirements and get back to you shortly.'
 
       await ensureLeadAndStage(
         db,
@@ -914,7 +911,17 @@ export async function POST(request: Request): Promise<NextResponse> {
     })
 
     if (lockState === 'duplicate') {
-      return NextResponse.json({ success: true, deduped: true })
+      console.warn('[whatsapp-webhook] Duplicate lock claim detected; continuing AI path for collision recovery.', {
+        messageId,
+        waId,
+      })
+    }
+
+    if (lockState === 'error') {
+      console.warn('[whatsapp-webhook] Lock claim error; continuing AI path to avoid blocking webhook processing.', {
+        messageId,
+        waId,
+      })
     }
   }
 
