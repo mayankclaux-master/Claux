@@ -390,22 +390,43 @@ async function runManagedSalesAgent(phoneNumber: string, userMessage: string): P
 
   try {
     console.log('DEBUG: MAPPING SUCCESSFUL - PREPARING AI FETCH')
-    const response = await fetch('https://api.anthropic.com/v1/agents/agent_011Ca8w3KeKPJ1xLuEC31FPR/sessions', {
+    const requestUrl = 'https://api.anthropic.com/v1/sessions'
+    const requestHeaders = {
+      'x-api-key': process.env.ANTHROPIC_API_KEY as string,
+      'anthropic-version': '2023-06-01',
+      'anthropic-beta': 'managed-agents-2026-04-01',
+      'Content-Type': 'application/json',
+    }
+    const requestBody = {
+      agent: 'agent_011Ca8w3KeKPJ1xLuEC31FPR',
+      environment_id: 'env_01KyC1GAJrx6EnejWbn9jYrN',
+      model: 'claude-3-5-sonnet-20241022',
+      metadata: {
+        session_id: waId,
+      },
+      messages: [{ role: 'user', content: inboundText }],
+    }
+
+    console.log('ANTHROPIC_REQUEST_RAW:', {
+      url: requestUrl,
       method: 'POST',
       headers: {
-        'x-api-key': process.env.ANTHROPIC_API_KEY as string,
-        'anthropic-version': '2023-06-01',
-        'anthropic-beta': 'managed-agents-2026-04-10',
-        'Content-Type': 'application/json',
+        ...requestHeaders,
+        'x-api-key': '[REDACTED]',
       },
-      body: JSON.stringify({
-        model: 'claude-3-5-sonnet-20241022',
-        environment_id: 'env_01KyC1GAJrx6EnejWbn9jYrN',
-        metadata: {
-          session_id: waId,
-        },
-        messages: [{ role: 'user', content: inboundText }],
-      }),
+      body: requestBody,
+    })
+
+    const response = await fetch(requestUrl, {
+      method: 'POST',
+      headers: requestHeaders,
+      body: JSON.stringify(requestBody),
+    })
+
+    const anthropicRequestId = response.headers.get('x-anthropic-request-id')
+    console.log('ANTHROPIC_RESPONSE_META:', {
+      status: response.status,
+      request_id: anthropicRequestId ?? null,
     })
 
     if (!response.ok) {
