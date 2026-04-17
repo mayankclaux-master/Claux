@@ -380,6 +380,7 @@ async function getRecentLeadMemory(db: any, waId: string): Promise<ConversationL
 
 async function runManagedSalesAgent(phoneNumber: string, userMessage: string): Promise<ClaudeAgentOutput> {
   console.log('DEBUG: ENTERING MANAGED AGENT PATH')
+  console.log('DEBUG: PAYLOAD_READY', { phoneNumber, messageLength: userMessage.length })
   const waId = String(phoneNumber ?? '').trim() || 'unknown'
   const inboundText = String(userMessage ?? '').trim()
   const apiKey = process.env.ANTHROPIC_API_KEY
@@ -392,7 +393,7 @@ async function runManagedSalesAgent(phoneNumber: string, userMessage: string): P
     const response = await fetch('https://api.anthropic.com/v1/agents/agent_011Ca8w3KeKPJ1xLuEC31FPR/sessions', {
       method: 'POST',
       headers: {
-        'anthropic-beta': 'managed-agents-2026-04-01',
+        'anthropic-beta': 'managed-agents-2026-04-10',
         'Content-Type': 'application/json',
         'x-api-key': process.env.ANTHROPIC_API_KEY as string,
       },
@@ -830,8 +831,8 @@ async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Pro
           payload: sendResult,
         })
       }
-    } catch (error) {
-      console.error('[whatsapp-webhook] AI response flow failed:', error)
+    } catch (err: any) {
+      console.error('CRITICAL_WEBHOOK_ERROR:', err?.message, err?.stack)
       const rescueReply = highIntentFromUrlOrLocation
         ? "Got the link! I'm sharing this with Mayank ji right now so he can prepare your custom 200-point audit."
         : 'Our AI partner is temporarily unavailable. Mayank ji will review your requirements and get back to you shortly.'
@@ -849,7 +850,8 @@ async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Pro
         profileName
       )
 
-      const sendResult = await sendWhatsAppText({ to: waId, text: rescueReply })
+      // const sendResult = await sendWhatsAppText({ to: waId, text: rescueReply })
+      const sendResult = highIntentFromUrlOrLocation ? await sendWhatsAppText({ to: waId, text: rescueReply }) : null
       await logToWaSeo(db, {
         waId,
         direction: 'outbound',
