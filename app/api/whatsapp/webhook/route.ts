@@ -378,6 +378,78 @@ async function getRecentLeadMemory(db: any, waId: string): Promise<ConversationL
   return rows.filter((row) => !isFallbackOrRescueLog(row)).reverse()
 }
 
+async function runManagedSalesAgent(phoneNumber: string, userMessage: string): Promise<ClaudeAgentOutput> {
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) {
+    throw new Error('Missing Anthropic configuration: ANTHROPIC_API_KEY')
+  }
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/agents/agent_011Ca8w3KeKPJ1xLuEC31FPR/sessions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'managed-agents-2026-04-01',
+      },
+      body: JSON.stringify({
+        metadata: {
+          session_id: phoneNumber,
+        },
+        messages: [{ role: 'user', content: userMessage }],
+      }),
+    })
+
+    const payload = (await response.json().catch(() => ({}))) as {
+      content?: Array<{ type?: string; text?: string }>
+      output_text?: string
+      output?: Array<{ type?: string; text?: string }>
+      error?: { message?: string }
+      message?: string
+    }
+
+    if (!response.ok) {
+      const anthopicErrorMessage = payload?.error?.message || payload?.message || 'Managed Agent request failed.'
+      console.error('[whatsapp-webhook] Managed Agent API non-OK response:', {
+        status: response.status,
+        message: anthopicErrorMessage,
+      })
+      throw new Error(anthopicErrorMessage)
+    }
+
+    const outputFromContent = (payload.content ?? [])
+      .filter((item) => item?.type === 'text')
+      .map((item) => String(item.text ?? ''))
+      .join('\n')
+      .trim()
+
+    const outputFromOutput = (payload.output ?? [])
+      .filter((item) => item?.type === 'text')
+      .map((item) => String(item.text ?? ''))
+      .join('\n')
+      .trim()
+
+    const textOutput = String(payload.output_text ?? '').trim() || outputFromContent || outputFromOutput
+
+    if (!textOutput) {
+      throw new Error('Managed Agent returned empty output.')
+    }
+
+    const parsed = parseClaudeOutput(textOutput)
+    if (parsed) return parsed
+
+    return {
+      reply_text: textOutput,
+      needs_human_handoff: false,
+    }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    console.error('[whatsapp-webhook] Managed Agent call failed:', reason)
+    throw error
+  }
+}
+
 async function runClaudeSalesAgent(input: {
   profileName?: string
   inboundText: string
@@ -395,154 +467,10 @@ async function runClaudeSalesAgent(input: {
     throw new Error('Missing Anthropic configuration: ANTHROPIC_API_KEY')
   }
 
-  const { salesManual, intelligenceManual } = await getTrainingManuals()
-  const leadReplyCount = input.memoryLogs.filter((log) => String(log.direction ?? '').toLowerCase() === 'inbound').length
-  const isEarlyConversation = leadReplyCount < 3
-  const recentOutboundMessages = input.memoryLogs
-    .filter((log) => String(log.direction ?? '').toLowerCase() === 'outbound')
-    .map((log) => String(log.message_body ?? '').trim())
-    .filter(Boolean)
-    .slice(-3)
-  const verticalProfile = detectVerticalProfile(input.inboundText, input.memoryLogs)
-  const milestoneGuard = buildMilestoneGuard(recentOutboundMessages)
-
-  const systemPrompt = [
-    'You are Pooja from the Claux Team.',
-    'Primary Language: High-Authority Indian Professional English.',
-    'Persona: 25-year-old high-acumen sales consultant. Never mention AI/bot/model/system.',
-    'Secondary Language: Warm Hinglish only for emotional connection.',
-    'Opening lock: Never start with generic openers like "Thanks", "Noted", "Okay". Start every reply with a CARS Assessment of the lead\'s specific business context.',
-    'CARS mandate for every reply: Assess -> Connect -> Recommend next step (demo/call).',
-    'One clear question max. Keep concise and conversion-focused.',
-    'Conversion hierarchy: Work-Hour Edge (2,400h + 100+ SOPs) -> Demo Pivot -> ROI Anchor.',
-    'Detect human handoff for calls, frustration, advanced customization, or Mayank requests.',
-    'If lead shares URL/location, set needs_human_handoff=true and use exact line: "Got the link! I\'m sharing this with Mayank ji right now so he can prepare your custom 200-point audit."',
-    'Output strict JSON only: reply_text, needs_human_handoff, call_intelligence_notes.',
-    'call_intelligence_notes markdown sections: Context Brief, Call Strategy (Hook + ROI Script), Closing Tip.',
-    'Anti-repetition: if similar to last outbound messages, regenerate with a new opening and angle.',
-    'Anti-robotic rule: never use support-bot language.',
-    '',
-    '=== CLAUX SALES MANUAL ===',
-    salesManual,
-    '',
-    '=== CLAUX INTELLIGENCE MANUAL ===',
-    intelligenceManual,
-  ].join('\n')
-
-  const userPrompt = [
-    `Lead Name: ${String(input.profileName ?? '').trim() || 'Unknown'}`,
-    `Latest inbound message: ${input.inboundText}`,
-    `Lead inbound reply count so far: ${leadReplyCount}`,
-    `Latest inbound contains URL or location signal: ${input.latestMessageHasUrlOrLocation ? 'yes' : 'no'}`,
-    `Vertical Router selected: ${verticalProfile.key}`,
-    `Vertical ROI instruction: ${verticalProfile.roiInstruction}`,
-    milestoneGuard.forbidden !== 'none'
-      ? `Semantic Pivot Guard: ${milestoneGuard.forbidden} was used at least twice. You are forbidden from using it again. Move to ${milestoneGuard.forced}.`
-      : 'Semantic Pivot Guard: none active.',
-    '',
-    'Last 3 outbound messages by Pooja (for anti-repetition check):',
-    recentOutboundMessages.length ? recentOutboundMessages.map((line, index) => `${index + 1}) ${line}`).join('\n') : 'None',
-    '',
-    'Recent conversation memory (last 15 logs):',
-    renderConversationMemory(input.memoryLogs),
-  ].join('\n')
-
-  const primaryModel = 'claude-3-5-sonnet-20240620'
-  const envFallbackModel = String(process.env.ANTHROPIC_FALLBACK_MODEL ?? '').trim()
-  const fallbackModel = envFallbackModel || 'claude-sonnet-4-6'
-  const modelCandidates = Array.from(new Set([primaryModel, fallbackModel]))
-
-  let lastError = 'Claude API request failed.'
-  let regenerationHint = ''
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const attemptPrompt = [userPrompt, regenerationHint].filter(Boolean).join('\n\n')
-
-    for (const model of modelCandidates) {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model,
-          max_tokens: 600,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: attemptPrompt }],
-        }),
-      })
-
-    const payload = (await response.json().catch(() => ({}))) as {
-      content?: Array<{ type?: string; text?: string }>
-      error?: { message?: string }
-    }
-
-    console.log('[whatsapp-webhook][trace] claude:response', {
-      model,
-      status: response.status,
-      ok: response.ok,
-      errorMessage: payload?.error?.message ?? null,
-      contentBlocks: Array.isArray(payload?.content) ? payload.content.length : 0,
-    })
-
-      if (!response.ok) {
-        lastError = payload?.error?.message || `Claude API request failed for model ${model}.`
-        continue
-      }
-
-      const textOutput = (payload.content ?? [])
-        .filter((item) => item?.type === 'text')
-        .map((item) => String(item.text ?? ''))
-        .join('\n')
-        .trim()
-
-      const parsed = parseClaudeOutput(textOutput)
-      console.log('[whatsapp-webhook][trace] claude:parsed', {
-        model,
-        parsed: Boolean(parsed),
-        textOutputLength: textOutput.length,
-      })
-
-      if (!parsed) {
-        lastError = 'Claude returned non-JSON output.'
-        continue
-      }
-
-      if (!isEarlyConversation && isTooSimilarToRecentOutbound(parsed.reply_text, recentOutboundMessages)) {
-        regenerationHint =
-          'Your previous draft was rejected because it was too similar to earlier outbound messages (>60%). Generate a fresh opening, fresh phrasing, and a different angle while keeping persona + CARS compliance.'
-        lastError = 'Reply rejected by anti-repetition shield.'
-        continue
-      }
-
-      if (!isEarlyConversation && hasGenericOpener(parsed.reply_text)) {
-        regenerationHint =
-          'Your previous draft started with a banned generic opener (Thanks/Noted/Okay). Start directly with business-specific CARS assessment in consultant-grade English.'
-        lastError = 'Reply rejected by opener guard.'
-        continue
-      }
-
-      if (!isEarlyConversation && !startsWithBusinessAssessment(parsed.reply_text, input.inboundText)) {
-        regenerationHint =
-          'Your previous draft did not open with a specific business assessment. Start by referencing the lead\'s exact business context, then continue CARS.'
-        lastError = 'Reply rejected by assessment guard.'
-        continue
-      }
-
-      if (milestoneGuard.forbidden !== 'none' && mentionsMilestone(parsed.reply_text, milestoneGuard.forbidden)) {
-        regenerationHint =
-          `Your previous draft repeated forbidden milestone ${milestoneGuard.forbidden}. Move to ${milestoneGuard.forced} now.`
-        lastError = 'Reply rejected by semantic pivot guard.'
-        continue
-      }
-
-      return parsed
-    }
-  }
-
-  throw new Error(lastError)
+  // Local prompting + manual-injection path is intentionally retired in favor of Anthropic Managed Agent.
+  // const { salesManual, intelligenceManual } = await getTrainingManuals()
+  // Similarity Shield and Milestone Pivot guards are disabled under managed-agent orchestration.
+  return runManagedSalesAgent(String(input.profileName ?? '').trim() || 'unknown', input.inboundText)
 }
 
 async function saveCallIntelligenceNotes(db: any, waId: string, notes: string): Promise<void> {
@@ -830,12 +758,13 @@ async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Pro
       const memoryLogs = await getRecentLeadMemory(db, waId)
       console.log('[whatsapp-webhook][trace] ai-flow:memory-loaded', { waId, memoryCount: memoryLogs.length })
 
-      const ai = await runClaudeSalesAgent({
-        profileName,
-        inboundText,
-        memoryLogs,
-        latestMessageHasUrlOrLocation: highIntentFromUrlOrLocation,
-      })
+      // const ai = await runClaudeSalesAgent({
+      //   profileName,
+      //   inboundText,
+      //   memoryLogs,
+      //   latestMessageHasUrlOrLocation: highIntentFromUrlOrLocation,
+      // })
+      const ai = await runManagedSalesAgent(waId, inboundText)
 
       const forcedHighIntentReply =
         "Got the link! I'm sharing this with Mayank ji right now so he can prepare your custom 200-point audit."
@@ -873,16 +802,7 @@ async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Pro
         continue
       }
 
-      // WAR ACTION (temporary mute): outbound send intentionally disabled.
-      // const sendResult = await sendWhatsAppText({ to: waId, text: outboundText })
-      const sendResult = {
-        muted: true,
-        channel: 'whatsapp',
-        reason: 'war_action_temporary_mute',
-        to: waId,
-        text: outboundText,
-        muted_at: new Date().toISOString(),
-      }
+      const sendResult = await sendWhatsAppText({ to: waId, text: outboundText })
       await logToWaSeo(db, {
         waId,
         direction: 'outbound',
@@ -916,16 +836,7 @@ async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Pro
         profileName
       )
 
-      // WAR ACTION (temporary mute): outbound send intentionally disabled.
-      // const sendResult = await sendWhatsAppText({ to: waId, text: rescueReply })
-      const sendResult = {
-        muted: true,
-        channel: 'whatsapp',
-        reason: 'war_action_temporary_mute',
-        to: waId,
-        text: rescueReply,
-        muted_at: new Date().toISOString(),
-      }
+      const sendResult = await sendWhatsAppText({ to: waId, text: rescueReply })
       await logToWaSeo(db, {
         waId,
         direction: 'outbound',
