@@ -760,12 +760,16 @@ async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Pro
       await ensureLeadName(db, waId, profileName)
     }
 
-    await logToWaSeo(db, {
-      waId,
-      direction: inboundDirection,
-      messageText: inboundText,
-      payloadData: valuePayload ?? message,
-    })
+    try {
+      await logToWaSeo(db, {
+        waId,
+        direction: inboundDirection,
+        messageText: inboundText,
+        payloadData: valuePayload ?? message,
+      })
+    } catch (error) {
+      console.error('[whatsapp-webhook] logToWaSeo inbound failed; continuing AI path:', error)
+    }
 
     if (!inboundText) {
       console.log('[whatsapp-webhook][trace] webhook:event-skipped-empty-text', { waId })
@@ -774,10 +778,6 @@ async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Pro
 
     try {
       console.log('[whatsapp-webhook][trace] ai-flow:start', { waId })
-      const memoryLogs = await getRecentLeadMemory(db, waId)
-      console.log('[whatsapp-webhook][trace] ai-flow:memory-loaded', { waId, memoryCount: memoryLogs.length })
-
-      // Managed-agent-only path: keep legacy local prompt function out of webhook runtime.
       const ai = await runManagedSalesAgent(waId, inboundText)
 
       const forcedHighIntentReply =
@@ -817,20 +817,25 @@ async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Pro
       }
 
       const sendResult = await sendWhatsAppText({ to: waId, text: outboundText })
-      await logToWaSeo(db, {
-        waId,
-        direction: 'outbound',
-        messageText: outboundText,
-        payloadData: sendResult,
-      })
-
-      if (messageId) {
-        await markWebhookProcessed(db, {
-          messageId,
+      try {
+        await logToWaSeo(db, {
           waId,
-          payload: sendResult,
+          direction: 'outbound',
+          messageText: outboundText,
+          payloadData: sendResult,
         })
+      } catch (error) {
+        console.error('[whatsapp-webhook] logToWaSeo outbound failed; continuing AI path:', error)
       }
+
+      // Temporary lock bypass: markWebhookProcessed disabled.
+      // if (messageId) {
+      //   await markWebhookProcessed(db, {
+      //     messageId,
+      //     waId,
+      //     payload: sendResult,
+      //   })
+      // }
     } catch (err: any) {
       console.error('CRITICAL_WEBHOOK_ERROR:', err?.message, err?.stack)
       const rescueReply = highIntentFromUrlOrLocation
@@ -852,24 +857,29 @@ async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Pro
 
       // const sendResult = await sendWhatsAppText({ to: waId, text: rescueReply })
       const sendResult = highIntentFromUrlOrLocation ? await sendWhatsAppText({ to: waId, text: rescueReply }) : null
-      await logToWaSeo(db, {
-        waId,
-        direction: 'outbound',
-        messageText: rescueReply,
-        payloadData: {
-          rescue_mode: true,
-          reason: 'ai_provider_unavailable',
-          send_result: sendResult,
-        },
-      })
-
-      if (messageId) {
-        await markWebhookProcessed(db, {
-          messageId,
+      try {
+        await logToWaSeo(db, {
           waId,
-          payload: sendResult,
+          direction: 'outbound',
+          messageText: rescueReply,
+          payloadData: {
+            rescue_mode: true,
+            reason: 'ai_provider_unavailable',
+            send_result: sendResult,
+          },
         })
+      } catch (error) {
+        console.error('[whatsapp-webhook] logToWaSeo rescue failed; continuing AI path:', error)
       }
+
+      // Temporary lock bypass: markWebhookProcessed disabled.
+      // if (messageId) {
+      //   await markWebhookProcessed(db, {
+      //     messageId,
+      //     waId,
+      //     payload: sendResult,
+      //   })
+      // }
     }
   }
 }
@@ -900,6 +910,7 @@ export async function GET(request: Request): Promise<Response> {
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
+  console.log('CRITICAL_ENTRY: Webhook received. Bypassing locks and calling AI now.')
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
@@ -917,31 +928,32 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   const events = getWebhookMessages(body)
-  for (const event of events) {
-    const messageId = String(event.message.id ?? '').trim()
-    if (!messageId) continue
-
-    const waId = String(event.message.from ?? '').trim()
-    const lockState = await claimWebhookProcessing(db, {
-      messageId,
-      waId,
-      payload: event.valuePayload ?? event.message,
-    })
-
-    if (lockState === 'duplicate') {
-      console.warn('[whatsapp-webhook] Duplicate lock claim detected; continuing AI path for collision recovery.', {
-        messageId,
-        waId,
-      })
-    }
-
-    if (lockState === 'error') {
-      console.warn('[whatsapp-webhook] Lock claim error; continuing AI path to avoid blocking webhook processing.', {
-        messageId,
-        waId,
-      })
-    }
-  }
+  // Temporary lock bypass: claimWebhookProcessing disabled.
+  // for (const event of events) {
+  //   const messageId = String(event.message.id ?? '').trim()
+  //   if (!messageId) continue
+  //
+  //   const waId = String(event.message.from ?? '').trim()
+  //   const lockState = await claimWebhookProcessing(db, {
+  //     messageId,
+  //     waId,
+  //     payload: event.valuePayload ?? event.message,
+  //   })
+  //
+  //   if (lockState === 'duplicate') {
+  //     console.warn('[whatsapp-webhook] Duplicate lock claim detected; continuing AI path for collision recovery.', {
+  //       messageId,
+  //       waId,
+  //     })
+  //   }
+  //
+  //   if (lockState === 'error') {
+  //     console.warn('[whatsapp-webhook] Lock claim error; continuing AI path to avoid blocking webhook processing.', {
+  //       messageId,
+  //       waId,
+  //     })
+  //   }
+  // }
 
   runInBackground(() => processWebhookEvents(db, events))
   return NextResponse.json({ success: true })
