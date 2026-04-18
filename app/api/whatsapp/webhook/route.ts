@@ -462,56 +462,105 @@ async function runManagedSalesAgent(phoneNumber: string, userMessage: string): P
       id?: string
       type?: string
       status?: string
-      content?: Array<{ type?: string; text?: string }>
-      output_text?: string
-      output?: Array<{ type?: string; text?: string }>
       error?: { message?: string }
       message?: string
     }
 
     const createdSessionId = String(payload.id ?? '').trim()
-    if (createdSessionId) {
-      const step2DraftUrl = `https://api.anthropic.com/v1/sessions/${createdSessionId}/events`
-      const step2DraftBody = {
-        event: {
-          type: 'user_message',
-          text: inboundText,
-        },
-      }
-
-      console.log('MANAGED_AGENT_STEP1_SUCCESS_SESSION:', {
-        session_id: createdSessionId,
-        session_object: payload,
-      })
-      console.log('MANAGED_AGENT_STEP2_DRAFT_ONLY:', {
-        url: step2DraftUrl,
-        method: 'POST',
-        headers: {
-          ...requestHeaders,
-          'x-api-key': '[REDACTED]',
-        },
-        body: step2DraftBody,
-        body_serialized: JSON.stringify(step2DraftBody),
-      })
+    if (!createdSessionId) {
+      throw new Error('Managed Agent session creation returned no id.')
     }
 
-    const outputFromContent = (payload.content ?? [])
-      .filter((item) => item?.type === 'text')
-      .map((item) => String(item.text ?? ''))
-      .join('\n')
-      .trim()
+    const step2Url = `https://api.anthropic.com/v1/sessions/${createdSessionId}/events`
+    const step2Body = {
+      event: {
+        type: 'user_message',
+        message: inboundText,
+      },
+    }
+    const step2BodySerialized = JSON.stringify(step2Body)
 
-    const outputFromOutput = (payload.output ?? [])
-      .filter((item) => item?.type === 'text')
-      .map((item) => String(item.text ?? ''))
-      .join('\n')
-      .trim()
+    console.log('MANAGED_AGENT_STEP1_SUCCESS_SESSION:', {
+      session_id: createdSessionId,
+      session_object: payload,
+    })
+    console.log('MANAGED_AGENT_STEP2_REQUEST:', {
+      url: step2Url,
+      method: 'POST',
+      headers: {
+        ...requestHeaders,
+        'x-api-key': '[REDACTED]',
+      },
+      body: step2Body,
+      body_serialized: step2BodySerialized,
+    })
 
-    const textOutput = String(payload.output_text ?? '').trim() || outputFromContent || outputFromOutput
+    const step2Response = await fetch(step2Url, {
+      method: 'POST',
+      headers: requestHeaders,
+      body: step2BodySerialized,
+    })
+
+    const step2RequestId = step2Response.headers.get('x-anthropic-request-id')
+    console.log('ANTHROPIC_STEP2_RESPONSE_META:', {
+      status: step2Response.status,
+      request_id: step2RequestId ?? null,
+    })
+
+    if (!step2Response.ok) {
+      const step2NonOkRawText = await step2Response.text()
+      let step2NonOkJson: unknown = null
+      try {
+        step2NonOkJson = step2NonOkRawText ? JSON.parse(step2NonOkRawText) : null
+      } catch {
+        step2NonOkJson = null
+      }
+
+      console.error('ANTHROPIC_STEP2_NON_OK_RESPONSE:', {
+        status: step2Response.status,
+        request_id: step2RequestId ?? null,
+        raw_text: step2NonOkRawText,
+        json: step2NonOkJson,
+      })
+
+      throw new Error(`Anthropic Step 2 API Error: ${step2Response.status} - ${step2NonOkRawText}`)
+    }
+
+    const step2RawResponseText = await step2Response.text()
+    console.log('ANTHROPIC_STEP2_RAW_RESPONSE:', step2RawResponseText)
+
+    const step2Result = (step2RawResponseText ? JSON.parse(step2RawResponseText) : {}) as {
+      result?: {
+        output?: {
+          text?: string
+        }
+        message?: {
+          content?: Array<{
+            text?: string
+          }>
+        }
+      }
+      output?: {
+        text?: string
+      }
+      message?: {
+        content?: Array<{
+          text?: string
+        }>
+      }
+    }
+
+    const textOutput =
+      String(step2Result?.result?.output?.text ?? '').trim() ||
+      String(step2Result?.result?.message?.content?.[0]?.text ?? '').trim() ||
+      String(step2Result?.output?.text ?? '').trim() ||
+      String(step2Result?.message?.content?.[0]?.text ?? '').trim()
 
     if (!textOutput) {
       throw new Error('Managed Agent returned empty output.')
     }
+
+    console.log('STEP 2 SUCCESS: Agent replied to event')
 
     const parsed = parseClaudeOutput(textOutput)
     if (parsed) return parsed
