@@ -63,20 +63,21 @@ function getDirectionRows(thread: LogRow[], direction: 'inbound' | 'outbound'): 
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
-  return runReengagement(request)
+  const expectedSecret = String(process.env.REENGAGEMENT_CRON_SECRET ?? '').trim()
+  return runReengagement(request, expectedSecret, 'REENGAGEMENT_CRON_SECRET')
 }
 
 export async function GET(request: Request): Promise<NextResponse> {
-  return runReengagement(request)
+  const expectedSecret = String(process.env.CRON_SECRET ?? '').trim()
+  return runReengagement(request, expectedSecret, 'CRON_SECRET')
 }
 
-async function runReengagement(request: Request): Promise<NextResponse> {
+async function runReengagement(request: Request, expectedSecret: string, expectedSecretName: string): Promise<NextResponse> {
   const db = makeDb()
   if (!db) return NextResponse.json({ error: 'Server configuration missing.' }, { status: 500 })
 
-  const expectedSecret = String(process.env.REENGAGEMENT_CRON_SECRET ?? '').trim()
   if (!expectedSecret) {
-    return NextResponse.json({ error: 'Server configuration missing: REENGAGEMENT_CRON_SECRET' }, { status: 500 })
+    return NextResponse.json({ error: `Server configuration missing: ${expectedSecretName}` }, { status: 500 })
   }
 
   const authHeader = String(request.headers.get('authorization') ?? '').trim()
