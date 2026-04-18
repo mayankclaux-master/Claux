@@ -537,29 +537,33 @@ async function runManagedSalesAgent(phoneNumber: string, userMessage: string): P
     console.log('ANTHROPIC_STEP2_RAW_RESPONSE:', step2RawResponseText)
 
     type ManagedEventBlock = {
+      type?: string
+      id?: string
       text?: string
     }
 
     type ManagedEventRecord = {
       type?: string
+      id?: string
       message?: {
         content?: ManagedEventBlock[]
       }
       content?: ManagedEventBlock[]
+      event?: ManagedEventRecord
     }
 
     type ManagedEventPayload = {
       result?: {
-        output?: {
-          text?: string
-        }
+        output?: { text?: string } | string
+        output_text?: string
         message?: {
           content?: ManagedEventBlock[]
         }
+        events?: ManagedEventRecord[]
+        data?: ManagedEventRecord[]
       }
-      output?: {
-        text?: string
-      }
+      output?: { text?: string } | string
+      output_text?: string
       message?: {
         content?: ManagedEventBlock[]
       }
@@ -567,27 +571,124 @@ async function runManagedSalesAgent(phoneNumber: string, userMessage: string): P
       data?: ManagedEventRecord[]
     }
 
+    const normalizedType = (value: unknown): string => String(value ?? '').trim().toLowerCase()
+
+    const isAgentMessageType = (eventType: string): boolean => {
+      const normalized = normalizedType(eventType)
+      return (
+        normalized === 'agent_message' ||
+        normalized === 'agent.message' ||
+        normalized === 'assistant_message' ||
+        normalized === 'assistant.message'
+      )
+    }
+
+    const isToolUseType = (eventType: string): boolean => {
+      const normalized = normalizedType(eventType)
+      return normalized === 'tool_use' || normalized === 'tool.use'
+    }
+
+    const isToolResultType = (eventType: string): boolean => {
+      const normalized = normalizedType(eventType)
+      return normalized === 'tool_result' || normalized === 'tool.result'
+    }
+
+    const getOutputText = (value: { text?: string } | string | undefined): string => {
+      if (typeof value === 'string') return value.trim()
+      return String(value?.text ?? '').trim()
+    }
+
+    const extractTextFromBlocks = (blocks: ManagedEventBlock[] | undefined): string => {
+      return (blocks ?? [])
+        .map((block) => String(block?.text ?? '').trim())
+        .filter(Boolean)
+        .join('\n')
+        .trim()
+    }
+
+    const getPayloadEvents = (value: ManagedEventPayload): ManagedEventRecord[] => {
+      const rootEvents = [...(value.events ?? []), ...(value.data ?? [])]
+      const resultEvents = [...(value.result?.events ?? []), ...(value.result?.data ?? [])]
+      const allEvents = [...rootEvents, ...resultEvents]
+      const nestedEvents = allEvents
+        .map((event) => event?.event)
+        .filter((event): event is ManagedEventRecord => Boolean(event && typeof event === 'object'))
+      return [...allEvents, ...nestedEvents]
+    }
+
+    const getEventType = (event: ManagedEventRecord): string => {
+      return normalizedType(event?.type ?? event?.event?.type)
+    }
+
+    const getEventContentText = (event: ManagedEventRecord | undefined): string => {
+      return (
+        extractTextFromBlocks(event?.message?.content) ||
+        extractTextFromBlocks(event?.content) ||
+        extractTextFromBlocks(event?.event?.message?.content) ||
+        extractTextFromBlocks(event?.event?.content)
+      )
+    }
+
+    const getUnresolvedToolUseIds = (value: ManagedEventPayload): string[] => {
+      const toolUseIds = new Set<string>()
+      const toolResultIds = new Set<string>()
+
+      for (const event of getPayloadEvents(value)) {
+        const eventType = getEventType(event)
+
+        const registerBlockIds = (blocks: ManagedEventBlock[] | undefined) => {
+          for (const block of blocks ?? []) {
+            const blockType = normalizedType(block?.type)
+            const blockId = String(block?.id ?? '').trim()
+            if (!blockId) continue
+            if (isToolUseType(blockType)) toolUseIds.add(blockId)
+            if (isToolResultType(blockType)) toolResultIds.add(blockId)
+          }
+        }
+
+        const eventId = String(event?.id ?? event?.event?.id ?? '').trim()
+        if (eventId) {
+          if (isToolUseType(eventType)) toolUseIds.add(eventId)
+          if (isToolResultType(eventType)) toolResultIds.add(eventId)
+        }
+
+        registerBlockIds(event?.message?.content)
+        registerBlockIds(event?.content)
+        registerBlockIds(event?.event?.message?.content)
+        registerBlockIds(event?.event?.content)
+      }
+
+      return [...toolUseIds].filter((id) => !toolResultIds.has(id))
+    }
+
     const extractManagedAgentText = (value: ManagedEventPayload): string => {
-      const firstAgentMessageEvent = [...(value.events ?? []), ...(value.data ?? [])].find((event) => {
-        const eventType = String(event?.type ?? '').toLowerCase()
-        return eventType === 'agent_message' || eventType === 'agent.message'
-      })
+      const firstAgentMessageEvent = getPayloadEvents(value).find((event) => isAgentMessageType(getEventType(event)))
 
       return (
-        String(value?.result?.output?.text ?? '').trim() ||
-        String(value?.result?.message?.content?.[0]?.text ?? '').trim() ||
-        String(value?.output?.text ?? '').trim() ||
-        String(value?.message?.content?.[0]?.text ?? '').trim() ||
-        String(firstAgentMessageEvent?.message?.content?.[0]?.text ?? '').trim() ||
-        String(firstAgentMessageEvent?.content?.[0]?.text ?? '').trim()
+        getOutputText(value?.result?.output) ||
+        String(value?.result?.output_text ?? '').trim() ||
+        extractTextFromBlocks(value?.result?.message?.content) ||
+        getOutputText(value?.output) ||
+        String(value?.output_text ?? '').trim() ||
+        extractTextFromBlocks(value?.message?.content) ||
+        getEventContentText(firstAgentMessageEvent)
       )
+    }
+
+    const getObservedEventTypes = (value: ManagedEventPayload): string[] => {
+      const observed = getPayloadEvents(value)
+        .map((event) => getEventType(event))
+        .filter(Boolean)
+      return [...new Set(observed)]
     }
 
     const step2Result = (step2RawResponseText ? JSON.parse(step2RawResponseText) : {}) as ManagedEventPayload
     let textOutput = extractManagedAgentText(step2Result)
+    let unresolvedToolUseIds = getUnresolvedToolUseIds(step2Result)
+    let observedEventTypes = getObservedEventTypes(step2Result)
 
     if (!textOutput) {
-      for (let attempt = 1; attempt <= 6; attempt += 1) {
+      for (let attempt = 1; attempt <= 12; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 1200))
 
         const step2PollResponse = await fetch(step2Url, {
@@ -620,6 +721,8 @@ async function runManagedSalesAgent(phoneNumber: string, userMessage: string): P
         })
 
         const pollPayload = (pollRawText ? JSON.parse(pollRawText) : {}) as ManagedEventPayload
+        unresolvedToolUseIds = getUnresolvedToolUseIds(pollPayload)
+        observedEventTypes = getObservedEventTypes(pollPayload)
         textOutput = extractManagedAgentText(pollPayload)
 
         if (textOutput) {
@@ -630,6 +733,15 @@ async function runManagedSalesAgent(phoneNumber: string, userMessage: string): P
     }
 
     if (!textOutput) {
+      console.warn('MANAGED_AGENT_NO_TEXT_AFTER_POLLING:', {
+        observed_event_types: observedEventTypes,
+        unresolved_tool_use_ids: unresolvedToolUseIds,
+      })
+      if (unresolvedToolUseIds.length > 0) {
+        throw new Error(
+          `Managed Agent stalled: tool_use ids without tool_result detected (${unresolvedToolUseIds.join(', ')}).`
+        )
+      }
       throw new Error('Managed Agent returned empty output after waiting for agent.message event.')
     }
 
