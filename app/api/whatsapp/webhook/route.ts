@@ -476,7 +476,12 @@ async function runManagedSalesAgent(phoneNumber: string, userMessage: string): P
       events: [
         {
           type: 'user.message',
-          message: inboundText,
+          content: [
+            {
+              type: 'text',
+              text: inboundText,
+            },
+          ],
         },
       ],
     }
