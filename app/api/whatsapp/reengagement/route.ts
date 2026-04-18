@@ -1,14 +1,19 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { readFile } from 'node:fs/promises'
-import path from 'node:path'
 import { sendWhatsAppText } from '@/lib/whatsapp/meta-api'
 
 const LEADS_TABLE = 'wa_seo_leads'
 const LOGS_TABLE = 'wa_seo_logs'
 
-const SALES_MANUAL_PATH = path.join(process.cwd(), 'lib/ai-training/claux_sales_manual.md')
-const INTEL_MANUAL_PATH = path.join(process.cwd(), 'lib/ai-training/claux_intelligence_manual.md')
+const REENGAGEMENT_TEMPLATE_NAME = 'reengagement_24hr'
+const REENGAGEMENT_TEXT = `Hi! I didn't get a response to my earlier message. 😊
+
+Sharing the Claux demo link in case it helps 👇
+🎥 https://claux.automizemedialabs.com/demo
+
+I can assure you — you've never seen an SEO system this powerful. All 9 agents are trained on 100+ SOPs by global SEO leaders and deliver ~6,000 hours of work in 30 days. No agency in the world can match that.
+
+Let me know if you need any help! 🙏`
 
 type LogRow = {
   lead_phone?: string | null
@@ -19,13 +24,6 @@ type LogRow = {
   created_at?: string | null
   payload?: unknown
 }
-
-type ClaudeReengagementOutput = {
-  reply_text: string
-  value_prop_used?: string
-}
-
-type ValueAngle = 'price_saving' | 'work_hours_edge' | 'sop_authority' | 'other'
 
 function makeDb() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
@@ -42,170 +40,26 @@ function normalizePhone(input: unknown): string {
   return String(input ?? '').trim()
 }
 
-function hasUrl(text: string): boolean {
-  return /(https?:\/\/\S+|www\.\S+)/i.test(String(text ?? '').trim())
+function toMs(iso: string | null | undefined): number {
+  if (!iso) return Number.NaN
+  return new Date(iso).getTime()
 }
 
-function isLocationMention(text: string): boolean {
-  return /shared\s+location|location\s+received|latitude|longitude/i.test(String(text ?? '').trim())
-}
+function hasAlreadyReengaged(thread: LogRow[]): boolean {
+  return thread.some((row) => {
+    const direction = String(row.direction ?? '').toLowerCase()
+    if (direction !== 'outbound') return false
 
-function detectValueAngle(text: string): ValueAngle {
-  const value = String(text ?? '').toLowerCase()
-  if (!value) return 'other'
+    const templateName = String(row.template_name ?? '').trim().toLowerCase()
+    if (templateName === REENGAGEMENT_TEMPLATE_NAME) return true
 
-  if (/(price|pricing|budget|cost|expensive|₹|7499|2\.1|lakh|saving|save)/i.test(value)) {
-    return 'price_saving'
-  }
-
-  if (/(2400|2,400|300\s*hours|hour edge|execution edge)/i.test(value)) {
-    return 'work_hours_edge'
-  }
-
-  if (/(100\+|sop|sops|authority)/i.test(value)) {
-    return 'sop_authority'
-  }
-
-  return 'other'
-}
-
-function parseClaudeOutput(rawText: string): ClaudeReengagementOutput | null {
-  const cleaned = rawText.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')
-
-  try {
-    const parsed = JSON.parse(cleaned) as ClaudeReengagementOutput
-    const reply = String(parsed.reply_text ?? '').trim()
-    if (!reply) return null
-    return {
-      reply_text: reply,
-      value_prop_used: String(parsed.value_prop_used ?? '').trim() || undefined,
-    }
-  } catch {
-    return null
-  }
-}
-
-function renderMemory(logs: LogRow[]): string {
-  return logs
-    .map((row) => {
-      const direction = String(row.direction ?? '').toLowerCase() === 'inbound' ? 'Lead' : 'Pooja'
-      const body = String(row.message_body ?? '').trim()
-      const template = String(row.template_name ?? '').trim()
-      const value = body || (template ? `[Template: ${template}]` : '[No text]')
-      return `${direction}: ${value}`
-    })
-    .join('\n')
-}
-
-async function getTrainingManuals(): Promise<{ salesManual: string; intelligenceManual: string }> {
-  const [salesManual, intelligenceManual] = await Promise.all([
-    readFile(SALES_MANUAL_PATH, 'utf8').catch(() => ''),
-    readFile(INTEL_MANUAL_PATH, 'utf8').catch(() => ''),
-  ])
-
-  console.log('[reengagement] manuals-loaded', {
-    salesLength: salesManual.length,
-    intelligenceLength: intelligenceManual.length,
+    const body = String(row.message_body ?? '').toLowerCase()
+    return body.includes("didn't get a response")
   })
-
-  return { salesManual, intelligenceManual }
 }
 
-async function runReengagementClaude(input: {
-  phone: string
-  leadName?: string | null
-  memoryLogs: LogRow[]
-  lastOutboundText: string
-  lastOutboundAngle: ValueAngle
-  latestInboundHasUrlOrLocation: boolean
-}): Promise<ClaudeReengagementOutput> {
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
-    throw new Error('Missing Anthropic configuration: ANTHROPIC_API_KEY')
-  }
-
-  const { salesManual, intelligenceManual } = await getTrainingManuals()
-
-  const systemPrompt = [
-    'You are Pooja from the Claux Team writing a 24-hour re-engagement ping.',
-    'Task:',
-    '1) Generate a short, warm, high-conversion Hinglish ping.',
-    '2) Use a DIFFERENT value proposition than your last outbound message.',
-    '3) Prioritize one of these value props: 2,400-hour execution edge, 100+ SOP authority, or ~₹2.1L yearly saving math.',
-    '4) Ask one high-intent question at the end.',
-    '5) No long explanations. Keep it under 320 characters.',
-    '6) Output strict JSON with keys: reply_text, value_prop_used.',
-    '',
-    '=== CLAUX SALES MANUAL ===',
-    salesManual,
-    '',
-    '=== CLAUX INTELLIGENCE MANUAL ===',
-    intelligenceManual,
-  ].join('\n')
-
-  const userPrompt = [
-    `Lead phone: ${input.phone}`,
-    `Lead name: ${String(input.leadName ?? '').trim() || 'Unknown'}`,
-    `Last outbound message from Pooja: ${input.lastOutboundText || 'N/A'}`,
-    `Last outbound value angle: ${input.lastOutboundAngle}`,
-    `Latest inbound has URL/location: ${input.latestInboundHasUrlOrLocation ? 'yes' : 'no'}`,
-    '',
-    'Recent conversation memory:',
-    renderMemory(input.memoryLogs),
-    '',
-    'Pooja, generate a Smart Re-engagement Ping using a DIFFERENT value-prop than your last message. Use the 2,400-hour edge, the 100+ SOP authority, or the ₹2.1L saving math.',
-    'Angle Cycling Rule: if the last outbound angle was price_saving, your new nudge MUST use work_hours_edge or sop_authority (not price_saving).',
-    'If latest inbound includes URL/location, acknowledge that you are reviewing it and push a quick strategy call with Mayank ji.',
-  ].join('\n')
-
-  const primaryModel = 'claude-3-5-sonnet-20240620'
-  const fallbackModel = String(process.env.ANTHROPIC_FALLBACK_MODEL ?? '').trim() || 'claude-sonnet-4-6'
-
-  let lastError = 'Claude re-engagement generation failed.'
-
-  for (const model of Array.from(new Set([primaryModel, fallbackModel]))) {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: 300,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }],
-      }),
-    })
-
-    const payload = (await response.json().catch(() => ({}))) as {
-      content?: Array<{ type?: string; text?: string }>
-      error?: { message?: string }
-    }
-
-    if (!response.ok) {
-      lastError = payload?.error?.message || `Claude API failed for model ${model}`
-      continue
-    }
-
-    const rawText = (payload.content ?? [])
-      .filter((c) => c?.type === 'text')
-      .map((c) => String(c.text ?? ''))
-      .join('\n')
-      .trim()
-
-    const parsed = parseClaudeOutput(rawText)
-    if (parsed) return parsed
-
-    if (rawText) {
-      return {
-        reply_text: rawText,
-      }
-    }
-  }
-
-  throw new Error(lastError)
+function getDirectionRows(thread: LogRow[], direction: 'inbound' | 'outbound'): LogRow[] {
+  return thread.filter((row) => String(row.direction ?? '').toLowerCase() === direction)
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -227,8 +81,9 @@ export async function POST(request: Request): Promise<NextResponse> {
   console.log('[CRON-TRIGGER] Re-engagement cycle started')
 
   const nowMs = Date.now()
-  const minAgeMs = 2 * 60 * 60 * 1000
-  const maxAgeMs = 24 * 60 * 60 * 1000
+  const neverReplyMinAgeMs = 30 * 60 * 1000
+  const goneColdMinAgeMs = 2 * 60 * 60 * 1000
+  const maxWindowMs = 23 * 60 * 60 * 1000
 
   const [leadsResult, logsResult] = await Promise.all([
     db.from(LEADS_TABLE).select('phone_number, full_name').limit(5000),
@@ -259,7 +114,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     logsByPhone.set(phone, existing)
   }
 
-  const nudged: Array<{ phone: string; value_prop_used?: string }> = []
+  const nudged: Array<{ phone: string; cohort: 'gone_cold' | 'never_replied' }> = []
   const skipped: Array<{ phone: string; reason: string }> = []
 
   for (const lead of leads) {
@@ -277,77 +132,74 @@ export async function POST(request: Request): Promise<NextResponse> {
       continue
     }
 
+    if (hasAlreadyReengaged(thread)) {
+      skipped.push({ phone, reason: 'already_reengaged' })
+      continue
+    }
+
+    const inboundRows = getDirectionRows(thread, 'inbound')
+    const outboundRows = getDirectionRows(thread, 'outbound')
+
+    if (!outboundRows.length) {
+      skipped.push({ phone, reason: 'no_outbound_history' })
+      continue
+    }
+
     const latest = thread[0]
-    const latestAtMs = latest.created_at ? new Date(latest.created_at).getTime() : Number.NaN
-    if (!Number.isFinite(latestAtMs)) {
-      skipped.push({ phone, reason: 'invalid_latest_timestamp' })
-      continue
-    }
-
-    const ageMs = nowMs - latestAtMs
-    if (ageMs < minAgeMs) {
-      skipped.push({ phone, reason: 'not_stalled_yet' })
-      continue
-    }
-
-    if (ageMs > maxAgeMs) {
-      skipped.push({ phone, reason: 'outside_24h_window' })
-      continue
-    }
-
+    const latestMs = toMs(latest.created_at)
+    const latestAgeMs = nowMs - latestMs
     const latestDirection = String(latest.direction ?? '').toLowerCase()
-    if (latestDirection !== 'inbound') {
-      skipped.push({ phone, reason: 'latest_not_inbound' })
+
+    const goneColdEligible =
+      inboundRows.length > 0 &&
+      latestDirection === 'inbound' &&
+      Number.isFinite(latestMs) &&
+      latestAgeMs >= goneColdMinAgeMs &&
+      latestAgeMs <= maxWindowMs
+
+    const firstOutboundMs =
+      outboundRows
+        .map((row) => toMs(row.created_at))
+        .filter((ms) => Number.isFinite(ms))
+        .sort((a, b) => a - b)[0] ?? Number.NaN
+
+    const firstOutboundAgeMs = nowMs - firstOutboundMs
+    const neverRepliedEligible =
+      inboundRows.length === 0 &&
+      Number.isFinite(firstOutboundMs) &&
+      firstOutboundAgeMs >= neverReplyMinAgeMs &&
+      firstOutboundAgeMs <= maxWindowMs
+
+    if (!goneColdEligible && !neverRepliedEligible) {
+      skipped.push({ phone, reason: 'outside_target_window_or_pattern' })
       continue
     }
-
-    const lastOutbound = thread.find((row) => String(row.direction ?? '').toLowerCase() === 'outbound')
-    const lastOutboundText = String(lastOutbound?.message_body ?? '').trim()
-    const lastOutboundAngle = detectValueAngle(lastOutboundText)
-    const latestInboundText = String(latest.message_body ?? '').trim()
-    const latestInboundHasUrlOrLocation = hasUrl(latestInboundText) || isLocationMention(latestInboundText)
 
     try {
-      const memoryLogs = thread.slice(0, 15).reverse()
-      const ai = await runReengagementClaude({
-        phone,
-        leadName: String((lead as { full_name?: string | null }).full_name ?? '').trim() || null,
-        memoryLogs,
-        lastOutboundText,
-        lastOutboundAngle,
-        latestInboundHasUrlOrLocation,
-      })
-
-      const leadName = String((lead as { full_name?: string | null }).full_name ?? '').trim()
-      const firstName = leadName.split(/\s+/).filter(Boolean)[0] || 'Bhai'
-      const websiteAwareNudge = `${firstName} bhai, website check kar rahi hoon—kaafi potential hai SEO ka. Should we jump on a quick strategy call?`
-      const outboundText = String(latestInboundHasUrlOrLocation ? websiteAwareNudge : ai.reply_text ?? '').trim()
-      if (!outboundText) {
-        skipped.push({ phone, reason: 'empty_ai_reply' })
-        continue
-      }
-
-      const sendResult = await sendWhatsAppText({ to: phone, text: outboundText })
+      const sendResult = await sendWhatsAppText({ to: phone, text: REENGAGEMENT_TEXT })
 
       await db.from(LOGS_TABLE).insert({
         wa_id: phone,
         lead_phone: phone,
         direction: 'outbound',
-        message_body: outboundText,
-        template_name: null,
+        message_body: REENGAGEMENT_TEXT,
+        template_name: REENGAGEMENT_TEMPLATE_NAME,
         payload: {
           automated_nudge: true,
-          nudge_type: latestInboundHasUrlOrLocation ? 'reengagement_website_followup' : 'reengagement_2h_24h',
-          value_prop_used: ai.value_prop_used ?? null,
-          latest_inbound_url_or_location: latestInboundHasUrlOrLocation,
+          nudge_type: goneColdEligible ? 'reengagement_gone_cold_2h_23h' : 'reengagement_never_replied_30m_23h',
           send_result: sendResult,
         },
       })
 
-      nudged.push({ phone, value_prop_used: ai.value_prop_used })
+      nudged.push({
+        phone,
+        cohort: goneColdEligible ? 'gone_cold' : 'never_replied',
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 1000))
     } catch (error) {
       console.error('[reengagement] failed for lead', { phone, error })
-      skipped.push({ phone, reason: 'send_or_ai_failed' })
+      skipped.push({ phone, reason: 'send_failed' })
     }
   }
 
