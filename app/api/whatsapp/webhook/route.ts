@@ -475,7 +475,7 @@ async function runManagedSalesAgent(phoneNumber: string, userMessage: string): P
     const step2Body = {
       events: [
         {
-          type: 'user_message',
+          type: 'user.message',
           message: inboundText,
         },
       ],
