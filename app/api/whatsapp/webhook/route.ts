@@ -536,53 +536,101 @@ async function runManagedSalesAgent(phoneNumber: string, userMessage: string): P
     const step2RawResponseText = await step2Response.text()
     console.log('ANTHROPIC_STEP2_RAW_RESPONSE:', step2RawResponseText)
 
-    const step2Result = (step2RawResponseText ? JSON.parse(step2RawResponseText) : {}) as {
+    type ManagedEventBlock = {
+      text?: string
+    }
+
+    type ManagedEventRecord = {
+      type?: string
+      message?: {
+        content?: ManagedEventBlock[]
+      }
+      content?: ManagedEventBlock[]
+    }
+
+    type ManagedEventPayload = {
       result?: {
         output?: {
           text?: string
         }
         message?: {
-          content?: Array<{
-            text?: string
-          }>
+          content?: ManagedEventBlock[]
         }
       }
       output?: {
         text?: string
       }
       message?: {
-        content?: Array<{
-          text?: string
-        }>
+        content?: ManagedEventBlock[]
       }
-      events?: Array<{
-        type?: string
-        message?: {
-          content?: Array<{
-            text?: string
-          }>
-        }
-        content?: Array<{
-          text?: string
-        }>
-      }>
+      events?: ManagedEventRecord[]
+      data?: ManagedEventRecord[]
     }
 
-    const firstAgentMessageEvent = (step2Result.events ?? []).find((event) => {
-      const eventType = String(event?.type ?? '').toLowerCase()
-      return eventType === 'agent_message' || eventType === 'agent.message'
-    })
+    const extractManagedAgentText = (value: ManagedEventPayload): string => {
+      const firstAgentMessageEvent = [...(value.events ?? []), ...(value.data ?? [])].find((event) => {
+        const eventType = String(event?.type ?? '').toLowerCase()
+        return eventType === 'agent_message' || eventType === 'agent.message'
+      })
 
-    const textOutput =
-      String(step2Result?.result?.output?.text ?? '').trim() ||
-      String(step2Result?.result?.message?.content?.[0]?.text ?? '').trim() ||
-      String(step2Result?.output?.text ?? '').trim() ||
-      String(step2Result?.message?.content?.[0]?.text ?? '').trim() ||
-      String(firstAgentMessageEvent?.message?.content?.[0]?.text ?? '').trim() ||
-      String(firstAgentMessageEvent?.content?.[0]?.text ?? '').trim()
+      return (
+        String(value?.result?.output?.text ?? '').trim() ||
+        String(value?.result?.message?.content?.[0]?.text ?? '').trim() ||
+        String(value?.output?.text ?? '').trim() ||
+        String(value?.message?.content?.[0]?.text ?? '').trim() ||
+        String(firstAgentMessageEvent?.message?.content?.[0]?.text ?? '').trim() ||
+        String(firstAgentMessageEvent?.content?.[0]?.text ?? '').trim()
+      )
+    }
+
+    const step2Result = (step2RawResponseText ? JSON.parse(step2RawResponseText) : {}) as ManagedEventPayload
+    let textOutput = extractManagedAgentText(step2Result)
 
     if (!textOutput) {
-      throw new Error('Managed Agent returned empty output.')
+      for (let attempt = 1; attempt <= 6; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1200))
+
+        const step2PollResponse = await fetch(step2Url, {
+          method: 'GET',
+          headers: requestHeaders,
+        })
+
+        const pollRequestId = step2PollResponse.headers.get('x-anthropic-request-id')
+        console.log('ANTHROPIC_STEP2_POLL_META:', {
+          attempt,
+          status: step2PollResponse.status,
+          request_id: pollRequestId ?? null,
+        })
+
+        if (!step2PollResponse.ok) {
+          const pollNonOkRawText = await step2PollResponse.text()
+          console.error('ANTHROPIC_STEP2_POLL_NON_OK_RESPONSE:', {
+            attempt,
+            status: step2PollResponse.status,
+            request_id: pollRequestId ?? null,
+            raw_text: pollNonOkRawText,
+          })
+          continue
+        }
+
+        const pollRawText = await step2PollResponse.text()
+        console.log('ANTHROPIC_STEP2_POLL_RAW_RESPONSE:', {
+          attempt,
+          raw_text: pollRawText,
+        })
+
+        const pollPayload = (pollRawText ? JSON.parse(pollRawText) : {}) as ManagedEventPayload
+        textOutput = extractManagedAgentText(pollPayload)
+
+        if (textOutput) {
+          console.log('ANTHROPIC_STEP2_POLL_FOUND_AGENT_MESSAGE:', { attempt })
+          break
+        }
+      }
+    }
+
+    if (!textOutput) {
+      throw new Error('Managed Agent returned empty output after waiting for agent.message event.')
     }
 
     console.log('STEP 2 SUCCESS: Agent replied to event')
