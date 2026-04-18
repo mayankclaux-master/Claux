@@ -63,6 +63,14 @@ function getDirectionRows(thread: LogRow[], direction: 'inbound' | 'outbound'): 
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
+  return runReengagement(request)
+}
+
+export async function GET(request: Request): Promise<NextResponse> {
+  return runReengagement(request)
+}
+
+async function runReengagement(request: Request): Promise<NextResponse> {
   const db = makeDb()
   if (!db) return NextResponse.json({ error: 'Server configuration missing.' }, { status: 500 })
 
