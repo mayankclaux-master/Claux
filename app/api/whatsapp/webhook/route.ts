@@ -473,10 +473,12 @@ async function runManagedSalesAgent(phoneNumber: string, userMessage: string): P
 
     const step2Url = `https://api.anthropic.com/v1/sessions/${createdSessionId}/events`
     const step2Body = {
-      event: {
-        type: 'user_message',
-        message: inboundText,
-      },
+      events: [
+        {
+          type: 'user_message',
+          message: inboundText,
+        },
+      ],
     }
     const step2BodySerialized = JSON.stringify(step2Body)
 
@@ -548,13 +550,31 @@ async function runManagedSalesAgent(phoneNumber: string, userMessage: string): P
           text?: string
         }>
       }
+      events?: Array<{
+        type?: string
+        message?: {
+          content?: Array<{
+            text?: string
+          }>
+        }
+        content?: Array<{
+          text?: string
+        }>
+      }>
     }
+
+    const firstAgentMessageEvent = (step2Result.events ?? []).find((event) => {
+      const eventType = String(event?.type ?? '').toLowerCase()
+      return eventType === 'agent_message' || eventType === 'agent.message'
+    })
 
     const textOutput =
       String(step2Result?.result?.output?.text ?? '').trim() ||
       String(step2Result?.result?.message?.content?.[0]?.text ?? '').trim() ||
       String(step2Result?.output?.text ?? '').trim() ||
-      String(step2Result?.message?.content?.[0]?.text ?? '').trim()
+      String(step2Result?.message?.content?.[0]?.text ?? '').trim() ||
+      String(firstAgentMessageEvent?.message?.content?.[0]?.text ?? '').trim() ||
+      String(firstAgentMessageEvent?.content?.[0]?.text ?? '').trim()
 
     if (!textOutput) {
       throw new Error('Managed Agent returned empty output.')
