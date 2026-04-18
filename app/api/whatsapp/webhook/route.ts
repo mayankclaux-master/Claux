@@ -378,7 +378,11 @@ async function getRecentLeadMemory(db: any, waId: string): Promise<ConversationL
   return rows.filter((row) => !isFallbackOrRescueLog(row)).reverse()
 }
 
-async function runManagedSalesAgent(phoneNumber: string, userMessage: string): Promise<ClaudeAgentOutput> {
+async function runManagedSalesAgent(
+  phoneNumber: string,
+  userMessage: string,
+  historyText: string = ''
+): Promise<ClaudeAgentOutput> {
   console.log('DEBUG: ENTERING MANAGED AGENT PATH')
   console.log('DEBUG: PAYLOAD_READY', { phoneNumber, messageLength: userMessage.length })
   const waId = String(phoneNumber ?? '').trim() || 'unknown'
@@ -472,6 +476,10 @@ async function runManagedSalesAgent(phoneNumber: string, userMessage: string): P
     }
 
     const step2Url = `https://api.anthropic.com/v1/sessions/${createdSessionId}/events`
+    const messageWithHistory =
+      historyText.length > 0
+        ? `## CONVERSATION HISTORY SO FAR (oldest to newest):\n${historyText}\n\n## LEAD'S LATEST MESSAGE:\n${inboundText}\n\n## YOUR TASK:\nRead the full conversation history above carefully. Identify the current stage. Reply ONLY to the lead's latest message. Never repeat anything already said. Never re-introduce yourself. Never ask for the demo if they already confirmed watching it.`
+        : inboundText
     const step2Body = {
       events: [
         {
@@ -479,7 +487,7 @@ async function runManagedSalesAgent(phoneNumber: string, userMessage: string): P
           content: [
             {
               type: 'text',
-              text: inboundText,
+              text: messageWithHistory,
             },
           ],
         },
@@ -1081,7 +1089,20 @@ async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Pro
 
     try {
       console.log('[whatsapp-webhook][trace] ai-flow:start', { waId })
-      const ai = await runManagedSalesAgent(waId, inboundText)
+      const recentHistory = await getRecentLeadMemory(db, waId)
+      const historyText =
+        recentHistory.length > 0
+          ? recentHistory
+              .reverse()
+              .map((log) => {
+                const role = log.direction === 'inbound' ? 'Lead' : 'Soniya'
+                return `${role}: ${log.message_body ?? ''}`
+              })
+              .filter((line) => line.trim().length > 5)
+              .join('\n')
+          : ''
+
+      const ai = await runManagedSalesAgent(waId, inboundText, historyText)
 
       const forcedHighIntentReply =
         "Got the link! I'm sharing this with Mayank ji right now so he can prepare your custom 200-point audit."
@@ -1121,12 +1142,14 @@ async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Pro
 
       const sendResult = await sendWhatsAppText({ to: waId, text: outboundText })
       try {
-        await logToWaSeo(db, {
-          waId,
-          direction: 'outbound',
-          messageText: outboundText,
-          payloadData: sendResult,
-        })
+        if (outboundText && sendResult !== null) {
+          await logToWaSeo(db, {
+            waId,
+            direction: 'outbound',
+            messageText: outboundText,
+            payloadData: sendResult,
+          })
+        }
       } catch (error) {
         console.error('[whatsapp-webhook] logToWaSeo outbound failed; continuing AI path:', error)
       }
@@ -1168,16 +1191,18 @@ async function processWebhookEvents(db: any, events: WebhookMessageEvent[]): Pro
       // const sendResult = await sendWhatsAppText({ to: waId, text: rescueReply })
       const sendResult = highIntentFromUrlOrLocation ? await sendWhatsAppText({ to: waId, text: rescueReply }) : null
       try {
-        await logToWaSeo(db, {
-          waId,
-          direction: 'outbound',
-          messageText: rescueReply,
-          payloadData: {
-            rescue_mode: true,
-            reason: 'ai_provider_unavailable',
-            send_result: sendResult,
-          },
-        })
+        if (rescueReply && sendResult !== null) {
+          await logToWaSeo(db, {
+            waId,
+            direction: 'outbound',
+            messageText: rescueReply,
+            payloadData: {
+              rescue_mode: true,
+              reason: 'ai_provider_unavailable',
+              send_result: sendResult,
+            },
+          })
+        }
       } catch (error) {
         console.error('[whatsapp-webhook] logToWaSeo rescue failed; continuing AI path:', error)
       }
@@ -1238,32 +1263,30 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   const events = getWebhookMessages(body)
-  // Temporary lock bypass: claimWebhookProcessing disabled.
-  // for (const event of events) {
-  //   const messageId = String(event.message.id ?? '').trim()
-  //   if (!messageId) continue
-  //
-  //   const waId = String(event.message.from ?? '').trim()
-  //   const lockState = await claimWebhookProcessing(db, {
-  //     messageId,
-  //     waId,
-  //     payload: event.valuePayload ?? event.message,
-  //   })
-  //
-  //   if (lockState === 'duplicate') {
-  //     console.warn('[whatsapp-webhook] Duplicate lock claim detected; continuing AI path for collision recovery.', {
-  //       messageId,
-  //       waId,
-  //     })
-  //   }
-  //
-  //   if (lockState === 'error') {
-  //     console.warn('[whatsapp-webhook] Lock claim error; continuing AI path to avoid blocking webhook processing.', {
-  //       messageId,
-  //       waId,
-  //     })
-  //   }
-  // }
+  const messageId = String(events[0]?.message?.id ?? '').trim()
+  const waId = String(events[0]?.message?.from ?? '').trim()
+
+  if (messageId) {
+    const { data: alreadyProcessed } = await db
+      .from(PROCESSED_WEBHOOKS_TABLE)
+      .select('id')
+      .eq('message_id', messageId)
+      .maybeSingle()
+
+    if (alreadyProcessed) {
+      console.log('[whatsapp-webhook] Duplicate webhook detected, skipping:', messageId)
+      return NextResponse.json({ success: true, skipped: true })
+    }
+
+    await db
+      .from(PROCESSED_WEBHOOKS_TABLE)
+      .insert({
+        message_id: messageId,
+        wa_id: waId || 'unknown',
+        processed_at: new Date().toISOString(),
+      })
+      .then(() => {})
+  }
 
   runInBackground(() => processWebhookEvents(db, events))
   return NextResponse.json({ success: true })
