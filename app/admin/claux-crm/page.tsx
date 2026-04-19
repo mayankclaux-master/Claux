@@ -90,7 +90,7 @@ type TemplateItem = {
   previewText?: string
 }
 
-type StateFilterKey = 'ALL' | 'HOT' | 'WARM' | 'COLD'
+type SmartFilterKey = 'ALL' | 'ACTIVITY_24H' | 'HOT' | 'WARM' | 'COLD'
 
 const ADMIN_ID = 'mayank_admin'
 const ADMIN_PASS = 'claux_war_room_2026'
@@ -202,8 +202,7 @@ export default function ClauxCrmPage() {
   const [sending, setSending] = useState(false)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [show24hActivity, setShow24hActivity] = useState(false)
-  const [stateFilter, setStateFilter] = useState<StateFilterKey>('ALL')
+  const [smartFilter, setSmartFilter] = useState<SmartFilterKey>('ALL')
   const [emojiPopoverPos, setEmojiPopoverPos] = useState<{ top: number; left: number } | null>(null)
   const [showTemplatePicker, setShowTemplatePicker] = useState(false)
   const [templatePopoverPos, setTemplatePopoverPos] = useState<{ top: number; left: number } | null>(null)
@@ -417,36 +416,37 @@ export default function ClauxCrmPage() {
     return intentMap
   }, [leads, selectedPhone, messages, leadMessagesByPhone])
 
-  const filterCountPool = useMemo(() => {
-    return show24hActivity ? leads.filter((lead) => isActiveWithin24h(lead.last_interaction_at)) : leads
-  }, [leads, show24hActivity])
-
-  const stateCounts = useMemo(() => {
+  const filterCounts = useMemo(() => {
     let hot = 0
     let warm = 0
     let cold = 0
+    let active24h = 0
 
-    for (const lead of filterCountPool) {
+    for (const lead of leads) {
       const intent = leadIntentByPhone.get(lead.phone_number) ?? 'COLD'
+      if (isActiveWithin24h(lead.last_interaction_at)) active24h += 1
       if (intent === 'HOT') hot += 1
       else if (intent === 'WARM') warm += 1
       else cold += 1
     }
 
     return {
-      ALL: filterCountPool.length,
+      ALL: leads.length,
+      ACTIVITY_24H: active24h,
       HOT: hot,
       WARM: warm,
       COLD: cold,
     }
-  }, [filterCountPool, leadIntentByPhone])
+  }, [leads, leadIntentByPhone])
 
   const filteredLeads = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
     const byFilter = leads.filter((lead) => {
       const intent = leadIntentByPhone.get(lead.phone_number) ?? 'COLD'
-      if (show24hActivity && !isActiveWithin24h(lead.last_interaction_at)) return false
-      if (stateFilter !== 'ALL' && intent !== stateFilter) return false
+      if (smartFilter === 'ACTIVITY_24H' && !isActiveWithin24h(lead.last_interaction_at)) return false
+      if (smartFilter === 'HOT' && intent !== 'HOT') return false
+      if (smartFilter === 'WARM' && intent !== 'WARM') return false
+      if (smartFilter === 'COLD' && intent !== 'COLD') return false
       return true
     })
 
@@ -465,9 +465,10 @@ export default function ClauxCrmPage() {
 
       return (b.interaction_count || 0) - (a.interaction_count || 0)
     })
-  }, [leads, searchQuery, show24hActivity, stateFilter, leadIntentByPhone])
+  }, [leads, searchQuery, smartFilter, leadIntentByPhone])
 
   const selectedLeadWithin24h = useMemo(() => isActiveWithin24h(selectedLead?.last_interaction_at), [selectedLead])
+  const hasActiveSmartFilter = smartFilter !== 'ALL'
 
   const exportFilteredLeadsCsv = () => {
     const header = ['Name', 'Phone', 'Calculated State', 'Last Active']
@@ -600,99 +601,69 @@ export default function ClauxCrmPage() {
   return (
     <div className="h-screen flex" style={{ background: BG, fontFamily: 'Inter, sans-serif' }}>
       <aside className="w-full max-w-sm border-r flex flex-col" style={{ borderColor: '#DCE3EA', background: '#F8FBFD' }}>
-        <div className="px-4 py-4 border-b" style={{ borderColor: '#DCE3EA' }}>
-          <h2 className="text-base font-semibold" style={{ color: SEA_GREEN }}>
-            CLAUX CRM
-          </h2>
-          <p className="text-xs" style={{ color: '#6B7280' }}>
-            Leads ({filteredLeads.length})
-          </p>
-          <input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by phone number"
-            className="mt-3 w-full rounded-lg border px-3 py-2 text-xs outline-none"
-            style={{ borderColor: '#D1D5DB' }}
-          />
-
-          <div className="mt-4 rounded-lg border p-3" style={{ borderColor: '#E2E8F0', background: '#FFFFFF' }}>
-            <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: '#64748B' }}>
-              Activity Filters
+        <div className="overflow-y-auto flex-1">
+          <div className="sticky top-0 z-20 px-3 py-2 border-b" style={{ borderColor: '#DCE3EA', background: '#F8FBFD' }}>
+            <h2 className="text-base font-semibold" style={{ color: SEA_GREEN }}>
+              CLAUX CRM
+            </h2>
+            <p className="text-xs" style={{ color: '#6B7280' }}>
+              Leads ({filteredLeads.length})
             </p>
-
-            <label className="mt-3 flex items-center gap-2 text-xs" style={{ color: '#334155' }}>
-              <input type="checkbox" checked={show24hActivity} onChange={(e) => setShow24hActivity(e.target.checked)} />
-              Show 24h Activity ({filterCountPool.filter((lead) => isActiveWithin24h(lead.last_interaction_at)).length})
-            </label>
-
-            <div className="mt-3 space-y-2">
-              <label className="flex items-center gap-2 text-xs" style={{ color: '#334155' }}>
-                <input type="radio" name="lead-intent-filter" checked={stateFilter === 'HOT'} onChange={() => setStateFilter('HOT')} />
-                Show HOT (High Intent) ({stateCounts.HOT})
-              </label>
-              <label className="flex items-center gap-2 text-xs" style={{ color: '#334155' }}>
-                <input type="radio" name="lead-intent-filter" checked={stateFilter === 'WARM'} onChange={() => setStateFilter('WARM')} />
-                Show WARM ({stateCounts.WARM})
-              </label>
-              <label className="flex items-center gap-2 text-xs" style={{ color: '#334155' }}>
-                <input type="radio" name="lead-intent-filter" checked={stateFilter === 'COLD'} onChange={() => setStateFilter('COLD')} />
-                Show COLD ({stateCounts.COLD})
-              </label>
-              <label className="flex items-center gap-2 text-xs" style={{ color: '#334155' }}>
-                <input type="radio" name="lead-intent-filter" checked={stateFilter === 'ALL'} onChange={() => setStateFilter('ALL')} />
-                Show ALL ({stateCounts.ALL})
-              </label>
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by phone number"
+                className="w-full rounded-lg border px-3 py-2 text-xs outline-none"
+                style={{ borderColor: '#D1D5DB' }}
+              />
+              <button
+                type="button"
+                onClick={exportFilteredLeadsCsv}
+                title="Export filtered leads to CSV"
+                className="h-8 w-8 rounded-lg border text-sm"
+                style={{ borderColor: '#CBD5E1', background: '#FFFFFF', color: '#334155' }}
+              >
+                ⬇
+              </button>
             </div>
-
-            <div className="mt-3 border-t" style={{ borderColor: '#E2E8F0' }} />
-
-            <p className="mt-2 text-[11px]" style={{ color: '#64748B' }}>
-              COLD: no demo link or no reply • WARM: 1-3 replies • HOT: 4+ replies
-            </p>
-
-            <button
-              type="button"
-              onClick={() => setStateFilter('ALL')}
-              className="mt-2 w-full rounded-lg border px-3 py-2 text-xs font-medium"
-              style={{ borderColor: '#E2E8F0', background: '#FFFFFF', color: '#334155' }}
-            >
-              Reset to Show ALL
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setShow24hActivity(false)}
-              className="mt-2 w-full rounded-lg border px-3 py-2 text-xs font-medium"
-              style={{ borderColor: '#E2E8F0', background: '#FFFFFF', color: '#334155' }}
-            >
-              Clear 24h Filter
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setShow24hActivity(false)
-                setStateFilter('ALL')
-              }}
-              className="mt-2 w-full rounded-lg border px-3 py-2 text-xs font-medium"
-              style={{ borderColor: '#E2E8F0', background: '#FFFFFF', color: '#334155' }}
-            >
-              Show Everything
-            </button>
-
-            <button
-              type="button"
-              onClick={exportFilteredLeadsCsv}
-              className="mt-3 w-full rounded-lg border px-3 py-2 text-xs font-semibold"
-              style={{ borderColor: '#CBD5E1', background: '#F8FAFC', color: '#0F172A' }}
-            >
-              Export to CSV
-            </button>
+            <div className="mt-2 flex items-center gap-2">
+              <label className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: '#64748B' }}>
+                Filter By
+              </label>
+              <span
+                className="inline-flex h-4 w-4 items-center justify-center rounded-full border text-[10px]"
+                style={{ borderColor: '#CBD5E1', color: '#64748B', background: '#FFFFFF' }}
+                title="COLD: no demo link or no reply after link. WARM: 1-3 inbound replies after demo link. HOT: 4+ inbound replies after demo link."
+              >
+                i
+              </span>
+              <select
+                value={smartFilter}
+                onChange={(e) => setSmartFilter(e.target.value as SmartFilterKey)}
+                className="ml-auto rounded-md border px-2 py-1 text-xs outline-none"
+                style={{ borderColor: '#D1D5DB', background: '#FFFFFF', color: '#334155' }}
+              >
+                <option value="ALL">ALL ({filterCounts.ALL})</option>
+                <option value="ACTIVITY_24H">24h Activity ({filterCounts.ACTIVITY_24H})</option>
+                <option value="HOT">HOT ({filterCounts.HOT})</option>
+                <option value="WARM">WARM ({filterCounts.WARM})</option>
+                <option value="COLD">COLD ({filterCounts.COLD})</option>
+              </select>
+            </div>
+            {hasActiveSmartFilter && (
+              <button
+                type="button"
+                onClick={() => setSmartFilter('ALL')}
+                className="mt-1 text-[11px] underline"
+                style={{ color: '#475569' }}
+              >
+                Reset Filters
+              </button>
+            )}
           </div>
 
-        </div>
-
-        <div className="overflow-y-auto flex-1 px-3 py-3 space-y-2">
+          <div className="px-3 py-2 space-y-2">
           {filteredLeads.map((lead) => {
             const active = selectedPhone === lead.phone_number
             const displayName = lead.full_name || lead.phone_number
@@ -747,6 +718,7 @@ export default function ClauxCrmPage() {
               No matching leads.
             </p>
           )}
+          </div>
         </div>
       </aside>
 
