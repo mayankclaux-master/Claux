@@ -12,9 +12,59 @@ type LeadItem = {
   button_click_count: number
 }
 
+function normalizeMessages(items: MessageItem[]): MessageItem[] {
+  return items.map((item) => ({
+    ...item,
+    direction: String(item.direction ?? '').trim().toLowerCase(),
+    message_text: String(item.message_text ?? item.message_body ?? '').trim() || null,
+    message_body: String(item.message_body ?? item.message_text ?? '').trim() || null,
+  }))
+}
+
+function getLeadIntentState(thread: MessageItem[]): LeadIntentState {
+  let demoLinkSeen = false
+  let inboundAfterLink = 0
+
+  for (const message of thread) {
+    const direction = String(message.direction ?? '').toLowerCase()
+    const text = String(message.message_text ?? message.message_body ?? '').toLowerCase()
+
+    if (!demoLinkSeen && direction === 'outbound' && text.includes(DEMO_LINK)) {
+      demoLinkSeen = true
+      continue
+    }
+
+    if (demoLinkSeen && direction === 'inbound') {
+      inboundAfterLink += 1
+    }
+  }
+
+  if (!demoLinkSeen || inboundAfterLink === 0) return 'COLD'
+  if (inboundAfterLink <= 3) return 'WARM'
+  return 'HOT'
+}
+
+function isActiveWithin24h(value: string | null | undefined): boolean {
+  if (!value) return false
+  const timestamp = new Date(value).getTime()
+  if (!Number.isFinite(timestamp)) return false
+  return Date.now() - timestamp < 24 * 60 * 60 * 1000
+}
+
+function getIntentBadge(intent: LeadIntentState): { background: string; color: string } {
+  if (intent === 'HOT') return { background: '#FEE2E2', color: '#B91C1C' }
+  if (intent === 'WARM') return { background: '#FEF3C7', color: '#B45309' }
+  return { background: '#E2E8F0', color: '#334155' }
+}
+
+function csvCell(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`
+}
+
 type MessageItem = {
   id?: string | number
   direction?: string | null
+  message_text?: string | null
   message_body?: string | null
   template_name?: string | null
   created_at?: string | null
@@ -46,10 +96,13 @@ const ADMIN_ID = 'mayank_admin'
 const ADMIN_PASS = 'claux_war_room_2026'
 const SESSION_KEY = 'claux_crm_session'
 
-const BG = '#F8FAFC'
+const BG = '#F4F7F9'
 const SEA_GREEN = '#075E54'
 const WA_GREEN = '#25D366'
 const HOT_ORANGE = '#FF8C00'
+const DEMO_LINK = 'claux.automizemedialabs.com/demo'
+
+type LeadIntentState = 'COLD' | 'WARM' | 'HOT'
 
 const QUICK_EMOJIS = ['😀', '👍', '🔥', '✅', '💬', '🚀', '🙂', '🎯']
 
@@ -112,10 +165,11 @@ function templatePreview(templateName: string | null | undefined): string {
 
 function messagePreview(message: MessageItem): string {
   const outbound = message.direction === 'outbound'
+  const text = String(message.message_text ?? message.message_body ?? '').trim()
 
   if (outbound) {
-    if (message.message_body && message.message_body.trim()) {
-      return message.message_body.trim()
+    if (text) {
+      return text
     }
     if (message.template_name) {
       return templatePreview(message.template_name)
@@ -123,8 +177,8 @@ function messagePreview(message: MessageItem): string {
     return '[Sent message]'
   }
 
-  if (message.message_body && message.message_body.trim()) {
-    return message.message_body.trim()
+  if (text) {
+    return text
   }
 
   return '[No inbound text]'
@@ -164,7 +218,8 @@ export default function ClauxCrmPage() {
   const [updatingStage, setUpdatingStage] = useState(false)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [activeFilter, setActiveFilter] = useState<LeadFilterKey>('all')
+  const [show24hActivity, setShow24hActivity] = useState(false)
+  const [showHighIntentOnly, setShowHighIntentOnly] = useState(false)
   const [emojiPopoverPos, setEmojiPopoverPos] = useState<{ top: number; left: number } | null>(null)
   const [showTemplatePicker, setShowTemplatePicker] = useState(false)
   const [templatePopoverPos, setTemplatePopoverPos] = useState<{ top: number; left: number } | null>(null)
@@ -173,6 +228,7 @@ export default function ClauxCrmPage() {
   const [templates, setTemplates] = useState<TemplateItem[]>([])
   const [templatesLoading, setTemplatesLoading] = useState(false)
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateItem | null>(null)
+  const [leadMessagesByPhone, setLeadMessagesByPhone] = useState<Record<string, MessageItem[]>>({})
 
   const emojiTriggerRef = useRef<HTMLButtonElement | null>(null)
   const emojiPopoverRef = useRef<HTMLDivElement | null>(null)
@@ -220,10 +276,14 @@ export default function ClauxCrmPage() {
 
       const nextLeads = Array.isArray(data.leads) ? data.leads : []
       const nextSelected = data.selectedPhone || phone || nextLeads[0]?.phone_number || ''
+      const nextMessages = normalizeMessages(Array.isArray(data.messages) ? data.messages : [])
 
       setLeads(nextLeads)
       setSelectedPhone(nextSelected)
-      setMessages(Array.isArray(data.messages) ? data.messages : [])
+      setMessages(nextMessages)
+      if (nextSelected) {
+        setLeadMessagesByPhone((prev) => ({ ...prev, [nextSelected]: nextMessages }))
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch CRM data.')
     } finally {
@@ -276,6 +336,55 @@ export default function ClauxCrmPage() {
   }, [authed, selectedPhone])
 
   useEffect(() => {
+    if (!authed || !leads.length) return
+
+    const missingPhones = leads.map((lead) => lead.phone_number).filter((phone) => !leadMessagesByPhone[phone])
+    if (!missingPhones.length) return
+
+    let cancelled = false
+
+    const hydrateLeadThreads = async () => {
+      const chunkSize = 8
+      for (let i = 0; i < missingPhones.length; i += chunkSize) {
+        const chunk = missingPhones.slice(i, i + chunkSize)
+        const results = await Promise.all(
+          chunk.map(async (phone) => {
+            try {
+              const response = await fetch(`/api/whatsapp/crm?phone=${encodeURIComponent(phone)}`, { cache: 'no-store' })
+              const data = (await response.json().catch(() => ({}))) as Partial<CrmResponse>
+              if (!response.ok) return { phone, messages: [] as MessageItem[] }
+              return {
+                phone,
+                messages: normalizeMessages(Array.isArray(data.messages) ? data.messages : []),
+              }
+            } catch {
+              return { phone, messages: [] as MessageItem[] }
+            }
+          })
+        )
+
+        if (cancelled) return
+
+        setLeadMessagesByPhone((prev) => {
+          const next = { ...prev }
+          for (const result of results) {
+            if (!next[result.phone]) {
+              next[result.phone] = result.messages
+            }
+          }
+          return next
+        })
+      }
+    }
+
+    hydrateLeadThreads()
+
+    return () => {
+      cancelled = true
+    }
+  }, [authed, leads, leadMessagesByPhone])
+
+  useEffect(() => {
     if (!authed) return
 
     const fetchQuickReplies = async () => {
@@ -312,17 +421,24 @@ export default function ClauxCrmPage() {
     return () => window.removeEventListener('mousedown', onPointerDown)
   }, [showEmojiPicker, showTemplatePicker])
 
+  const leadIntentByPhone = useMemo(() => {
+    const intentMap = new Map<string, LeadIntentState>()
+
+    for (const lead of leads) {
+      const phone = lead.phone_number
+      const thread = phone === selectedPhone ? messages : leadMessagesByPhone[phone] ?? []
+      intentMap.set(phone, getLeadIntentState(thread))
+    }
+
+    return intentMap
+  }, [leads, selectedPhone, messages, leadMessagesByPhone])
+
   const filteredLeads = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
     const byFilter = leads.filter((lead) => {
-      const stage = String(lead.current_stage ?? '').trim().toLowerCase()
-      const hot = (lead.button_click_count || 0) >= 5
-
-      if (activeFilter === 'hot') return hot
-      if (activeFilter === 'new') return stage === 'welcome'
-      if (activeFilter === 'pipeline') return stage === 'demo_sent' || stage === 'offer_sent'
-      if (activeFilter === 'action') return stage === 'human_handoff'
-      if (activeFilter === 'converted') return stage === 'converted'
+      const intent = leadIntentByPhone.get(lead.phone_number) ?? 'COLD'
+      if (showHighIntentOnly && intent !== 'HOT') return false
+      if (show24hActivity && !isActiveWithin24h(lead.last_interaction_at)) return false
       return true
     })
 
@@ -341,7 +457,30 @@ export default function ClauxCrmPage() {
 
       return (b.interaction_count || 0) - (a.interaction_count || 0)
     })
-  }, [leads, searchQuery, activeFilter])
+  }, [leads, searchQuery, show24hActivity, showHighIntentOnly, leadIntentByPhone])
+
+  const selectedLeadWithin24h = useMemo(() => isActiveWithin24h(selectedLead?.last_interaction_at), [selectedLead])
+
+  const exportFilteredLeadsCsv = () => {
+    const header = ['Name', 'Phone', 'Calculated State', 'Last Active']
+    const rows = filteredLeads.map((lead) => {
+      const displayName = String(lead.full_name ?? '').trim() || lead.phone_number
+      const state = leadIntentByPhone.get(lead.phone_number) ?? 'COLD'
+      const lastActive = fmtDate(lead.last_interaction_at)
+      return [displayName, lead.phone_number, state, lastActive]
+    })
+
+    const csv = [header, ...rows].map((row) => row.map((cell) => csvCell(cell)).join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `claux-crm-leads-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
 
   const handleLogin = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -477,9 +616,9 @@ export default function ClauxCrmPage() {
   }
 
   return (
-    <div className="h-screen flex" style={{ background: BG }}>
-      <aside className="w-full max-w-sm border-r flex flex-col" style={{ borderColor: '#E2E8F0', background: '#FFFFFF' }}>
-        <div className="px-4 py-4 border-b" style={{ borderColor: '#E2E8F0' }}>
+    <div className="h-screen flex" style={{ background: BG, fontFamily: 'Inter, sans-serif' }}>
+      <aside className="w-full max-w-sm border-r flex flex-col" style={{ borderColor: '#DCE3EA', background: '#F8FBFD' }}>
+        <div className="px-4 py-4 border-b" style={{ borderColor: '#DCE3EA' }}>
           <h2 className="text-base font-semibold" style={{ color: SEA_GREEN }}>
             CLAUX CRM
           </h2>
@@ -493,47 +632,52 @@ export default function ClauxCrmPage() {
             className="mt-3 w-full rounded-lg border px-3 py-2 text-xs outline-none"
             style={{ borderColor: '#D1D5DB' }}
           />
-          <div className="mt-3 flex flex-wrap gap-2">
-            {FILTER_PILLS.map((pill) => {
-              const active = activeFilter === pill.key
-              return (
-                <button
-                  key={pill.key}
-                  type="button"
-                  onClick={() => setActiveFilter(pill.key)}
-                  className="rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors"
-                  style={{
-                    color: active ? '#FFFFFF' : pill.accent,
-                    background: active ? pill.accent : pill.background,
-                    borderColor: active ? pill.accent : pill.border,
-                  }}
-                >
-                  {pill.label}
-                </button>
-              )
-            })}
+
+          <div className="mt-4 rounded-lg border p-3" style={{ borderColor: '#E2E8F0', background: '#FFFFFF' }}>
+            <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: '#64748B' }}>
+              Activity Filters
+            </p>
+            <label className="mt-2 flex items-center gap-2 text-xs" style={{ color: '#334155' }}>
+              <input type="checkbox" checked={show24hActivity} onChange={(e) => setShow24hActivity(e.target.checked)} />
+              Show 24h Activity
+            </label>
+            <label className="mt-2 flex items-center gap-2 text-xs" style={{ color: '#334155' }}>
+              <input type="checkbox" checked={showHighIntentOnly} onChange={(e) => setShowHighIntentOnly(e.target.checked)} />
+              Show High Intent (HOT)
+            </label>
+
+            <button
+              type="button"
+              onClick={exportFilteredLeadsCsv}
+              className="mt-3 w-full rounded-lg border px-3 py-2 text-xs font-semibold"
+              style={{ borderColor: '#CBD5E1', background: '#F8FAFC', color: '#0F172A' }}
+            >
+              Export to CSV
+            </button>
           </div>
         </div>
 
-        <div className="overflow-y-auto flex-1">
+        <div className="overflow-y-auto flex-1 px-3 py-3 space-y-2">
           {filteredLeads.map((lead) => {
             const active = selectedPhone === lead.phone_number
-            const hasHighInteractions = (lead.button_click_count || 0) >= 5
             const displayName = lead.full_name || lead.phone_number
             const stageBadge = getStageBadge(lead.current_stage)
+            const intent = leadIntentByPhone.get(lead.phone_number) ?? 'COLD'
+            const intentBadge = getIntentBadge(intent)
 
             return (
               <button
                 key={lead.phone_number}
                 onClick={() => setSelectedPhone(lead.phone_number)}
-                className="w-full text-left px-4 py-3 border-b"
+                className="w-full text-left px-4 py-3 rounded-xl border"
                 style={{
-                  borderColor: '#F1F5F9',
-                  background: active ? '#E7F7EF' : '#FFFFFF',
+                  borderColor: active ? '#86EFAC' : '#DCE3EA',
+                  background: '#FFFFFF',
+                  boxShadow: active ? '0 0 0 1px #86EFAC' : 'none',
                 }}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <p className="text-[15px] font-bold tracking-tight" style={{ color: hasHighInteractions ? HOT_ORANGE : '#0F172A' }}>
+                  <p className="text-[15px] font-semibold tracking-tight" style={{ color: '#0F172A' }}>
                     {displayName}
                   </p>
                   <span
@@ -546,10 +690,15 @@ export default function ClauxCrmPage() {
                 <p className="text-xs mt-0.5" style={{ color: '#6B7280' }}>
                   {lead.phone_number}
                 </p>
-                <div className="flex items-center justify-between mt-1">
-                  <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: stageBadge.background, color: stageBadge.color }}>
+                <div className="flex items-center justify-between mt-2">
+                  <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: intentBadge.background, color: intentBadge.color }}>
+                    {intent}
+                  </span>
+                  <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: stageBadge.background, color: stageBadge.color }}>
                     {stageBadge.label}
                   </span>
+                </div>
+                <div className="mt-1 flex items-center justify-between">
                   <span className="text-[11px]" style={{ color: '#6B7280' }}>
                     {fmtDate(lead.last_interaction_at)}
                   </span>
@@ -567,7 +716,7 @@ export default function ClauxCrmPage() {
       </aside>
 
       <main className="flex-1 flex flex-col">
-        <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: '#E2E8F0', background: '#FFFFFF' }}>
+        <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: '#DCE3EA', background: '#FFFFFF' }}>
           <div>
             <h3 className="text-lg font-bold tracking-tight" style={{ color: '#0F172A' }}>
               {selectedLead?.full_name || selectedPhone || 'Select a lead'}
@@ -824,6 +973,11 @@ export default function ClauxCrmPage() {
             <p className="text-[11px]" style={{ color: '#6B7280' }}>
               Sends as text only if user messaged in last 24h.
             </p>
+            {selectedLeadWithin24h && (
+              <p className="text-[11px]" style={{ color: SEA_GREEN }}>
+                24h window active: message + template controls available.
+              </p>
+            )}
             {loading && (
               <p className="text-[11px]" style={{ color: SEA_GREEN }}>
                 Refreshing…
