@@ -90,7 +90,7 @@ type TemplateItem = {
   previewText?: string
 }
 
-type LeadFilterKey = 'all' | 'hot' | 'new' | 'pipeline' | 'action' | 'converted'
+type StateFilterKey = 'ALL' | 'HOT' | 'WARM' | 'COLD'
 
 const ADMIN_ID = 'mayank_admin'
 const ADMIN_PASS = 'claux_war_room_2026'
@@ -105,21 +105,6 @@ const DEMO_LINK = 'claux.automizemedialabs.com/demo'
 type LeadIntentState = 'COLD' | 'WARM' | 'HOT'
 
 const QUICK_EMOJIS = ['😀', '👍', '🔥', '✅', '💬', '🚀', '🙂', '🎯']
-
-const FILTER_PILLS: Array<{
-  key: LeadFilterKey
-  label: string
-  accent: string
-  background: string
-  border: string
-}> = [
-  { key: 'all', label: 'All', accent: '#334155', background: '#F8FAFC', border: '#E2E8F0' },
-  { key: 'hot', label: 'Hot (5+ clicks)', accent: '#C2410C', background: '#FFF7ED', border: '#FED7AA' },
-  { key: 'new', label: 'New (Welcome)', accent: '#1D4ED8', background: '#EFF6FF', border: '#BFDBFE' },
-  { key: 'pipeline', label: 'Pipeline (Demo/Offer)', accent: '#C2410C', background: '#FFF7ED', border: '#FED7AA' },
-  { key: 'action', label: 'Action (Human Handoff)', accent: '#B91C1C', background: '#FEF2F2', border: '#FECACA' },
-  { key: 'converted', label: 'Converted', accent: '#15803D', background: '#F0FDF4', border: '#BBF7D0' },
-]
 
 function fmtDate(value: string | null | undefined): string {
   if (!value) return 'No activity yet'
@@ -215,11 +200,10 @@ export default function ClauxCrmPage() {
 
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
-  const [updatingStage, setUpdatingStage] = useState(false)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [show24hActivity, setShow24hActivity] = useState(false)
-  const [showHighIntentOnly, setShowHighIntentOnly] = useState(false)
+  const [stateFilter, setStateFilter] = useState<StateFilterKey>('ALL')
   const [emojiPopoverPos, setEmojiPopoverPos] = useState<{ top: number; left: number } | null>(null)
   const [showTemplatePicker, setShowTemplatePicker] = useState(false)
   const [templatePopoverPos, setTemplatePopoverPos] = useState<{ top: number; left: number } | null>(null)
@@ -433,12 +417,36 @@ export default function ClauxCrmPage() {
     return intentMap
   }, [leads, selectedPhone, messages, leadMessagesByPhone])
 
+  const filterCountPool = useMemo(() => {
+    return show24hActivity ? leads.filter((lead) => isActiveWithin24h(lead.last_interaction_at)) : leads
+  }, [leads, show24hActivity])
+
+  const stateCounts = useMemo(() => {
+    let hot = 0
+    let warm = 0
+    let cold = 0
+
+    for (const lead of filterCountPool) {
+      const intent = leadIntentByPhone.get(lead.phone_number) ?? 'COLD'
+      if (intent === 'HOT') hot += 1
+      else if (intent === 'WARM') warm += 1
+      else cold += 1
+    }
+
+    return {
+      ALL: filterCountPool.length,
+      HOT: hot,
+      WARM: warm,
+      COLD: cold,
+    }
+  }, [filterCountPool, leadIntentByPhone])
+
   const filteredLeads = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
     const byFilter = leads.filter((lead) => {
       const intent = leadIntentByPhone.get(lead.phone_number) ?? 'COLD'
-      if (showHighIntentOnly && intent !== 'HOT') return false
       if (show24hActivity && !isActiveWithin24h(lead.last_interaction_at)) return false
+      if (stateFilter !== 'ALL' && intent !== stateFilter) return false
       return true
     })
 
@@ -457,7 +465,7 @@ export default function ClauxCrmPage() {
 
       return (b.interaction_count || 0) - (a.interaction_count || 0)
     })
-  }, [leads, searchQuery, show24hActivity, showHighIntentOnly, leadIntentByPhone])
+  }, [leads, searchQuery, show24hActivity, stateFilter, leadIntentByPhone])
 
   const selectedLeadWithin24h = useMemo(() => isActiveWithin24h(selectedLead?.last_interaction_at), [selectedLead])
 
@@ -546,32 +554,6 @@ export default function ClauxCrmPage() {
     }
   }
 
-  const updateStage = async (nextStage: string) => {
-    if (!selectedPhone || updatingStage) return
-
-    setUpdatingStage(true)
-    setError('')
-
-    try {
-      const response = await fetch('/api/whatsapp/crm', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone_number: selectedPhone, current_stage: nextStage }),
-      })
-
-      const data = (await response.json().catch(() => ({}))) as { error?: string }
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to update stage.')
-      }
-
-      await fetchCrm(selectedPhone)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update stage.')
-    } finally {
-      setUpdatingStage(false)
-    }
-  }
-
   if (!authed) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4" style={{ background: BG }}>
@@ -637,14 +619,66 @@ export default function ClauxCrmPage() {
             <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: '#64748B' }}>
               Activity Filters
             </p>
-            <label className="mt-2 flex items-center gap-2 text-xs" style={{ color: '#334155' }}>
+
+            <label className="mt-3 flex items-center gap-2 text-xs" style={{ color: '#334155' }}>
               <input type="checkbox" checked={show24hActivity} onChange={(e) => setShow24hActivity(e.target.checked)} />
-              Show 24h Activity
+              Show 24h Activity ({filterCountPool.filter((lead) => isActiveWithin24h(lead.last_interaction_at)).length})
             </label>
-            <label className="mt-2 flex items-center gap-2 text-xs" style={{ color: '#334155' }}>
-              <input type="checkbox" checked={showHighIntentOnly} onChange={(e) => setShowHighIntentOnly(e.target.checked)} />
-              Show High Intent (HOT)
-            </label>
+
+            <div className="mt-3 space-y-2">
+              <label className="flex items-center gap-2 text-xs" style={{ color: '#334155' }}>
+                <input type="radio" name="lead-intent-filter" checked={stateFilter === 'HOT'} onChange={() => setStateFilter('HOT')} />
+                Show HOT (High Intent) ({stateCounts.HOT})
+              </label>
+              <label className="flex items-center gap-2 text-xs" style={{ color: '#334155' }}>
+                <input type="radio" name="lead-intent-filter" checked={stateFilter === 'WARM'} onChange={() => setStateFilter('WARM')} />
+                Show WARM ({stateCounts.WARM})
+              </label>
+              <label className="flex items-center gap-2 text-xs" style={{ color: '#334155' }}>
+                <input type="radio" name="lead-intent-filter" checked={stateFilter === 'COLD'} onChange={() => setStateFilter('COLD')} />
+                Show COLD ({stateCounts.COLD})
+              </label>
+              <label className="flex items-center gap-2 text-xs" style={{ color: '#334155' }}>
+                <input type="radio" name="lead-intent-filter" checked={stateFilter === 'ALL'} onChange={() => setStateFilter('ALL')} />
+                Show ALL ({stateCounts.ALL})
+              </label>
+            </div>
+
+            <div className="mt-3 border-t" style={{ borderColor: '#E2E8F0' }} />
+
+            <p className="mt-2 text-[11px]" style={{ color: '#64748B' }}>
+              COLD: no demo link or no reply • WARM: 1-3 replies • HOT: 4+ replies
+            </p>
+
+            <button
+              type="button"
+              onClick={() => setStateFilter('ALL')}
+              className="mt-2 w-full rounded-lg border px-3 py-2 text-xs font-medium"
+              style={{ borderColor: '#E2E8F0', background: '#FFFFFF', color: '#334155' }}
+            >
+              Reset to Show ALL
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShow24hActivity(false)}
+              className="mt-2 w-full rounded-lg border px-3 py-2 text-xs font-medium"
+              style={{ borderColor: '#E2E8F0', background: '#FFFFFF', color: '#334155' }}
+            >
+              Clear 24h Filter
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShow24hActivity(false)
+                setStateFilter('ALL')
+              }}
+              className="mt-2 w-full rounded-lg border px-3 py-2 text-xs font-medium"
+              style={{ borderColor: '#E2E8F0', background: '#FFFFFF', color: '#334155' }}
+            >
+              Show Everything
+            </button>
 
             <button
               type="button"
@@ -655,6 +689,7 @@ export default function ClauxCrmPage() {
               Export to CSV
             </button>
           </div>
+
         </div>
 
         <div className="overflow-y-auto flex-1 px-3 py-3 space-y-2">
@@ -734,24 +769,7 @@ export default function ClauxCrmPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => updateStage('Hot')}
-              disabled={!selectedPhone || updatingStage}
-              className="px-3 py-1.5 text-xs rounded-lg text-white disabled:opacity-50"
-              style={{ background: HOT_ORANGE }}
-            >
-              Mark Hot
-            </button>
-            <button
-              onClick={() => updateStage('Converted')}
-              disabled={!selectedPhone || updatingStage}
-              className="px-3 py-1.5 text-xs rounded-lg text-white disabled:opacity-50"
-              style={{ background: SEA_GREEN }}
-            >
-              Mark Converted
-            </button>
-          </div>
+          <div />
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
