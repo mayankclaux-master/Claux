@@ -200,6 +200,7 @@ export default function ClauxCrmPage() {
 
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
+  const [leadSwitchLoading, setLeadSwitchLoading] = useState(false)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [smartFilter, setSmartFilter] = useState<SmartFilterKey>('ALL')
@@ -217,6 +218,10 @@ export default function ClauxCrmPage() {
   const emojiPopoverRef = useRef<HTMLDivElement | null>(null)
   const templateTriggerRef = useRef<HTMLButtonElement | null>(null)
   const templatePopoverRef = useRef<HTMLDivElement | null>(null)
+  const leadSelectDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingLeadPhoneRef = useRef<string | null>(null)
+  const fetchRequestIdRef = useRef(0)
+  const messagesPaneRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -245,6 +250,13 @@ export default function ClauxCrmPage() {
   }, [quickReplyQuery, quickReplies])
 
   const fetchCrm = async (phone = selectedPhone) => {
+    const requestId = ++fetchRequestIdRef.current
+    const targetPhone = String(phone || '').trim()
+
+    if (targetPhone) {
+      setLeadSwitchLoading(true)
+    }
+
     setLoading(true)
     setError('')
 
@@ -257,6 +269,8 @@ export default function ClauxCrmPage() {
         throw new Error(data.error || 'Failed to fetch CRM data.')
       }
 
+      if (requestId !== fetchRequestIdRef.current) return
+
       const nextLeads = Array.isArray(data.leads) ? data.leads : []
       const nextSelected = data.selectedPhone || phone || nextLeads[0]?.phone_number || ''
       const nextMessages = normalizeMessages(Array.isArray(data.messages) ? data.messages : [])
@@ -267,11 +281,38 @@ export default function ClauxCrmPage() {
       if (nextSelected) {
         setLeadMessagesByPhone((prev) => ({ ...prev, [nextSelected]: nextMessages }))
       }
+
+      if (!targetPhone || pendingLeadPhoneRef.current === nextSelected || targetPhone === nextSelected) {
+        setLeadSwitchLoading(false)
+        pendingLeadPhoneRef.current = null
+      }
     } catch (err) {
+      if (requestId === fetchRequestIdRef.current) {
+        setLeadSwitchLoading(false)
+      }
       setError(err instanceof Error ? err.message : 'Failed to fetch CRM data.')
     } finally {
-      setLoading(false)
+      if (requestId === fetchRequestIdRef.current) {
+        setLoading(false)
+      }
     }
+  }
+
+  const onSelectLead = (phone: string) => {
+    const nextPhone = String(phone || '').trim()
+    if (!nextPhone || nextPhone === selectedPhone) return
+
+    pendingLeadPhoneRef.current = nextPhone
+    setLeadSwitchLoading(true)
+    setMessages([])
+
+    if (leadSelectDebounceRef.current) {
+      clearTimeout(leadSelectDebounceRef.current)
+    }
+
+    leadSelectDebounceRef.current = setTimeout(() => {
+      setSelectedPhone(nextPhone)
+    }, 200)
   }
 
   const toggleTemplatePicker = async () => {
@@ -317,6 +358,20 @@ export default function ClauxCrmPage() {
 
     return () => window.clearInterval(timer)
   }, [authed, selectedPhone])
+
+  useEffect(() => {
+    return () => {
+      if (leadSelectDebounceRef.current) {
+        clearTimeout(leadSelectDebounceRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (leadSwitchLoading) return
+    if (!messagesPaneRef.current) return
+    messagesPaneRef.current.scrollTop = messagesPaneRef.current.scrollHeight
+  }, [messages, leadSwitchLoading])
 
   useEffect(() => {
     if (!authed || !leads.length) return
@@ -674,7 +729,7 @@ export default function ClauxCrmPage() {
             return (
               <button
                 key={lead.phone_number}
-                onClick={() => setSelectedPhone(lead.phone_number)}
+                onClick={() => onSelectLead(lead.phone_number)}
                 className="w-full text-left px-4 py-3 rounded-xl border"
                 style={{
                   borderColor: active ? '#86EFAC' : '#DCE3EA',
@@ -744,8 +799,16 @@ export default function ClauxCrmPage() {
           <div />
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-          {messages.map((message, idx) => {
+        <div ref={messagesPaneRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+          {leadSwitchLoading && (
+            <div className="space-y-2 animate-pulse">
+              <div className="h-14 rounded-2xl" style={{ background: '#E2E8F0' }} />
+              <div className="h-12 rounded-2xl ml-auto w-[72%]" style={{ background: '#DCFCE7' }} />
+              <div className="h-14 rounded-2xl w-[78%]" style={{ background: '#E2E8F0' }} />
+            </div>
+          )}
+
+          {!leadSwitchLoading && messages.map((message, idx) => {
             const outbound = message.direction === 'outbound'
             const text = messagePreview(message)
 
@@ -766,7 +829,7 @@ export default function ClauxCrmPage() {
             )
           })}
 
-          {!messages.length && (
+          {!leadSwitchLoading && !messages.length && (
             <p className="text-sm" style={{ color: '#6B7280' }}>
               No messages yet.
             </p>
