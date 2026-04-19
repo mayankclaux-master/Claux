@@ -231,6 +231,10 @@ export default function ClauxCrmPage() {
 
   const selectedLead = useMemo(() => leads.find((lead) => lead.phone_number === selectedPhone) ?? null, [leads, selectedPhone])
 
+  useEffect(() => {
+    console.log('MESSAGES_FOR_UI:', messages.length)
+  }, [messages])
+
   const quickReplyQuery = useMemo(() => {
     const value = draft.trimStart()
     if (!value.startsWith('/')) return null
@@ -251,11 +255,7 @@ export default function ClauxCrmPage() {
 
   const fetchCrm = async (phone = selectedPhone) => {
     const requestId = ++fetchRequestIdRef.current
-    const targetPhone = String(phone || '').trim()
-
-    if (targetPhone) {
-      setLeadSwitchLoading(true)
-    }
+    const requestedPhone = String(phone || '').trim()
 
     setLoading(true)
     setError('')
@@ -272,8 +272,14 @@ export default function ClauxCrmPage() {
       if (requestId !== fetchRequestIdRef.current) return
 
       const nextLeads = Array.isArray(data.leads) ? data.leads : []
-      const nextSelected = data.selectedPhone || phone || nextLeads[0]?.phone_number || ''
+      const nextSelected = data.selectedPhone || requestedPhone || nextLeads[0]?.phone_number || ''
       const nextMessages = normalizeMessages(Array.isArray(data.messages) ? data.messages : [])
+      const pendingPhone = pendingLeadPhoneRef.current
+
+      if (pendingPhone && pendingPhone !== nextSelected) {
+        setLeads(nextLeads)
+        return
+      }
 
       setLeads(nextLeads)
       setSelectedPhone(nextSelected)
@@ -282,13 +288,14 @@ export default function ClauxCrmPage() {
         setLeadMessagesByPhone((prev) => ({ ...prev, [nextSelected]: nextMessages }))
       }
 
-      if (!targetPhone || pendingLeadPhoneRef.current === nextSelected || targetPhone === nextSelected) {
+      if (!pendingPhone || pendingPhone === nextSelected) {
         setLeadSwitchLoading(false)
         pendingLeadPhoneRef.current = null
       }
     } catch (err) {
       if (requestId === fetchRequestIdRef.current) {
         setLeadSwitchLoading(false)
+        pendingLeadPhoneRef.current = null
       }
       setError(err instanceof Error ? err.message : 'Failed to fetch CRM data.')
     } finally {
@@ -799,7 +806,7 @@ export default function ClauxCrmPage() {
           <div />
         </div>
 
-        <div ref={messagesPaneRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+        <div key={selectedPhone || 'no-lead-selected'} ref={messagesPaneRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
           {leadSwitchLoading && (
             <div className="space-y-2 animate-pulse">
               <div className="h-14 rounded-2xl" style={{ background: '#E2E8F0' }} />
