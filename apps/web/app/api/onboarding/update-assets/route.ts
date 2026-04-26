@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getOrCreateOrganizationApiSecret } from "@/lib/organization-secret";
 
 type UpdateAssetsRequest = {
   orgId: string;
@@ -66,6 +67,25 @@ export async function POST(request: Request) {
   }
 
   const adminClient = createSupabaseAdminClient();
+  const completedRequested = typeof onboardingStatus === "string" && onboardingStatus.trim() === "completed";
+
+  const { data: existingOrganizationData, error: existingOrganizationError } = await adminClient
+    .from("organizations")
+    .select("onboarding_status, onboarding_completed")
+    .eq("id", orgId)
+    .maybeSingle();
+
+  const existingOrganization = existingOrganizationData as
+    | { onboarding_status: string | null; onboarding_completed: boolean | null }
+    | null;
+
+  if (existingOrganizationError) {
+    return NextResponse.json({ error: existingOrganizationError.message }, { status: 500 });
+  }
+
+  const wasAlreadyCompleted =
+    Boolean(existingOrganization?.onboarding_completed) ||
+    String(existingOrganization?.onboarding_status ?? "").trim().toLowerCase() === "completed";
 
   const { data: existingConnection } = await adminClient
     .from("connections")
@@ -83,26 +103,50 @@ export async function POST(request: Request) {
   };
 
   let connectionSaveWarning: string | null = null;
+  const now = new Date().toISOString();
 
   try {
-    const { error: connectionError } = await adminClient.from("connections").upsert(
-      {
-        org_id: orgId,
-        website_url: websiteUrl,
-        tech_stack: techStack || "unknown",
-        seo_has_ssl: seoHealth?.hasSsl ?? null,
-        seo_has_robots_txt: seoHealth?.hasRobotsTxt ?? null,
-        google_api_links: {
-          ...currentLinks,
-          website_scan: websiteScan,
-          has_search_console_access: hasSearchConsoleAccess,
-          shopify_store_url: shopifyStoreUrl || null
-        },
-        status: "pending",
-        updated_at: new Date().toISOString()
+    const connectionPayload = {
+      org_id: orgId,
+      website_url: websiteUrl,
+      tech_stack: techStack || "unknown",
+      seo_has_ssl: seoHealth?.hasSsl ?? null,
+      seo_has_robots_txt: seoHealth?.hasRobotsTxt ?? null,
+      google_api_links: {
+        ...currentLinks,
+        website_scan: websiteScan,
+        has_search_console_access: hasSearchConsoleAccess,
+        shopify_store_url: shopifyStoreUrl || null
       },
-      { onConflict: "org_id" }
-    );
+      status: "pending",
+      updated_at: now
+    };
+
+    const connectionWrite = existingConnection
+      ? adminClient.from("connections").update(connectionPayload).eq("org_id", orgId)
+      : adminClient.from("connections").insert({
+          ...connectionPayload,
+          aria_status: "pending",
+          aria_progress: 0,
+          scribe_status: "pending",
+          scribe_progress: 0,
+          visual_status: "pending",
+          visual_progress: 0,
+          forge_status: "pending",
+          forge_progress: 0,
+          core_status: "pending",
+          core_progress: 0,
+          linx_status: "pending",
+          linx_progress: 0,
+          locl_status: "pending",
+          locl_progress: 0,
+          repute_status: "pending",
+          repute_progress: 0,
+          ampli_status: "pending",
+          ampli_progress: 0
+        });
+
+    const { error: connectionError } = await connectionWrite;
 
     if (connectionError) {
       console.error("[onboarding-assets] connection upsert failed", {
@@ -126,6 +170,7 @@ export async function POST(request: Request) {
 
   try {
     const organizationUpdatePayload: Record<string, unknown> = {
+      website_url: websiteUrl,
       onboarding_step: Number.isFinite(onboardingStep) ? onboardingStep : 3,
       is_service_area_business: isServiceAreaBusiness
     };
@@ -160,5 +205,52 @@ export async function POST(request: Request) {
     onboardingStepWarning = "Onboarding step could not be updated.";
   }
 
-  return NextResponse.json({ success: true, connectionSaveWarning, onboardingStepWarning });
+  let kickoffWarning: string | null = null;
+  let kickoffTriggered = false;
+
+  if (completedRequested && !wasAlreadyCompleted) {
+    const webhookUrlFromEnv =
+      process.env.N8N_ONBOARDING_WEBHOOK_URL ??
+      (process.env.N8N_HOST ? `${process.env.N8N_HOST.replace(/\/$/, "")}/webhook/onboarding-complete` : "");
+
+    if (!webhookUrlFromEnv) {
+      kickoffWarning = "N8N onboarding webhook URL is not configured.";
+    } else {
+      try {
+        const { apiSecret } = await getOrCreateOrganizationApiSecret(adminClient, orgId);
+
+        const kickoffResponse = await fetch(webhookUrlFromEnv, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Idempotency-Key": `onboarding-complete-${orgId}`
+          },
+          body: JSON.stringify({
+            event: "onboarding_completed",
+            org_id: orgId,
+            website_url: websiteUrl,
+            api_secret: apiSecret,
+            triggered_at: new Date().toISOString()
+          })
+        });
+
+        if (!kickoffResponse.ok) {
+          kickoffWarning = `Failed to trigger n8n kickoff (status ${kickoffResponse.status}).`;
+        } else {
+          kickoffTriggered = true;
+        }
+      } catch (kickoffError) {
+        kickoffWarning = kickoffError instanceof Error ? kickoffError.message : "Failed to trigger n8n kickoff.";
+      }
+    }
+  }
+
+  return NextResponse.json({
+    success: true,
+    connectionSaveWarning,
+    onboardingStepWarning,
+    kickoffTriggered,
+    kickoffWarning,
+    kickoffSkippedAsDuplicate: completedRequested && wasAlreadyCompleted
+  });
 }

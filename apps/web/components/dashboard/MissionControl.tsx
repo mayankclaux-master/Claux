@@ -42,10 +42,17 @@ type FeedItem = {
   status?: 'pending' | 'completed' | 'failed';
 };
 
-type ConnectionAgentState = {
-  aria_status?: string | null;
-  aria_progress?: number | null;
+type AgentName = 'ARIA' | 'SCRIBE' | 'VISUAL' | 'FORGE' | 'CORE' | 'LINX' | 'LOCL' | 'REPUTE' | 'AMPLI';
+type AgentState = {
+  statusLine: string;
+  progress: number;
 };
+
+type ConnectionAgentState = Partial<
+  Record<`${Lowercase<AgentName>}_status` | `${Lowercase<AgentName>}_progress`, string | number | null>
+>;
+
+const AGENT_NAMES: AgentName[] = ['ARIA', 'SCRIBE', 'VISUAL', 'FORGE', 'CORE', 'LINX', 'LOCL', 'REPUTE', 'AMPLI'];
 
 const baseAgents = [
   {
@@ -89,16 +96,16 @@ const baseAgents = [
     statusLine: 'System Initializing'
   },
   {
-    name: 'PULSE',
-    role: 'Rank Tracker',
+    name: 'VISUAL',
+    role: 'Creative Agent',
     action: 'System initializing. Waiting for connected assets.',
     progress: 0,
     time: 'N/A',
     statusLine: 'System Initializing'
   },
   {
-    name: 'RIVAL',
-    role: 'Competitor Intel',
+    name: 'FORGE',
+    role: 'Implementation Agent',
     action: 'System initializing. Waiting for connected assets.',
     progress: 0,
     time: 'N/A',
@@ -134,8 +141,8 @@ function statusIcon(status?: FeedItem['status']) {
   return '✅';
 }
 
-function normalizeAriaStatus(value: string | null | undefined) {
-  const normalized = value?.trim().toLowerCase();
+function normalizeAgentStatus(value: string | number | null | undefined) {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
 
   if (normalized === 'completed') {
     return 'Completed';
@@ -152,7 +159,7 @@ function normalizeAriaStatus(value: string | null | undefined) {
   return 'System Initializing';
 }
 
-function normalizeAriaProgress(value: number | null | undefined) {
+function normalizeAgentProgress(value: string | number | null | undefined) {
   const numeric = Number(value ?? 0);
 
   if (!Number.isFinite(numeric)) {
@@ -160,6 +167,37 @@ function normalizeAriaProgress(value: number | null | undefined) {
   }
 
   return Math.max(0, Math.min(100, Math.round(numeric)));
+}
+
+function getInitialAgentStateByName(): Record<AgentName, AgentState> {
+  return AGENT_NAMES.reduce(
+    (acc, agentName) => {
+      acc[agentName] = { statusLine: 'System Initializing', progress: 0 };
+      return acc;
+    },
+    {} as Record<AgentName, AgentState>
+  );
+}
+
+function mapConnectionStateToAgents(connectionState: ConnectionAgentState | null | undefined): Record<AgentName, AgentState> {
+  const nextState = getInitialAgentStateByName();
+
+  if (!connectionState) {
+    return nextState;
+  }
+
+  for (const agentName of AGENT_NAMES) {
+    const key = agentName.toLowerCase() as Lowercase<AgentName>;
+    const statusKey = `${key}_status` as const;
+    const progressKey = `${key}_progress` as const;
+
+    nextState[agentName] = {
+      statusLine: normalizeAgentStatus(connectionState[statusKey]),
+      progress: normalizeAgentProgress(connectionState[progressKey])
+    };
+  }
+
+  return nextState;
 }
 
 function StatCard({ label, value, helper, delay = 0 }: StatCardProps) {
@@ -223,8 +261,7 @@ function AgentCard({ name, role, action, progress, time, statusLine, delay = 0 }
 export default function MissionControl({ organizationName, isWordPress, orgId }: MissionControlProps) {
   const [liveTaskFeed, setLiveTaskFeed] = useState<FeedItem[]>(initialLiveTaskFeed);
   const [keywordRankings, setKeywordRankings] = useState<RankingRow[]>(initialKeywordRankings);
-  const [ariaStatus, setAriaStatus] = useState<string>('System Initializing');
-  const [ariaProgress, setAriaProgress] = useState<number>(0);
+  const [agentStateByName, setAgentStateByName] = useState<Record<AgentName, AgentState>>(() => getInitialAgentStateByName());
 
   const stats = [
     { label: 'Domain Authority', value: 'N/A', helper: 'Connect Assets' },
@@ -237,8 +274,7 @@ export default function MissionControl({ organizationName, isWordPress, orgId }:
     if (!orgId) {
       setLiveTaskFeed([]);
       setKeywordRankings([]);
-      setAriaStatus('System Initializing');
-      setAriaProgress(0);
+      setAgentStateByName(getInitialAgentStateByName());
       return;
     }
 
@@ -296,7 +332,9 @@ export default function MissionControl({ organizationName, isWordPress, orgId }:
     async function loadConnectionAgentState() {
       const { data, error } = await supabase
         .from('connections')
-        .select('aria_status, aria_progress')
+        .select(
+          'aria_status, aria_progress, scribe_status, scribe_progress, visual_status, visual_progress, forge_status, forge_progress, core_status, core_progress, linx_status, linx_progress, locl_status, locl_progress, repute_status, repute_progress, ampli_status, ampli_progress'
+        )
         .eq('org_id', orgId)
         .maybeSingle();
 
@@ -305,8 +343,7 @@ export default function MissionControl({ organizationName, isWordPress, orgId }:
       }
 
       const connectionState = data as ConnectionAgentState;
-      setAriaStatus(normalizeAriaStatus(connectionState.aria_status));
-      setAriaProgress(normalizeAriaProgress(connectionState.aria_progress));
+      setAgentStateByName(mapConnectionStateToAgents(connectionState));
     }
 
     void loadInitialFeed();
@@ -355,8 +392,7 @@ export default function MissionControl({ organizationName, isWordPress, orgId }:
         },
         (payload) => {
           const row = payload.new as ConnectionAgentState;
-          setAriaStatus(normalizeAriaStatus(row.aria_status));
-          setAriaProgress(normalizeAriaProgress(row.aria_progress));
+          setAgentStateByName(mapConnectionStateToAgents(row));
         }
       )
       .subscribe();
@@ -368,28 +404,28 @@ export default function MissionControl({ organizationName, isWordPress, orgId }:
   }, [orgId]);
 
   const agents = baseAgents.map((agent) => {
-    if (agent.name === 'ARIA') {
-      const isCompleted = ariaStatus === 'Completed';
+    const runtimeState = agentStateByName[agent.name as AgentName] ?? { statusLine: 'System Initializing', progress: 0 };
+    const statusLine =
+      agent.name === 'CORE' && isWordPress && runtimeState.statusLine === 'System Initializing'
+        ? 'WordPress Managed'
+        : runtimeState.statusLine;
 
-      return {
-        ...agent,
-        action: isCompleted
-          ? 'Keyword intelligence cycle completed. Awaiting next sync.'
-          : 'System initializing. Waiting for connected assets.',
-        progress: ariaProgress,
-        statusLine: ariaStatus,
-        time: isCompleted ? 'Live' : 'N/A'
-      };
-    }
+    const action =
+      statusLine === 'Completed'
+        ? `${agent.name} cycle completed. Awaiting next sync.`
+        : statusLine === 'In Progress'
+          ? 'Execution in progress. Receiving live updates.'
+          : statusLine === 'Failed'
+            ? 'Last run failed. Awaiting orchestrator retry.'
+            : 'System initializing. Waiting for connected assets.';
 
-    if (agent.name === 'CORE') {
-      return {
-        ...agent,
-        statusLine: isWordPress ? 'WordPress Managed' : agent.statusLine
-      };
-    }
-
-    return agent;
+    return {
+      ...agent,
+      action,
+      progress: runtimeState.progress,
+      statusLine,
+      time: runtimeState.progress > 0 ? 'Live' : 'N/A'
+    };
   });
 
   return (

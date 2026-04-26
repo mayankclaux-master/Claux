@@ -15,11 +15,14 @@ export default function HomePage() {
       <p className="mt-5 max-w-2xl text-base text-muted-foreground md:text-lg">
         Create your workspace, connect your website, and activate intelligence syncing in under 3 minutes.
       </p>
-      <div className="mt-10 flex gap-3">
+      <div className="mt-10 flex flex-wrap justify-center gap-3">
+        <Link href="/login" className={cn(buttonVariants({ size: "lg", variant: "secondary" }))}>
+          Sign in
+        </Link>
         <Link href="/auth/signup" className={cn(buttonVariants({ size: "lg" }))}>
           Create account
         </Link>
-        <Link href="/onboarding" className={cn(buttonVariants({ size: "lg", variant: "secondary" }))}>
+        <Link href="/onboarding" className={cn(buttonVariants({ size: "lg", variant: "ghost" }))}>
           Resume onboarding
         </Link>
       </div>

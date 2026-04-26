@@ -3,6 +3,7 @@ create extension if not exists pgcrypto;
 create table if not exists public.organizations (
   id uuid primary key default gen_random_uuid(),
   name text not null,
+  website_url text,
   category text,
   gmb_url text,
   target_market_type text,
@@ -13,12 +14,15 @@ create table if not exists public.organizations (
   top_competitors jsonb not null default '[]'::jsonb,
   is_service_area_business boolean not null default false,
   timezone text,
+  onboarding_status text,
   onboarding_step integer not null default 1,
   onboarding_completed boolean not null default false,
   created_by uuid not null references auth.users (id) on delete restrict,
   created_at timestamptz not null default now()
 );
 
+alter table public.organizations add column if not exists website_url text;
+alter table public.organizations add column if not exists onboarding_status text;
 alter table public.organizations add column if not exists gmb_url text;
 alter table public.organizations add column if not exists target_market_type text;
 

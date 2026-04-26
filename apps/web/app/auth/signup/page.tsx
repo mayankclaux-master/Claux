@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
@@ -54,7 +55,7 @@ export default function SignupPage() {
       return;
     }
 
-    router.push("/onboarding");
+    router.push("/dashboard");
     router.refresh();
   }
 
@@ -89,6 +90,12 @@ export default function SignupPage() {
             <Button className="w-full shadow-lg shadow-primary/20" size="lg" disabled={loading}>
               {loading ? "Creating workspace..." : "Create account"}
             </Button>
+            <p className="text-center text-sm text-muted-foreground">
+              Already have an account?{" "}
+              <Link href="/login" className="text-primary underline-offset-4 hover:underline">
+                Sign in
+              </Link>
+            </p>
           </form>
         </CardContent>
       </Card>

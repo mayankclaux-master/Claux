@@ -122,6 +122,16 @@ function splitPhone(phone: string) {
   };
 }
 
+function clampStep(step: unknown) {
+  const numericStep = Number(step ?? 1);
+
+  if (!Number.isFinite(numericStep)) {
+    return 1;
+  }
+
+  return Math.min(Math.max(Math.trunc(numericStep), 1), 3);
+}
+
 export function OnboardingWizard() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -142,7 +152,7 @@ export function OnboardingWizard() {
       const user = userData.user;
 
       if (!user) {
-        router.replace("/auth/signup");
+        router.replace("/");
         return;
       }
 
@@ -153,8 +163,7 @@ export function OnboardingWizard() {
         .single();
 
       if (profileError || !profile) {
-        setError("Could not load workspace profile.");
-        setLoading(false);
+        router.replace("/auth/signup");
         return;
       }
 
@@ -183,7 +192,7 @@ export function OnboardingWizard() {
           message: organizationError?.message,
           hint: organizationError?.hint
         });
-        setError("Could not load organization.");
+        setError("Workspace is still provisioning. Please retry in a moment.");
         setLoading(false);
         return;
       }
@@ -251,13 +260,26 @@ export function OnboardingWizard() {
         onboardingCompleted: Boolean(organization.onboarding_completed ?? false)
       };
 
+      const orgOnboardingCompleted =
+        nextState.onboardingCompleted ||
+        String(organization.onboarding_status ?? "") === "completed" ||
+        Number(organization.onboarding_step ?? 0) >= 4;
+
+      if (orgOnboardingCompleted) {
+        router.replace("/dashboard");
+        return;
+      }
+
+      const requestedStep = searchParams.get("step");
+      const resolvedStep = requestedStep ? clampStep(requestedStep) : clampStep(nextState.onboardingStep);
+
       setState(nextState);
-      setStep(Math.min(Math.max(nextState.onboardingStep, 1), 3));
+      setStep(resolvedStep);
       setLoading(false);
     }
 
     loadState();
-  }, [router, supabase]);
+  }, [router, searchParams, supabase]);
 
   useEffect(() => {
     const google = searchParams.get("google");
@@ -815,7 +837,19 @@ export function OnboardingWizard() {
           </div>
         )}
 
-        {error ? <p className="text-sm text-red-400">{error}</p> : null}
+        {error ? (
+          <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3">
+            <p className="text-sm text-red-300">{error}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button type="button" size="sm" variant="secondary" onClick={() => router.refresh()}>
+                Retry
+              </Button>
+              <Button type="button" size="sm" variant="ghost" onClick={() => router.push("/")}>
+                Back to home
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );

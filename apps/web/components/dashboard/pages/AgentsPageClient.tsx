@@ -4,9 +4,17 @@ import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { LineChart, Line, ResponsiveContainer, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts';
 import Sidebar from '@/components/dashboard/Sidebar';
+import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 
 type AgentsPageClientProps = {
   organizationName: string;
+};
+
+type AgentName = 'ARIA' | 'SCRIBE' | 'VISUAL' | 'FORGE' | 'CORE' | 'LINX' | 'LOCL' | 'REPUTE' | 'AMPLI';
+
+type ViewerProfile = {
+  orgId: string;
+  role: 'owner' | 'admin' | 'member';
 };
 
 type Agent = {
@@ -79,8 +87,8 @@ const agents: Agent[] = [
     progress: 0
   },
   {
-    name: 'PULSE',
-    role: 'Rank Tracker',
+    name: 'VISUAL',
+    role: 'Creative Agent',
     description: 'System initializing. Awaiting asset connections and first crawl cycle.',
     metric: 'N/A',
     tasks: ['System Initializing'],
@@ -99,8 +107,8 @@ const agents: Agent[] = [
     progress: 0
   },
   {
-    name: 'RIVAL',
-    role: 'Competitor Intel',
+    name: 'FORGE',
+    role: 'Implementation Agent',
     description: 'System initializing. Awaiting asset connections and first crawl cycle.',
     metric: 'N/A',
     tasks: ['System Initializing'],
@@ -120,15 +128,17 @@ const agents: Agent[] = [
   }
 ];
 
+const AGENT_NAMES: AgentName[] = ['ARIA', 'SCRIBE', 'VISUAL', 'FORGE', 'CORE', 'LINX', 'LOCL', 'REPUTE', 'AMPLI'];
+
 const agentChipColors: Record<string, string> = {
   ARIA: 'bg-[#7F77DD]/25 text-[#B3AEF3] border border-[#7F77DD]/40',
   SCRIBE: 'bg-[#3B82F6]/20 text-[#93C5FD] border border-[#3B82F6]/40',
+  VISUAL: 'bg-[#22C55E]/20 text-[#86EFAC] border border-[#22C55E]/40',
+  FORGE: 'bg-[#EF4444]/20 text-[#FCA5A5] border border-[#EF4444]/40',
   LOCL: 'bg-[#14B8A6]/20 text-[#5EEAD4] border border-[#14B8A6]/40',
   LINX: 'bg-[#F59E0B]/20 text-[#FCD34D] border border-[#F59E0B]/40',
   CORE: 'bg-[#94A3B8]/20 text-[#CBD5E1] border border-[#94A3B8]/40',
-  PULSE: 'bg-[#22C55E]/20 text-[#86EFAC] border border-[#22C55E]/40',
   REPUTE: 'bg-[#EAB308]/20 text-[#FDE047] border border-[#EAB308]/40',
-  RIVAL: 'bg-[#EF4444]/20 text-[#FCA5A5] border border-[#EF4444]/40',
   AMPLI: 'bg-[#EC4899]/20 text-[#F9A8D4] border border-[#EC4899]/40'
 };
 
@@ -138,6 +148,17 @@ export default function AgentsPageClient({ organizationName }: AgentsPageClientP
   const [hoveredAgent, setHoveredAgent] = useState<string | null>(null);
   const [activeAgent, setActiveAgent] = useState<Agent | null>(null);
   const [activeTab, setActiveTab] = useState<'thinking' | 'history' | 'performance'>('thinking');
+  const [viewerProfile, setViewerProfile] = useState<ViewerProfile | null>(null);
+  const [isDeveloperModeOpen, setIsDeveloperModeOpen] = useState(false);
+  const [triggeringByAgent, setTriggeringByAgent] = useState<Record<AgentName, boolean>>(() =>
+    AGENT_NAMES.reduce((acc, name) => {
+      acc[name] = false;
+      return acc;
+    }, {} as Record<AgentName, boolean>)
+  );
+  const [isTriggeringAll, setIsTriggeringAll] = useState(false);
+  const [isRunningSanity, setIsRunningSanity] = useState(false);
+  const [developerMessage, setDeveloperMessage] = useState<string | null>(null);
   const [taskIndexByAgent, setTaskIndexByAgent] = useState<Record<string, number>>(() =>
     agents.reduce<Record<string, number>>((acc, agent) => {
       acc[agent.name] = 0;
@@ -146,6 +167,133 @@ export default function AgentsPageClient({ organizationName }: AgentsPageClientP
   );
   const [typedReasoning, setTypedReasoning] = useState('');
   const isInitializing = true;
+  const isAdminOrOwner = viewerProfile?.role === 'owner' || viewerProfile?.role === 'admin';
+
+  useEffect(() => {
+    const supabase = createSupabaseBrowserClient();
+
+    async function loadViewerProfile() {
+      const {
+        data: { user }
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setViewerProfile(null);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('org_id, role')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (error || !data) {
+        setViewerProfile(null);
+        return;
+      }
+
+      const normalizedRole = String(data.role ?? 'member').toLowerCase();
+      const role: ViewerProfile['role'] =
+        normalizedRole === 'owner' || normalizedRole === 'admin' ? (normalizedRole as ViewerProfile['role']) : 'member';
+
+      setViewerProfile({
+        orgId: String(data.org_id),
+        role
+      });
+    }
+
+    void loadViewerProfile();
+  }, []);
+
+  async function triggerAgentNow(agentName: AgentName) {
+    if (!viewerProfile?.orgId) {
+      setDeveloperMessage('Workspace org context is missing. Refresh and try again.');
+      return;
+    }
+
+    setDeveloperMessage(null);
+    setTriggeringByAgent((prev) => ({ ...prev, [agentName]: true }));
+
+    try {
+      const response = await fetch('/api/v1/orchestrator/trigger-agent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          org_id: viewerProfile.orgId,
+          agent_name: agentName,
+          task_type: `manual_${agentName.toLowerCase()}_demo`,
+          idempotency_key: `agents-page:${viewerProfile.orgId}:${agentName}:${Date.now()}`,
+          payload: {
+            source: 'agents_page_admin_panel'
+          }
+        })
+      });
+
+      const body = (await response.json()) as { error?: string; task_id?: string };
+
+      if (!response.ok) {
+        setDeveloperMessage(body.error ?? `Failed to trigger ${agentName}.`);
+        return;
+      }
+
+      setDeveloperMessage(`${agentName} triggered successfully${body.task_id ? ` (task ${body.task_id.slice(0, 8)})` : ''}.`);
+    } catch {
+      setDeveloperMessage(`Failed to trigger ${agentName}.`);
+    } finally {
+      setTriggeringByAgent((prev) => ({ ...prev, [agentName]: false }));
+    }
+  }
+
+  async function triggerEntireWorkforce() {
+    if (!isAdminOrOwner) {
+      return;
+    }
+
+    setDeveloperMessage(null);
+    setIsTriggeringAll(true);
+
+    try {
+      await Promise.all(AGENT_NAMES.map((agentName) => triggerAgentNow(agentName)));
+      setDeveloperMessage('Workforce force-start command sent to all 9 agents.');
+    } finally {
+      setIsTriggeringAll(false);
+    }
+  }
+
+  async function runSanityCheck() {
+    if (!viewerProfile?.orgId) {
+      setDeveloperMessage('Workspace org context is missing. Refresh and try again.');
+      return;
+    }
+
+    setDeveloperMessage(null);
+    setIsRunningSanity(true);
+
+    try {
+      const response = await fetch('/api/v1/orchestrator/sanity-heartbeat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          org_id: viewerProfile.orgId,
+          agent_name: 'ARIA'
+        })
+      });
+
+      const body = (await response.json()) as { error?: string; ok?: boolean; task_id?: string };
+
+      if (!response.ok || !body.ok) {
+        setDeveloperMessage(body.error ?? 'Sanity check failed.');
+        return;
+      }
+
+      setDeveloperMessage(`Sanity heartbeat sent (task ${String(body.task_id ?? '').slice(0, 8)}).`);
+    } catch {
+      setDeveloperMessage('Sanity check failed.');
+    } finally {
+      setIsRunningSanity(false);
+    }
+  }
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -205,6 +353,68 @@ export default function AgentsPageClient({ organizationName }: AgentsPageClientP
         >
           <h1 className="text-3xl font-bold mb-2">AI Agents</h1>
           <p className="text-[#8892A4] mb-8">System initializing. Live agent actions will appear after asset connections.</p>
+
+          {isAdminOrOwner ? (
+            <div className="mb-8 rounded-xl border border-[#7F77DD]/35 bg-[#12141A] p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs tracking-[0.12em] uppercase text-[#B3AEF3]">Developer Mode</p>
+                  <h2 className="text-lg font-semibold">Admin Control Surface</h2>
+                  <p className="text-sm text-[#8892A4]">Owner/Admin only — trigger agents and run realtime smoke checks.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsDeveloperModeOpen((prev) => !prev)}
+                  className="rounded-lg border border-[#7F77DD]/40 px-3 py-2 text-xs font-semibold text-[#C9C5F8] hover:bg-[#7F77DD]/10"
+                >
+                  {isDeveloperModeOpen ? 'Hide Panel' : 'Open Panel'}
+                </button>
+              </div>
+
+              {isDeveloperModeOpen ? (
+                <div className="mt-4 space-y-4">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={triggerEntireWorkforce}
+                      disabled={isTriggeringAll}
+                      className="rounded-lg bg-[#7F77DD] px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                    >
+                      {isTriggeringAll ? 'Triggering Workforce...' : 'Force-Start All 9 Agents'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={runSanityCheck}
+                      disabled={isRunningSanity}
+                      className="rounded-lg border border-[#1D9E75]/40 bg-[#1D9E75]/10 px-3 py-2 text-xs font-semibold text-[#6EE7C7] disabled:opacity-60"
+                    >
+                      {isRunningSanity ? 'Running Sanity Check...' : 'Sanity Check (Heartbeat)'}
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                    {AGENT_NAMES.map((agentName) => (
+                      <div key={`trigger-${agentName}`} className="rounded-lg border border-[#1E2130] bg-[#0E1016] p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-semibold text-white">{agentName}</span>
+                          <button
+                            type="button"
+                            onClick={() => triggerAgentNow(agentName)}
+                            disabled={Boolean(triggeringByAgent[agentName]) || isTriggeringAll}
+                            className="rounded-md border border-[#7F77DD]/40 px-2.5 py-1.5 text-[11px] font-semibold text-[#C9C5F8] hover:bg-[#7F77DD]/10 disabled:opacity-60"
+                          >
+                            {triggeringByAgent[agentName] ? 'Triggering...' : 'Trigger Now'}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {developerMessage ? <p className="text-xs text-[#8892A4]">{developerMessage}</p> : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-6">
             {agents.map((agent, idx) => (
