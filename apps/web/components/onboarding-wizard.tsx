@@ -71,6 +71,30 @@ function isValidUrl(value: string) {
   }
 }
 
+function normalizeWebsiteUrlInput(value: string) {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  return `https://${trimmed}`;
+}
+
+function resolveValidWebsiteUrl(value: string) {
+  const normalized = normalizeWebsiteUrlInput(value);
+
+  if (!normalized || !isValidUrl(normalized)) {
+    return null;
+  }
+
+  return normalized;
+}
+
 function detectTechStackFromUrl(url: string) {
   const normalized = url.toLowerCase();
 
@@ -469,12 +493,15 @@ export function OnboardingWizard() {
   }
 
   async function saveAssetConnection() {
-    if (!isValidUrl(state.websiteUrl)) {
+    const normalizedWebsiteUrl = resolveValidWebsiteUrl(state.websiteUrl);
+
+    if (!normalizedWebsiteUrl) {
       setError("Please enter a valid primary website URL including https://");
       return;
     }
 
-    const resolvedTechStack = state.techStack === "unknown" ? detectTechStackFromUrl(state.websiteUrl) : state.techStack;
+    const resolvedTechStack =
+      state.techStack === "unknown" ? detectTechStackFromUrl(normalizedWebsiteUrl) : state.techStack;
 
     setSaving(true);
     setError(null);
@@ -484,7 +511,7 @@ export function OnboardingWizard() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         orgId: state.orgId,
-        websiteUrl: state.websiteUrl,
+        websiteUrl: normalizedWebsiteUrl,
         techStack: resolvedTechStack,
         detectedStackLabel: state.detectedStackLabel,
         seoHealth: {
@@ -512,7 +539,7 @@ export function OnboardingWizard() {
     setSaving(false);
 
     // Always move forward in UI after a successful API response.
-    setState((prev) => ({ ...prev, techStack: resolvedTechStack }));
+    setState((prev) => ({ ...prev, websiteUrl: normalizedWebsiteUrl, techStack: resolvedTechStack }));
     setStep(3);
   }
 
@@ -525,14 +552,24 @@ export function OnboardingWizard() {
   }
 
   async function completeIntelligenceSync() {
+    const normalizedWebsiteUrl = resolveValidWebsiteUrl(state.websiteUrl);
+
+    if (!normalizedWebsiteUrl) {
+      setError("Please enter a valid primary website URL including https://");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+
     try {
-      await fetch("/api/onboarding/update-assets", {
+      const response = await fetch("/api/onboarding/update-assets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           orgId: state.orgId,
-          websiteUrl: state.websiteUrl,
-          techStack: state.techStack === "unknown" ? detectTechStackFromUrl(state.websiteUrl) : state.techStack,
+          websiteUrl: normalizedWebsiteUrl,
+          techStack: state.techStack === "unknown" ? detectTechStackFromUrl(normalizedWebsiteUrl) : state.techStack,
           detectedStackLabel: state.detectedStackLabel,
           seoHealth: {
             hasSsl: state.seoHasSsl,
@@ -542,15 +579,32 @@ export function OnboardingWizard() {
           shopifyStoreUrl: state.shopifyStoreUrl,
           isServiceAreaBusiness: state.isServiceAreaBusiness,
           onboardingStatus: "completed",
-          onboardingStep: 4
+          onboardingStep: 3
         })
       });
+
+      const body = (await response.json()) as {
+        error?: string;
+        onboardingStepWarning?: string | null;
+      };
+
+      if (!response.ok || body.error || body.onboardingStepWarning) {
+        setSaving(false);
+        setError(body.error ?? body.onboardingStepWarning ?? "Could not complete onboarding. Please retry.");
+        return;
+      }
     } catch (completionError) {
-      console.error("[onboarding] completion request failed; redirecting anyway", completionError);
+      console.error("[onboarding] completion request failed", completionError);
+      setSaving(false);
+      setError("Could not complete onboarding. Please retry.");
+      return;
     }
 
+    setSaving(false);
+    setState((prev) => ({ ...prev, websiteUrl: normalizedWebsiteUrl, onboardingCompleted: true, onboardingStep: 3 }));
     setIsHandshakeComplete(true);
-    window.location.href = "/dashboard";
+    router.replace(`/dashboard?t=${Date.now()}`);
+    router.refresh();
   }
 
   if (loading) {

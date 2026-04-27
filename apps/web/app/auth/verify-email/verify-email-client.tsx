@@ -27,6 +27,31 @@ export function VerifyEmailClient() {
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
 
   useEffect(() => {
+    const errorCode = String(searchParams.get("error") ?? "").trim();
+
+    if (errorCode === "auth_session_not_found") {
+      setError("Auth session missing. Open the email link again to continue securely.");
+    }
+
+    if (errorCode === "invalid_or_expired_link") {
+      setError("This verification link is invalid or expired. Request a fresh verification email.");
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    async function autoContinueIfVerified() {
+      const { data } = await supabase.auth.getUser();
+
+      if (data.user?.email_confirmed_at) {
+        router.replace(`/onboarding?t=${Date.now()}`);
+        router.refresh();
+      }
+    }
+
+    void autoContinueIfVerified();
+  }, [router, supabase]);
+
+  useEffect(() => {
     if (cooldownSeconds <= 0) {
       return;
     }
@@ -41,6 +66,8 @@ export function VerifyEmailClient() {
   async function checkVerificationAndContinue() {
     setChecking(true);
     setError(null);
+
+    await supabase.auth.getSession();
 
     const { data, error: userError } = await supabase.auth.getUser();
 
@@ -61,7 +88,7 @@ export function VerifyEmailClient() {
       return;
     }
 
-    router.replace("/dashboard");
+    router.replace(`/onboarding?t=${Date.now()}`);
     router.refresh();
   }
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+import { type NextRequest } from "next/server";
 
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { ensureWorkspaceForUser } from "@/lib/auth/ensure-workspace";
 
@@ -15,6 +16,7 @@ export async function GET(request: Request) {
 
   const nextPath = isSafeNextPath(nextParam) ? nextParam! : "/dashboard";
   const redirectUrl = new URL(nextPath, url.origin);
+  redirectUrl.searchParams.set("t", String(Date.now()));
 
   if (!code) {
     redirectUrl.pathname = "/auth/verify-email";
@@ -22,7 +24,24 @@ export async function GET(request: Request) {
     return NextResponse.redirect(redirectUrl);
   }
 
-  const supabase = createSupabaseServerClient();
+  const req = request as NextRequest;
+  const response = NextResponse.redirect(redirectUrl);
+  const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+    cookies: {
+      get(name: string) {
+        return req.cookies.get(name)?.value;
+      },
+      set(name: string, value: string, options: Record<string, unknown>) {
+        req.cookies.set({ name, value, ...options });
+        response.cookies.set({ name, value, ...options });
+      },
+      remove(name: string, options: Record<string, unknown>) {
+        req.cookies.set({ name, value: "", ...options });
+        response.cookies.set({ name, value: "", ...options });
+      }
+    }
+  });
+
   const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
   if (exchangeError) {
@@ -31,9 +50,31 @@ export async function GET(request: Request) {
     return NextResponse.redirect(errorUrl);
   }
 
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const {
+      data: { session }
+    } = await supabase.auth.getSession();
+
+    if (session) {
+      break;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, attempt * 100));
+  }
+
+  let user: Awaited<ReturnType<typeof supabase.auth.getUser>>["data"]["user"] = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const {
+      data: { user: attemptUser }
+    } = await supabase.auth.getUser();
+    user = attemptUser;
+
+    if (user) {
+      break;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, attempt * 100));
+  }
 
   if (!user) {
     const errorUrl = new URL("/login", url.origin);
@@ -77,5 +118,5 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.redirect(redirectUrl);
+  return response;
 }
