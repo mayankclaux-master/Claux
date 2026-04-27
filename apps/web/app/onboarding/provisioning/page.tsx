@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 
+import { ensureWorkspaceForUser } from "@/lib/auth/ensure-workspace";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +16,38 @@ export default async function OnboardingProvisioningPage() {
     redirect("/");
   }
 
-  const { data: profile } = await supabase.from("profiles").select("org_id").eq("id", user.id).maybeSingle();
+  const { data: initialProfile } = await supabase.from("profiles").select("org_id").eq("id", user.id).maybeSingle();
+
+  let profile = initialProfile;
+
+  if (!profile?.org_id) {
+    const adminClient = createSupabaseAdminClient();
+    const fullName = String(user.user_metadata?.full_name ?? "").trim() || null;
+    const businessName =
+      String(user.user_metadata?.business_name ?? "").trim() ||
+      String(user.email ?? "").split("@")[0] ||
+      "My Workspace";
+
+    const workspaceError = await ensureWorkspaceForUser({
+      adminClient,
+      userId: user.id,
+      businessName,
+      fullName
+    });
+
+    if (workspaceError) {
+      console.error("[provisioning] workspace bootstrap failed", {
+        userId: user.id,
+        message: workspaceError.message,
+        details: workspaceError.details,
+        hint: workspaceError.hint,
+        code: workspaceError.code
+      });
+    }
+
+    const { data: refreshedProfile } = await supabase.from("profiles").select("org_id").eq("id", user.id).maybeSingle();
+    profile = refreshedProfile;
+  }
 
   if (profile?.org_id) {
     const { data: organization } = await supabase
