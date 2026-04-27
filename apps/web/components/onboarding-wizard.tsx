@@ -156,14 +156,25 @@ export function OnboardingWizard() {
         return;
       }
 
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("org_id")
-        .eq("id", user.id)
-        .single();
+      let profile: { org_id: string } | null = null;
+      let profileError: { message?: string; hint?: string } | null = null;
 
-      if (profileError || !profile) {
-        router.replace("/auth/signup");
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        const response = await supabase.from("profiles").select("org_id").eq("id", user.id).maybeSingle();
+        profile = response.data as { org_id: string } | null;
+        profileError = response.error;
+
+        if (profile?.org_id) {
+          break;
+        }
+
+        if (attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, attempt * 250));
+        }
+      }
+
+      if (profileError || !profile?.org_id) {
+        router.replace("/onboarding/provisioning");
         return;
       }
 

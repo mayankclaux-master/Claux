@@ -8,16 +8,17 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export default function SignupPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function onSubmit(formData: FormData) {
     setLoading(true);
     setError(null);
+    setMessage(null);
 
     const email = String(formData.get("email") ?? "").trim();
     const password = String(formData.get("password") ?? "").trim();
@@ -30,7 +31,12 @@ export default function SignupPage() {
       body: JSON.stringify({ email, password, businessName, fullName })
     });
 
-    const result = await response.json();
+    const result = (await response.json()) as {
+      error?: string;
+      email?: string;
+      next?: "verify_email" | "dashboard";
+      requiresEmailVerification?: boolean;
+    };
 
     if (!response.ok) {
       setLoading(false);
@@ -38,24 +44,14 @@ export default function SignupPage() {
       return;
     }
 
-    const supabase = createSupabaseBrowserClient();
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-
-    if (signInError) {
+    if (result.next === "verify_email" || result.requiresEmailVerification) {
       setLoading(false);
-      const normalizedMessage = (signInError.message ?? "").toLowerCase();
-      const existingUserLikely =
-        normalizedMessage.includes("invalid login credentials") || normalizedMessage.includes("invalid credentials");
-
-      setError(
-        existingUserLikely
-          ? "Account exists. Use the original password for this email or reset the password, then sign in."
-          : "Account created. Please confirm your email, then sign in."
-      );
+      setMessage("Account created. Check your inbox to verify email before first sign-in.");
+      router.push(`/auth/verify-email?email=${encodeURIComponent(result.email ?? email)}`);
       return;
     }
 
-    router.push("/dashboard");
+    router.push("/login");
     router.refresh();
   }
 
@@ -87,9 +83,16 @@ export default function SignupPage() {
               <Input id="password" name="password" type="password" minLength={8} required />
             </div>
             {error ? <p className="text-sm text-red-400">{error}</p> : null}
+            {message ? <p className="text-sm text-emerald-400">{message}</p> : null}
             <Button className="w-full shadow-lg shadow-primary/20" size="lg" disabled={loading}>
               {loading ? "Creating workspace..." : "Create account"}
             </Button>
+            <p className="text-center text-sm text-muted-foreground">
+              Didn&apos;t receive verification email?{" "}
+              <Link href="/auth/verify-email" className="text-primary underline-offset-4 hover:underline">
+                Verify account
+              </Link>
+            </p>
             <p className="text-center text-sm text-muted-foreground">
               Already have an account?{" "}
               <Link href="/login" className="text-primary underline-offset-4 hover:underline">

@@ -2,7 +2,16 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { createSupabaseMiddlewareClient } from "@/lib/supabase/middleware";
 
-const publicRoutes = ["/", "/login", "/auth/signup", "/auth/reset-password", "/auth/update-password"];
+const publicRoutes = [
+  "/",
+  "/login",
+  "/auth/signup",
+  "/auth/verify-email",
+  "/auth/callback",
+  "/auth/reset-password",
+  "/auth/update-password",
+  "/onboarding/provisioning"
+];
 
 function isPublicRoute(pathname: string) {
   return publicRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
@@ -30,8 +39,11 @@ export async function middleware(req: NextRequest) {
   const isSignupPage = pathname.startsWith("/auth/signup");
   const isResetPasswordPage = pathname.startsWith("/auth/reset-password");
   const isUpdatePasswordPage = pathname.startsWith("/auth/update-password");
+  const isVerifyEmailPage = pathname.startsWith("/auth/verify-email");
+  const isCallbackPage = pathname.startsWith("/auth/callback");
   const isRecoveryPage = isResetPasswordPage || isUpdatePasswordPage;
   const isLoginPage = pathname.startsWith("/login");
+  const isProvisioningPage = pathname.startsWith("/onboarding/provisioning");
   const isOnboardingPage = pathname.startsWith("/onboarding");
   const isDashboardPage = pathname.startsWith("/dashboard");
   const isPublicPage = pathname === "/";
@@ -45,6 +57,16 @@ export async function middleware(req: NextRequest) {
     return res;
   }
 
+  if (!user.email_confirmed_at && !isVerifyEmailPage && !isRecoveryPage && !isCallbackPage) {
+    const verifyUrl = new URL("/auth/verify-email", req.url);
+    verifyUrl.searchParams.set("email", user.email ?? "");
+    return NextResponse.redirect(verifyUrl);
+  }
+
+  if (user.email_confirmed_at && isVerifyEmailPage) {
+    return NextResponse.redirect(new URL("/dashboard", req.url));
+  }
+
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("org_id")
@@ -56,14 +78,11 @@ export async function middleware(req: NextRequest) {
   }
 
   if (!profile?.org_id) {
-    const onboardingUrl = new URL("/onboarding", req.url);
-    onboardingUrl.searchParams.set("step", "1");
-
-    if (pathname !== "/onboarding" || req.nextUrl.searchParams.get("step") !== "1") {
-      return NextResponse.redirect(onboardingUrl);
+    if (isOnboardingPage || isProvisioningPage) {
+      return res;
     }
 
-    return res;
+    return NextResponse.redirect(new URL("/onboarding/provisioning", req.url));
   }
 
   const { data: organization, error: organizationError } = await supabase
@@ -73,12 +92,12 @@ export async function middleware(req: NextRequest) {
     .maybeSingle();
 
   if (organizationError || !organization) {
-    if (isOnboardingPage || isDashboardPage || isRecoveryPage) {
+    if (isRecoveryPage) {
       return res;
     }
 
-    if (isEntryPage) {
-      return NextResponse.redirect(new URL("/dashboard", req.url));
+    if (!isProvisioningPage) {
+      return NextResponse.redirect(new URL("/onboarding/provisioning", req.url));
     }
 
     return res;
@@ -98,7 +117,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 
-  if (!isDone && !isOnboardingPage && !isRecoveryPage) {
+  if (!isDone && !isOnboardingPage && !isRecoveryPage && !isProvisioningPage) {
     return NextResponse.redirect(onboardingUrl);
   }
 
@@ -106,7 +125,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(onboardingUrl);
   }
 
-  if (isDone && (isOnboardingPage || isEntryPage)) {
+  if (isDone && (isOnboardingPage || isEntryPage || isProvisioningPage)) {
     return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 
