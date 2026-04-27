@@ -3,6 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 const MAX_BOOTSTRAP_RETRIES = 3;
 const PROFILE_SYNC_WAIT_MS = 3000;
 const PROFILE_SYNC_POLL_INTERVAL_MS = 250;
+const AUTH_USER_SYNC_WAIT_MS = 5000;
+const AUTH_USER_SYNC_POLL_INTERVAL_MS = 250;
 
 type BootstrapError = {
   message?: string;
@@ -17,6 +19,14 @@ type EnsureWorkspaceParams = {
   businessName: string;
   fullName: string | null;
 };
+
+function isCreatedByColumnMissing(errorCode: string | undefined, errorMessage: string | undefined) {
+  const message = (errorMessage ?? "").toLowerCase();
+  return (
+    errorCode === "42703" ||
+    (message.includes("column") && message.includes("created_by") && message.includes("does not exist"))
+  );
+}
 
 function isBootstrapRetryable(errorMessage: string | undefined, errorDetails: string | undefined) {
   const haystack = `${errorMessage ?? ""} ${errorDetails ?? ""}`.toLowerCase();
@@ -34,7 +44,7 @@ function shouldFallbackToDirectBootstrap(
     errorCode === "PGRST202" ||
     message.includes("function") ||
     message.includes("not found") ||
-    message.includes("created_by") ||
+    isCreatedByColumnMissing(errorCode, errorMessage) ||
     hint.includes("function") ||
     hint.includes("overload")
   );
@@ -42,6 +52,41 @@ function shouldFallbackToDirectBootstrap(
 
 async function sleep(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForAuthUserSync(adminClient: SupabaseClient, userId: string, waitMs = AUTH_USER_SYNC_WAIT_MS) {
+  const maxAttempts = Math.max(1, Math.ceil(waitMs / AUTH_USER_SYNC_POLL_INTERVAL_MS));
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const { data, error } = await adminClient.auth.admin.getUserById(userId);
+
+    if (!error && data?.user?.id) {
+      return { found: true as const, error: null };
+    }
+
+    if (error) {
+      const normalizedMessage = (error.message ?? "").toLowerCase();
+      const isNotFoundYet = normalizedMessage.includes("not found");
+
+      if (!isNotFoundYet) {
+        return {
+          found: false as const,
+          error: {
+            message: error.message,
+            details: undefined,
+            hint: undefined,
+            code: undefined
+          }
+        };
+      }
+    }
+
+    if (attempt < maxAttempts) {
+      await sleep(AUTH_USER_SYNC_POLL_INTERVAL_MS);
+    }
+  }
+
+  return { found: false as const, error: null };
 }
 
 async function waitForProfileSync(adminClient: SupabaseClient, userId: string, waitMs = PROFILE_SYNC_WAIT_MS) {
@@ -131,9 +176,10 @@ export async function bootstrapWorkspaceDirect({
   if (!orgInsertWithCreatedBy.error) {
     orgId = orgInsertWithCreatedBy.data?.id ?? null;
   } else {
-    const createdByMissing =
-      orgInsertWithCreatedBy.error.code === "42703" ||
-      (orgInsertWithCreatedBy.error.message ?? "").toLowerCase().includes("created_by");
+    const createdByMissing = isCreatedByColumnMissing(
+      orgInsertWithCreatedBy.error.code,
+      orgInsertWithCreatedBy.error.message
+    );
 
     if (!createdByMissing) {
       return {
@@ -189,6 +235,19 @@ export async function bootstrapWorkspaceDirect({
 }
 
 export async function ensureWorkspaceForUser(params: EnsureWorkspaceParams): Promise<BootstrapError | null> {
+  const authUserSync = await waitForAuthUserSync(params.adminClient, params.userId);
+
+  if (authUserSync.error) {
+    return authUserSync.error;
+  }
+
+  if (!authUserSync.found) {
+    return {
+      message: "Auth user synchronization in progress.",
+      code: "AUTH_USER_SYNC_TIMEOUT"
+    };
+  }
+
   const profileSync = await waitForProfileSync(params.adminClient, params.userId);
 
   if (profileSync.error) {
