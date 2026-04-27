@@ -17,16 +17,6 @@ function isPublicRoute(pathname: string) {
   return publicRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
 }
 
-function clampOnboardingStep(step: unknown) {
-  const numericStep = Number(step ?? 1);
-
-  if (!Number.isFinite(numericStep)) {
-    return 1;
-  }
-
-  return Math.min(Math.max(Math.trunc(numericStep), 1), 3);
-}
-
 function withTimestamp(url: URL) {
   url.searchParams.set("t", String(Date.now()));
   return url;
@@ -110,25 +100,19 @@ export async function middleware(req: NextRequest) {
   }
 
   const normalizedOnboardingStatus = String(organization.onboarding_status ?? "").trim().toLowerCase();
-  const onboardingStep = clampOnboardingStep(organization.onboarding_step);
   const isDone =
     normalizedOnboardingStatus === "completed" ||
     Boolean(organization.onboarding_completed) ||
     Number(organization.onboarding_step ?? 0) >= 4;
 
-  const onboardingUrl = new URL("/onboarding", req.url);
-  onboardingUrl.searchParams.set("step", String(onboardingStep));
+  const onboardingUrl = withTimestamp(new URL("/onboarding", req.url));
 
   if (isDone && !isDashboardPage) {
     return NextResponse.redirect(withTimestamp(new URL("/dashboard", req.url)));
   }
 
   if (!isDone && !isOnboardingPage && !isRecoveryPage && !isProvisioningPage) {
-    return NextResponse.redirect(withTimestamp(onboardingUrl));
-  }
-
-  if (!isDone && isOnboardingPage && req.nextUrl.searchParams.get("step") !== String(onboardingStep)) {
-    return NextResponse.redirect(withTimestamp(onboardingUrl));
+    return NextResponse.redirect(onboardingUrl);
   }
 
   if (isDone && (isOnboardingPage || isEntryPage || isProvisioningPage)) {
@@ -136,7 +120,7 @@ export async function middleware(req: NextRequest) {
   }
 
   if (!isDone && isEntryPage) {
-    return NextResponse.redirect(withTimestamp(onboardingUrl));
+    return NextResponse.redirect(onboardingUrl);
   }
 
   return res;

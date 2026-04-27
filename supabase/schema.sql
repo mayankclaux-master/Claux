@@ -279,6 +279,140 @@ $$;
 revoke all on function public.bootstrap_organization_for_user(uuid, text, text) from public;
 grant execute on function public.bootstrap_organization_for_user(uuid, text, text) to service_role;
 
+create or replace function public.complete_onboarding_atomic(
+  p_org_id uuid,
+  p_business_name text,
+  p_category text,
+  p_business_phone text,
+  p_full_physical_address text,
+  p_gmb_url text,
+  p_target_market_type text,
+  p_target_city text,
+  p_primary_language text,
+  p_is_service_area_business boolean,
+  p_website_url text,
+  p_tech_stack text,
+  p_google_api_links jsonb,
+  p_competitors jsonb default '[]'::jsonb
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.organizations
+  set
+    name = p_business_name,
+    category = p_category,
+    business_phone = p_business_phone,
+    full_physical_address = p_full_physical_address,
+    gmb_url = p_gmb_url,
+    target_market_type = p_target_market_type,
+    target_city = case when p_target_market_type = 'local_city' then p_target_city else null end,
+    primary_language = p_primary_language,
+    website_url = p_website_url,
+    is_service_area_business = coalesce(p_is_service_area_business, false),
+    top_competitors = coalesce(p_competitors, '[]'::jsonb),
+    onboarding_status = 'completed',
+    onboarding_step = 4,
+    onboarding_completed = true
+  where id = p_org_id;
+
+  delete from public.organization_competitors where org_id = p_org_id;
+
+  insert into public.organization_competitors (org_id, competitor_url, rank)
+  select
+    p_org_id,
+    trim(value),
+    ordinality::smallint
+  from jsonb_array_elements_text(coalesce(p_competitors, '[]'::jsonb)) with ordinality
+  where trim(value) <> ''
+    and ordinality between 1 and 3;
+
+  insert into public.connections (
+    org_id,
+    website_url,
+    tech_stack,
+    google_api_links,
+    status,
+    aria_status,
+    aria_progress,
+    scribe_status,
+    scribe_progress,
+    visual_status,
+    visual_progress,
+    forge_status,
+    forge_progress,
+    core_status,
+    core_progress,
+    linx_status,
+    linx_progress,
+    locl_status,
+    locl_progress,
+    repute_status,
+    repute_progress,
+    ampli_status,
+    ampli_progress,
+    updated_at
+  )
+  values (
+    p_org_id,
+    p_website_url,
+    coalesce(nullif(trim(p_tech_stack), ''), 'unknown'),
+    coalesce(p_google_api_links, '{}'::jsonb),
+    'pending',
+    'pending',
+    0,
+    'pending',
+    0,
+    'pending',
+    0,
+    'pending',
+    0,
+    'pending',
+    0,
+    'pending',
+    0,
+    'pending',
+    0,
+    'pending',
+    0,
+    'pending',
+    0,
+    now()
+  )
+  on conflict (org_id)
+  do update set
+    website_url = excluded.website_url,
+    tech_stack = excluded.tech_stack,
+    google_api_links = excluded.google_api_links,
+    status = 'pending',
+    aria_status = coalesce(connections.aria_status, 'pending'),
+    aria_progress = coalesce(connections.aria_progress, 0),
+    scribe_status = coalesce(connections.scribe_status, 'pending'),
+    scribe_progress = coalesce(connections.scribe_progress, 0),
+    visual_status = coalesce(connections.visual_status, 'pending'),
+    visual_progress = coalesce(connections.visual_progress, 0),
+    forge_status = coalesce(connections.forge_status, 'pending'),
+    forge_progress = coalesce(connections.forge_progress, 0),
+    core_status = coalesce(connections.core_status, 'pending'),
+    core_progress = coalesce(connections.core_progress, 0),
+    linx_status = coalesce(connections.linx_status, 'pending'),
+    linx_progress = coalesce(connections.linx_progress, 0),
+    locl_status = coalesce(connections.locl_status, 'pending'),
+    locl_progress = coalesce(connections.locl_progress, 0),
+    repute_status = coalesce(connections.repute_status, 'pending'),
+    repute_progress = coalesce(connections.repute_progress, 0),
+    ampli_status = coalesce(connections.ampli_status, 'pending'),
+    ampli_progress = coalesce(connections.ampli_progress, 0),
+    updated_at = now();
+end;
+$$;
+
+revoke all on function public.complete_onboarding_atomic(uuid, text, text, text, text, text, text, text, text, boolean, text, text, jsonb, jsonb) from public;
+grant execute on function public.complete_onboarding_atomic(uuid, text, text, text, text, text, text, text, text, boolean, text, text, jsonb, jsonb) to service_role;
+
 create policy connections_insert_same_org
 on public.connections
 for insert
