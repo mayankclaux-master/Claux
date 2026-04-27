@@ -2,6 +2,12 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { createSupabaseMiddlewareClient } from "@/lib/supabase/middleware";
 
+const publicRoutes = ["/", "/login", "/auth/signup", "/auth/reset-password", "/auth/update-password"];
+
+function isPublicRoute(pathname: string) {
+  return publicRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
+}
+
 function clampOnboardingStep(step: unknown) {
   const numericStep = Number(step ?? 1);
 
@@ -22,17 +28,20 @@ export async function middleware(req: NextRequest) {
 
   const pathname = req.nextUrl.pathname;
   const isSignupPage = pathname.startsWith("/auth/signup");
+  const isResetPasswordPage = pathname.startsWith("/auth/reset-password");
+  const isUpdatePasswordPage = pathname.startsWith("/auth/update-password");
+  const isRecoveryPage = isResetPasswordPage || isUpdatePasswordPage;
   const isLoginPage = pathname.startsWith("/login");
   const isOnboardingPage = pathname.startsWith("/onboarding");
   const isDashboardPage = pathname.startsWith("/dashboard");
   const isPublicPage = pathname === "/";
   const isEntryPage = isPublicPage || isLoginPage || isSignupPage;
 
-  if (!user && (isOnboardingPage || isDashboardPage)) {
-    return NextResponse.redirect(new URL("/", req.url));
-  }
-
   if (!user) {
+    if (!isPublicRoute(pathname)) {
+      return NextResponse.redirect(new URL("/", req.url));
+    }
+
     return res;
   }
 
@@ -42,7 +51,11 @@ export async function middleware(req: NextRequest) {
     .eq("id", user.id)
     .maybeSingle();
 
-  if (profileError || !profile?.org_id) {
+  if (profileError) {
+    return res;
+  }
+
+  if (!profile?.org_id) {
     const onboardingUrl = new URL("/onboarding", req.url);
     onboardingUrl.searchParams.set("step", "1");
 
@@ -60,19 +73,21 @@ export async function middleware(req: NextRequest) {
     .maybeSingle();
 
   if (organizationError || !organization) {
-    const onboardingUrl = new URL("/onboarding", req.url);
-    onboardingUrl.searchParams.set("step", "1");
+    if (isOnboardingPage || isDashboardPage || isRecoveryPage) {
+      return res;
+    }
 
-    if (pathname !== "/onboarding" || req.nextUrl.searchParams.get("step") !== "1") {
-      return NextResponse.redirect(onboardingUrl);
+    if (isEntryPage) {
+      return NextResponse.redirect(new URL("/dashboard", req.url));
     }
 
     return res;
   }
 
+  const normalizedOnboardingStatus = String(organization.onboarding_status ?? "").trim().toLowerCase();
   const onboardingStep = clampOnboardingStep(organization.onboarding_step);
   const isDone =
-    organization.onboarding_status === "completed" ||
+    normalizedOnboardingStatus === "completed" ||
     Boolean(organization.onboarding_completed) ||
     Number(organization.onboarding_step ?? 0) >= 4;
 
@@ -83,7 +98,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 
-  if (!isDone && !isOnboardingPage) {
+  if (!isDone && !isOnboardingPage && !isRecoveryPage) {
     return NextResponse.redirect(onboardingUrl);
   }
 
