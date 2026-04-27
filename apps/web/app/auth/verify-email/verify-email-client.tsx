@@ -26,7 +26,28 @@ export function VerifyEmailClient() {
   const [resending, setResending] = useState(false);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
 
+  const callbackCode = String(searchParams.get("code") ?? "").trim();
+  const callbackTokenHash = String(searchParams.get("token_hash") ?? "").trim();
+  const callbackType = String(searchParams.get("type") ?? "").trim();
+
   useEffect(() => {
+    if (callbackCode || (callbackTokenHash && callbackType)) {
+      const callbackUrl = new URL("/auth/callback", window.location.origin);
+
+      if (callbackCode) {
+        callbackUrl.searchParams.set("code", callbackCode);
+      }
+
+      if (callbackTokenHash && callbackType) {
+        callbackUrl.searchParams.set("token_hash", callbackTokenHash);
+        callbackUrl.searchParams.set("type", callbackType);
+      }
+
+      callbackUrl.searchParams.set("next", "/onboarding");
+      window.location.assign(callbackUrl.toString());
+      return;
+    }
+
     const errorCode = String(searchParams.get("error") ?? "").trim();
 
     if (errorCode === "auth_session_not_found") {
@@ -36,7 +57,44 @@ export function VerifyEmailClient() {
     if (errorCode === "invalid_or_expired_link") {
       setError("This verification link is invalid or expired. Request a fresh verification email.");
     }
-  }, [searchParams]);
+  }, [callbackCode, callbackTokenHash, callbackType, router, searchParams]);
+
+  useEffect(() => {
+    async function continueFromHashTokens() {
+      if (callbackCode || callbackTokenHash) {
+        return;
+      }
+
+      const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
+      if (!hash) {
+        return;
+      }
+
+      const hashParams = new URLSearchParams(hash);
+      const accessToken = String(hashParams.get("access_token") ?? "").trim();
+      const refreshToken = String(hashParams.get("refresh_token") ?? "").trim();
+
+      if (!accessToken || !refreshToken) {
+        return;
+      }
+
+      const { error: sessionError } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken
+      });
+
+      if (sessionError) {
+        setError("Could not establish a secure session from this email link. Please try again.");
+        return;
+      }
+
+      window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}`);
+      router.replace(`/onboarding?t=${Date.now()}`);
+      router.refresh();
+    }
+
+    void continueFromHashTokens();
+  }, [callbackCode, callbackTokenHash, router, supabase]);
 
   useEffect(() => {
     async function autoContinueIfVerified() {
@@ -66,33 +124,6 @@ export function VerifyEmailClient() {
   async function checkVerificationAndContinue() {
     setChecking(true);
     setError(null);
-
-    const {
-      data: { session }
-    } = await supabase.auth.getSession();
-
-    if (!session) {
-      await supabase.auth.refreshSession();
-    }
-
-    const { data, error: userError } = await supabase.auth.getUser();
-
-    setChecking(false);
-
-    if (userError) {
-      setError(userError.message ?? "Could not verify account status.");
-      return;
-    }
-
-    if (!data.user) {
-      setError("Open the verification link from your email first, then continue.");
-      return;
-    }
-
-    if (!data.user.email_confirmed_at) {
-      setError("Your email is not verified yet. Please check your inbox or spam folder.");
-      return;
-    }
 
     router.replace(`/onboarding?t=${Date.now()}`);
     router.refresh();
