@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { ensureWorkspaceForUser } from "@/lib/auth/ensure-workspace";
 
 const USER_LIST_PAGE_SIZE = 200;
 
@@ -44,6 +43,7 @@ async function findUserIdByEmail(adminClient: ReturnType<typeof createSupabaseAd
 
 export async function POST(request: Request) {
   const { email, password, businessName, fullName } = await request.json();
+  console.info("[signup] route version: no-workspace-bootstrap");
 
   if (!email || !password || !businessName) {
     return NextResponse.json({ error: "Email, password, and business name are required." }, { status: 400 });
@@ -65,7 +65,10 @@ export async function POST(request: Request) {
     password,
     options: {
       emailRedirectTo,
-      data: normalizedFullName ? { full_name: normalizedFullName } : undefined
+      data: {
+        ...(normalizedFullName ? { full_name: normalizedFullName } : {}),
+        business_name: normalizedBusinessName
+      }
     }
   });
 
@@ -108,51 +111,8 @@ export async function POST(request: Request) {
   }
 
   if (!userId) {
+    console.error("[signup] missing user id after signup flow", { email: normalizedEmail });
     return NextResponse.json({ error: "Signup failed. Missing user id." }, { status: 500 });
-  }
-
-  const { data: existingProfile, error: profileLookupError } = await adminClient
-    .from("profiles")
-    .select("id")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (profileLookupError) {
-    console.error("[signup] profile lookup failed", {
-      userId,
-      message: profileLookupError.message,
-      details: profileLookupError.details,
-      code: profileLookupError.code
-    });
-    return NextResponse.json({ error: "Could not verify tenant workspace." }, { status: 500 });
-  }
-
-  if (!existingProfile) {
-    const bootstrapError = await ensureWorkspaceForUser({
-      adminClient,
-      userId,
-      businessName: normalizedBusinessName,
-      fullName: normalizedFullName
-    });
-
-    if (bootstrapError) {
-      console.error("[signup] bootstrap_organization_for_user failed", {
-        userId,
-        email: normalizedEmail,
-        message: bootstrapError.message,
-        details: bootstrapError.details,
-        hint: bootstrapError.hint,
-        code: bootstrapError.code
-      });
-
-      return NextResponse.json(
-        {
-          error: "Profile synchronization in progress... please wait.",
-          details: process.env.NODE_ENV !== "production" ? bootstrapError.message ?? null : null
-        },
-        { status: 500 }
-      );
-    }
   }
 
   return NextResponse.json({
