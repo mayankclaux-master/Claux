@@ -63,6 +63,10 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(withTimestamp(onboardingUrl));
   }
 
+  if (isProvisioningPage) {
+    return res;
+  }
+
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("org_id")
@@ -74,11 +78,11 @@ export async function middleware(req: NextRequest) {
   }
 
   if (!profile?.org_id) {
-    if (isOnboardingPage || isProvisioningPage) {
-      return res;
+    if (isDashboardPage || isOnboardingPage || isEntryPage) {
+      return NextResponse.redirect(new URL("/onboarding/provisioning", req.url));
     }
 
-    return NextResponse.redirect(new URL("/onboarding/provisioning", req.url));
+    return res;
   }
 
   const { data: organization, error: organizationError } = await supabase
@@ -88,11 +92,7 @@ export async function middleware(req: NextRequest) {
     .maybeSingle();
 
   if (organizationError || !organization) {
-    if (isRecoveryPage) {
-      return res;
-    }
-
-    if (!isProvisioningPage) {
+    if (isDashboardPage || isOnboardingPage || isEntryPage) {
       return NextResponse.redirect(new URL("/onboarding/provisioning", req.url));
     }
 
@@ -107,20 +107,16 @@ export async function middleware(req: NextRequest) {
 
   const onboardingUrl = withTimestamp(new URL("/onboarding", req.url));
 
-  if (isDone && !isDashboardPage) {
-    return NextResponse.redirect(withTimestamp(new URL("/dashboard", req.url)));
-  }
-
-  if (!isDone && !isOnboardingPage && !isRecoveryPage && !isProvisioningPage) {
+  if (isDashboardPage && !isDone) {
     return NextResponse.redirect(onboardingUrl);
   }
 
-  if (isDone && (isOnboardingPage || isEntryPage || isProvisioningPage)) {
+  if (isOnboardingPage && isDone) {
     return NextResponse.redirect(withTimestamp(new URL("/dashboard", req.url)));
   }
 
-  if (!isDone && isEntryPage) {
-    return NextResponse.redirect(onboardingUrl);
+  if (isEntryPage) {
+    return NextResponse.redirect(isDone ? withTimestamp(new URL("/dashboard", req.url)) : onboardingUrl);
   }
 
   return res;

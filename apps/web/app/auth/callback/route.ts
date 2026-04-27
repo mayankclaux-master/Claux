@@ -3,7 +3,6 @@ import { createServerClient } from "@supabase/ssr";
 import { type NextRequest } from "next/server";
 import { type EmailOtpType } from "@supabase/supabase-js";
 
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { ensureWorkspaceForUser } from "@/lib/auth/ensure-workspace";
 
 function isSafeNextPath(value: string | null) {
@@ -137,40 +136,23 @@ export async function GET(request: Request) {
     return NextResponse.redirect(errorUrl);
   }
 
-  const adminClient = createSupabaseAdminClient();
-  const { data: profile, error: profileError } = await adminClient
-    .from("profiles")
-    .select("id")
-    .eq("id", user.id)
-    .maybeSingle();
+  const fullName = String(user.user_metadata?.full_name ?? "").trim() || null;
+  const businessName =
+    String(user.user_metadata?.business_name ?? "").trim() ||
+    String(user.email ?? "").split("@")[0] ||
+    "My Workspace";
 
-  if (profileError) {
+  const workspaceResult = await ensureWorkspaceForUser(user.id, {
+    businessName,
+    fullName
+  });
+
+  if (workspaceResult.status !== "healthy") {
     const errorUrl = new URL("/auth/verify-email", url.origin);
     errorUrl.searchParams.set("email", user.email ?? "");
-    errorUrl.searchParams.set("error", "workspace_check_failed");
+    errorUrl.searchParams.set("error", "workspace_provisioning_failed");
+    errorUrl.searchParams.set("eventId", workspaceResult.eventId);
     return NextResponse.redirect(errorUrl);
-  }
-
-  if (!profile) {
-    const fullName = String(user.user_metadata?.full_name ?? "").trim() || null;
-    const businessName =
-      String(user.user_metadata?.business_name ?? "").trim() ||
-      String(user.email ?? "").split("@")[0] ||
-      "My Workspace";
-
-    const workspaceError = await ensureWorkspaceForUser({
-      adminClient,
-      userId: user.id,
-      businessName,
-      fullName
-    });
-
-    if (workspaceError) {
-      const errorUrl = new URL("/auth/verify-email", url.origin);
-      errorUrl.searchParams.set("email", user.email ?? "");
-      errorUrl.searchParams.set("error", "workspace_provisioning_failed");
-      return NextResponse.redirect(errorUrl);
-    }
   }
 
   return response;
