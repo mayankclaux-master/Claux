@@ -67,6 +67,7 @@ alter table public.profiles enable row level security;
 alter table public.connections enable row level security;
 alter table public.organization_competitors enable row level security;
 
+drop policy if exists organizations_select_same_org on public.organizations;
 create policy organizations_select_same_org
 on public.organizations
 for select
@@ -79,12 +80,14 @@ using (
   )
 );
 
+drop policy if exists organizations_insert_creator_only on public.organizations;
 create policy organizations_insert_creator_only
 on public.organizations
 for insert
 to authenticated
 with check (created_by = auth.uid());
 
+drop policy if exists organizations_update_same_org on public.organizations;
 create policy organizations_update_same_org
 on public.organizations
 for update
@@ -105,6 +108,7 @@ with check (
   )
 );
 
+drop policy if exists organizations_delete_same_org on public.organizations;
 create policy organizations_delete_same_org
 on public.organizations
 for delete
@@ -117,6 +121,7 @@ using (
   )
 );
 
+drop policy if exists profiles_select_same_org on public.profiles;
 create policy profiles_select_same_org
 on public.profiles
 for select
@@ -129,12 +134,14 @@ using (
   )
 );
 
+drop policy if exists profiles_insert_self_only on public.profiles;
 create policy profiles_insert_self_only
 on public.profiles
 for insert
 to authenticated
 with check (id = auth.uid());
 
+drop policy if exists profiles_update_same_org on public.profiles;
 create policy profiles_update_same_org
 on public.profiles
 for update
@@ -155,6 +162,7 @@ with check (
   )
 );
 
+drop policy if exists profiles_delete_same_org on public.profiles;
 create policy profiles_delete_same_org
 on public.profiles
 for delete
@@ -167,6 +175,7 @@ using (
   )
 );
 
+drop policy if exists connections_select_same_org on public.connections;
 create policy connections_select_same_org
 on public.connections
 for select
@@ -179,6 +188,7 @@ using (
   )
 );
 
+drop policy if exists organization_competitors_select_same_org on public.organization_competitors;
 create policy organization_competitors_select_same_org
 on public.organization_competitors
 for select
@@ -191,6 +201,7 @@ using (
   )
 );
 
+drop policy if exists organization_competitors_insert_same_org on public.organization_competitors;
 create policy organization_competitors_insert_same_org
 on public.organization_competitors
 for insert
@@ -204,6 +215,7 @@ with check (
   )
 );
 
+drop policy if exists organization_competitors_update_same_org on public.organization_competitors;
 create policy organization_competitors_update_same_org
 on public.organization_competitors
 for update
@@ -224,6 +236,7 @@ with check (
   )
 );
 
+drop policy if exists organization_competitors_delete_same_org on public.organization_competitors;
 create policy organization_competitors_delete_same_org
 on public.organization_competitors
 for delete
@@ -300,7 +313,30 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_actor_user_id uuid;
+  v_existing_profile_org_id uuid;
 begin
+  v_actor_user_id := auth.uid();
+
+  if v_actor_user_id is null then
+    raise exception 'Profile synchronization in progress... please wait.';
+  end if;
+
+  select org_id
+  into v_existing_profile_org_id
+  from public.profiles
+  where id = v_actor_user_id;
+
+  if v_existing_profile_org_id is null then
+    insert into public.profiles (id, org_id, role)
+    values (v_actor_user_id, p_org_id, 'owner')
+    on conflict (id)
+    do update set org_id = excluded.org_id;
+  elsif v_existing_profile_org_id <> p_org_id then
+    raise exception 'Forbidden org access.';
+  end if;
+
   update public.organizations
   set
     name = p_business_name,
@@ -411,8 +447,10 @@ end;
 $$;
 
 revoke all on function public.complete_onboarding_atomic(uuid, text, text, text, text, text, text, text, text, boolean, text, text, jsonb, jsonb) from public;
+grant execute on function public.complete_onboarding_atomic(uuid, text, text, text, text, text, text, text, text, boolean, text, text, jsonb, jsonb) to authenticated;
 grant execute on function public.complete_onboarding_atomic(uuid, text, text, text, text, text, text, text, text, boolean, text, text, jsonb, jsonb) to service_role;
 
+drop policy if exists connections_insert_same_org on public.connections;
 create policy connections_insert_same_org
 on public.connections
 for insert
@@ -426,6 +464,7 @@ with check (
   )
 );
 
+drop policy if exists connections_update_same_org on public.connections;
 create policy connections_update_same_org
 on public.connections
 for update
@@ -446,6 +485,7 @@ with check (
   )
 );
 
+drop policy if exists connections_delete_same_org on public.connections;
 create policy connections_delete_same_org
 on public.connections
 for delete

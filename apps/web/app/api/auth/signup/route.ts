@@ -147,7 +147,7 @@ export async function POST(request: Request) {
 
       return NextResponse.json(
         {
-          error: "Could not create tenant workspace.",
+          error: "Profile synchronization in progress... please wait.",
           details: process.env.NODE_ENV !== "production" ? bootstrapError.message ?? null : null
         },
         { status: 500 }

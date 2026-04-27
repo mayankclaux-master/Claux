@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type CompleteOnboardingRequest = {
@@ -144,22 +143,21 @@ export async function POST(request: Request) {
     .eq("id", user.id)
     .maybeSingle();
 
-  if (profileError || !profile) {
+  if (profileError) {
     console.error("[onboarding-complete] profile lookup failed", {
       userId: user.id,
       message: profileError?.message,
       hint: profileError?.hint,
       code: profileError?.code
     });
-    return NextResponse.json({ error: "Could not verify user profile." }, { status: 403 });
+    return NextResponse.json({ error: "Could not verify user profile." }, { status: 500 });
   }
 
-  if (profile.org_id !== orgId) {
+  if (profile?.org_id && profile.org_id !== orgId) {
     return NextResponse.json({ error: "Forbidden org access." }, { status: 403 });
   }
 
-  const adminClient = createSupabaseAdminClient();
-  const { error: completionError } = await adminClient.rpc("complete_onboarding_atomic", {
+  const { error: completionError } = await supabase.rpc("complete_onboarding_atomic", {
     p_org_id: orgId,
     p_business_name: businessIdentity.businessName.trim(),
     p_category: businessIdentity.category.trim(),

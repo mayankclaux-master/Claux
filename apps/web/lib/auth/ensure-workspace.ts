@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const MAX_BOOTSTRAP_RETRIES = 3;
+const PROFILE_SYNC_WAIT_MS = 3000;
+const PROFILE_SYNC_POLL_INTERVAL_MS = 250;
 
 type BootstrapError = {
   message?: string;
@@ -40,6 +42,40 @@ function shouldFallbackToDirectBootstrap(
 
 async function sleep(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForProfileSync(adminClient: SupabaseClient, userId: string, waitMs = PROFILE_SYNC_WAIT_MS) {
+  const maxAttempts = Math.max(1, Math.ceil(waitMs / PROFILE_SYNC_POLL_INTERVAL_MS));
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const { data: profile, error } = await adminClient
+      .from("profiles")
+      .select("id")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (!error && profile?.id) {
+      return { found: true as const, error: null };
+    }
+
+    if (error) {
+      return {
+        found: false as const,
+        error: {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        }
+      };
+    }
+
+    if (attempt < maxAttempts) {
+      await sleep(PROFILE_SYNC_POLL_INTERVAL_MS);
+    }
+  }
+
+  return { found: false as const, error: null };
 }
 
 export async function bootstrapWorkspaceWithRetry({
@@ -153,6 +189,16 @@ export async function bootstrapWorkspaceDirect({
 }
 
 export async function ensureWorkspaceForUser(params: EnsureWorkspaceParams): Promise<BootstrapError | null> {
+  const profileSync = await waitForProfileSync(params.adminClient, params.userId);
+
+  if (profileSync.error) {
+    return profileSync.error;
+  }
+
+  if (profileSync.found) {
+    return null;
+  }
+
   const rpcError = await bootstrapWorkspaceWithRetry(params);
 
   if (!rpcError) {

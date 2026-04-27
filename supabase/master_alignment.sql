@@ -132,7 +132,30 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_actor_user_id uuid;
+  v_existing_profile_org_id uuid;
 begin
+  v_actor_user_id := auth.uid();
+
+  if v_actor_user_id is null then
+    raise exception 'Profile synchronization in progress... please wait.';
+  end if;
+
+  select org_id
+  into v_existing_profile_org_id
+  from public.profiles
+  where id = v_actor_user_id;
+
+  if v_existing_profile_org_id is null then
+    insert into public.profiles (id, org_id, role)
+    values (v_actor_user_id, p_org_id, 'owner')
+    on conflict (id)
+    do update set org_id = excluded.org_id;
+  elsif v_existing_profile_org_id <> p_org_id then
+    raise exception 'Forbidden org access.';
+  end if;
+
   update public.organizations
   set
     name = p_business_name,
@@ -243,6 +266,7 @@ end;
 $$;
 
 revoke all on function public.complete_onboarding_atomic(uuid, text, text, text, text, text, text, text, text, boolean, text, text, jsonb, jsonb) from public;
+grant execute on function public.complete_onboarding_atomic(uuid, text, text, text, text, text, text, text, text, boolean, text, text, jsonb, jsonb) to authenticated;
 grant execute on function public.complete_onboarding_atomic(uuid, text, text, text, text, text, text, text, text, boolean, text, text, jsonb, jsonb) to service_role;
 
 commit;
