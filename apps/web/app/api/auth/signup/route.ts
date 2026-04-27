@@ -54,7 +54,7 @@ export async function POST(request: Request) {
   const normalizedBusinessName = String(businessName).trim();
   const normalizedFullName = String(fullName ?? "").trim() || null;
   const emailRedirectTo = request.headers.get("origin")
-    ? `${request.headers.get("origin")}/auth/callback?next=/dashboard`
+    ? `${request.headers.get("origin")}/auth/callback?next=/onboarding`
     : undefined;
 
   let userId: string | null = null;
@@ -159,6 +159,6 @@ export async function POST(request: Request) {
     success: true,
     email: normalizedEmail,
     requiresEmailVerification,
-    next: requiresEmailVerification ? "verify_email" : "dashboard"
+    next: requiresEmailVerification ? "verify_email" : "onboarding"
   });
 }

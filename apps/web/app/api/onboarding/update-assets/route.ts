@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getOrCreateOrganizationApiSecret } from "@/lib/organization-secret";
 
@@ -66,10 +65,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Forbidden org access." }, { status: 403 });
   }
 
-  const adminClient = createSupabaseAdminClient();
   const completedRequested = typeof onboardingStatus === "string" && onboardingStatus.trim() === "completed";
 
-  const { data: existingOrganizationData, error: existingOrganizationError } = await adminClient
+  const { data: existingOrganizationData, error: existingOrganizationError } = await supabase
     .from("organizations")
     .select("onboarding_status, onboarding_completed")
     .eq("id", orgId)
@@ -87,7 +85,7 @@ export async function POST(request: Request) {
     Boolean(existingOrganization?.onboarding_completed) ||
     String(existingOrganization?.onboarding_status ?? "").trim().toLowerCase() === "completed";
 
-  const { data: existingConnection } = await adminClient
+  const { data: existingConnection } = await supabase
     .from("connections")
     .select("google_api_links")
     .eq("org_id", orgId)
@@ -123,8 +121,8 @@ export async function POST(request: Request) {
     };
 
     const connectionWrite = existingConnection
-      ? adminClient.from("connections").update(connectionPayload).eq("org_id", orgId)
-      : adminClient.from("connections").insert({
+      ? supabase.from("connections").update(connectionPayload).eq("org_id", orgId)
+      : supabase.from("connections").insert({
           ...connectionPayload,
           aria_status: "pending",
           aria_progress: 0,
@@ -182,7 +180,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const { error: onboardingStepError } = await adminClient
+    const { error: onboardingStepError } = await supabase
       .from("organizations")
       .update(organizationUpdatePayload)
       .eq("id", orgId);
@@ -217,7 +215,7 @@ export async function POST(request: Request) {
       kickoffWarning = "N8N onboarding webhook URL is not configured.";
     } else {
       try {
-        const { apiSecret } = await getOrCreateOrganizationApiSecret(adminClient, orgId);
+        const { apiSecret } = await getOrCreateOrganizationApiSecret(supabase, orgId);
 
         const kickoffResponse = await fetch(webhookUrlFromEnv, {
           method: "POST",

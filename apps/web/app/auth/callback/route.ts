@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   const code = url.searchParams.get("code");
   const nextParam = url.searchParams.get("next");
 
-  const nextPath = isSafeNextPath(nextParam) ? nextParam! : "/dashboard";
+  const nextPath = isSafeNextPath(nextParam) ? nextParam! : "/onboarding";
   const redirectUrl = new URL(nextPath, url.origin);
   redirectUrl.searchParams.set("t", String(Date.now()));
 
@@ -26,18 +26,34 @@ export async function GET(request: Request) {
 
   const req = request as NextRequest;
   const response = NextResponse.redirect(redirectUrl);
+  const cookieDomain = process.env.NEXT_PUBLIC_COOKIE_DOMAIN?.trim() || undefined;
+  const isSecure = url.protocol === "https:";
+
+  function withCookieDefaults(options: Record<string, unknown>) {
+    return {
+      path: "/",
+      sameSite: "lax" as const,
+      httpOnly: true,
+      secure: isSecure,
+      ...(cookieDomain ? { domain: cookieDomain } : {}),
+      ...options
+    };
+  }
+
   const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
     cookies: {
       get(name: string) {
         return req.cookies.get(name)?.value;
       },
       set(name: string, value: string, options: Record<string, unknown>) {
-        req.cookies.set({ name, value, ...options });
-        response.cookies.set({ name, value, ...options });
+        const normalizedOptions = withCookieDefaults(options);
+        req.cookies.set({ name, value, ...normalizedOptions });
+        response.cookies.set({ name, value, ...normalizedOptions });
       },
       remove(name: string, options: Record<string, unknown>) {
-        req.cookies.set({ name, value: "", ...options });
-        response.cookies.set({ name, value: "", ...options });
+        const normalizedOptions = withCookieDefaults(options);
+        req.cookies.set({ name, value: "", ...normalizedOptions });
+        response.cookies.set({ name, value: "", ...normalizedOptions });
       }
     }
   });

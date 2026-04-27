@@ -170,8 +170,68 @@ export function OnboardingWizard() {
   const [integrationMessage, setIntegrationMessage] = useState<string | null>(null);
   const [isHandshakeComplete, setIsHandshakeComplete] = useState(false);
 
+  async function ensureSessionHeartbeat() {
+    const {
+      data: { session }
+    } = await supabase.auth.getSession();
+
+    if (session) {
+      return true;
+    }
+
+    const {
+      data: { session: refreshedSession },
+      error: refreshError
+    } = await supabase.auth.refreshSession();
+
+    if (refreshError || !refreshedSession) {
+      router.replace(`/login?error=auth_session_missing&t=${Date.now()}`);
+      router.refresh();
+      return false;
+    }
+
+    return true;
+  }
+
+  async function postOnboardingJson(path: string, payload: Record<string, unknown>) {
+    const hasSession = await ensureSessionHeartbeat();
+
+    if (!hasSession) {
+      return null;
+    }
+
+    let response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (response.status === 401) {
+      const recovered = await ensureSessionHeartbeat();
+
+      if (!recovered) {
+        return null;
+      }
+
+      response = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+    }
+
+    return response;
+  }
+
   useEffect(() => {
     async function loadState() {
+      const hasSession = await ensureSessionHeartbeat();
+
+      if (!hasSession) {
+        setLoading(false);
+        return;
+      }
+
       const { data: userData } = await supabase.auth.getUser();
       const user = userData.user;
 
@@ -463,11 +523,12 @@ export function OnboardingWizard() {
       onboarding_step: 2
     };
 
-    const response = await fetch("/api/onboarding/update-org", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orgId, organizationPayload, competitorRows })
-    });
+    const response = await postOnboardingJson("/api/onboarding/update-org", { orgId, organizationPayload, competitorRows });
+
+    if (!response) {
+      setSaving(false);
+      return;
+    }
 
     let body: Record<string, unknown> | null = null;
     try {
@@ -506,23 +567,24 @@ export function OnboardingWizard() {
     setSaving(true);
     setError(null);
 
-    const response = await fetch("/api/onboarding/update-assets", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        orgId: state.orgId,
-        websiteUrl: normalizedWebsiteUrl,
-        techStack: resolvedTechStack,
-        detectedStackLabel: state.detectedStackLabel,
-        seoHealth: {
-          hasSsl: state.seoHasSsl,
-          hasRobotsTxt: state.seoHasRobotsTxt
-        },
-        hasSearchConsoleAccess: state.hasSearchConsoleAccess,
-        shopifyStoreUrl: state.shopifyStoreUrl,
-        isServiceAreaBusiness: state.isServiceAreaBusiness
-      })
+    const response = await postOnboardingJson("/api/onboarding/update-assets", {
+      orgId: state.orgId,
+      websiteUrl: normalizedWebsiteUrl,
+      techStack: resolvedTechStack,
+      detectedStackLabel: state.detectedStackLabel,
+      seoHealth: {
+        hasSsl: state.seoHasSsl,
+        hasRobotsTxt: state.seoHasRobotsTxt
+      },
+      hasSearchConsoleAccess: state.hasSearchConsoleAccess,
+      shopifyStoreUrl: state.shopifyStoreUrl,
+      isServiceAreaBusiness: state.isServiceAreaBusiness
     });
+
+    if (!response) {
+      setSaving(false);
+      return;
+    }
 
     const body = (await response.json()) as { error?: string; hint?: string | null; code?: string | null; details?: string | null };
 
@@ -563,25 +625,26 @@ export function OnboardingWizard() {
     setError(null);
 
     try {
-      const response = await fetch("/api/onboarding/update-assets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          orgId: state.orgId,
-          websiteUrl: normalizedWebsiteUrl,
-          techStack: state.techStack === "unknown" ? detectTechStackFromUrl(normalizedWebsiteUrl) : state.techStack,
-          detectedStackLabel: state.detectedStackLabel,
-          seoHealth: {
-            hasSsl: state.seoHasSsl,
-            hasRobotsTxt: state.seoHasRobotsTxt
-          },
-          hasSearchConsoleAccess: state.hasSearchConsoleAccess,
-          shopifyStoreUrl: state.shopifyStoreUrl,
-          isServiceAreaBusiness: state.isServiceAreaBusiness,
-          onboardingStatus: "completed",
-          onboardingStep: 3
-        })
+      const response = await postOnboardingJson("/api/onboarding/update-assets", {
+        orgId: state.orgId,
+        websiteUrl: normalizedWebsiteUrl,
+        techStack: state.techStack === "unknown" ? detectTechStackFromUrl(normalizedWebsiteUrl) : state.techStack,
+        detectedStackLabel: state.detectedStackLabel,
+        seoHealth: {
+          hasSsl: state.seoHasSsl,
+          hasRobotsTxt: state.seoHasRobotsTxt
+        },
+        hasSearchConsoleAccess: state.hasSearchConsoleAccess,
+        shopifyStoreUrl: state.shopifyStoreUrl,
+        isServiceAreaBusiness: state.isServiceAreaBusiness,
+        onboardingStatus: "completed",
+        onboardingStep: 3
       });
+
+      if (!response) {
+        setSaving(false);
+        return;
+      }
 
       const body = (await response.json()) as {
         error?: string;

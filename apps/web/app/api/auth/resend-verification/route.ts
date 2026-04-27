@@ -17,7 +17,7 @@ export async function POST(request: Request) {
   const adminClient = createSupabaseAdminClient();
 
   const emailRedirectTo = request.headers.get("origin")
-    ? `${request.headers.get("origin")}/auth/callback?next=/dashboard`
+    ? `${request.headers.get("origin")}/auth/callback?next=/onboarding`
     : undefined;
 
   const { error } = await adminClient.auth.resend({

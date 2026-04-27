@@ -27,6 +27,11 @@ function clampOnboardingStep(step: unknown) {
   return Math.min(Math.max(Math.trunc(numericStep), 1), 3);
 }
 
+function withTimestamp(url: URL) {
+  url.searchParams.set("t", String(Date.now()));
+  return url;
+}
+
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next();
   const supabase = createSupabaseMiddlewareClient(req, res);
@@ -51,7 +56,7 @@ export async function middleware(req: NextRequest) {
 
   if (!user) {
     if (!isPublicRoute(pathname)) {
-      return NextResponse.redirect(new URL("/", req.url));
+      return NextResponse.redirect(withTimestamp(new URL("/", req.url)));
     }
 
     return res;
@@ -60,11 +65,12 @@ export async function middleware(req: NextRequest) {
   if (!user.email_confirmed_at && !isVerifyEmailPage && !isRecoveryPage && !isCallbackPage) {
     const verifyUrl = new URL("/auth/verify-email", req.url);
     verifyUrl.searchParams.set("email", user.email ?? "");
-    return NextResponse.redirect(verifyUrl);
+    return NextResponse.redirect(withTimestamp(verifyUrl));
   }
 
   if (user.email_confirmed_at && isVerifyEmailPage) {
-    return NextResponse.redirect(new URL("/dashboard", req.url));
+    const onboardingUrl = new URL("/onboarding", req.url);
+    return NextResponse.redirect(withTimestamp(onboardingUrl));
   }
 
   const { data: profile, error: profileError } = await supabase
@@ -114,23 +120,23 @@ export async function middleware(req: NextRequest) {
   onboardingUrl.searchParams.set("step", String(onboardingStep));
 
   if (isDone && !isDashboardPage) {
-    return NextResponse.redirect(new URL("/dashboard", req.url));
+    return NextResponse.redirect(withTimestamp(new URL("/dashboard", req.url)));
   }
 
   if (!isDone && !isOnboardingPage && !isRecoveryPage && !isProvisioningPage) {
-    return NextResponse.redirect(onboardingUrl);
+    return NextResponse.redirect(withTimestamp(onboardingUrl));
   }
 
   if (!isDone && isOnboardingPage && req.nextUrl.searchParams.get("step") !== String(onboardingStep)) {
-    return NextResponse.redirect(onboardingUrl);
+    return NextResponse.redirect(withTimestamp(onboardingUrl));
   }
 
   if (isDone && (isOnboardingPage || isEntryPage || isProvisioningPage)) {
-    return NextResponse.redirect(new URL("/dashboard", req.url));
+    return NextResponse.redirect(withTimestamp(new URL("/dashboard", req.url)));
   }
 
   if (!isDone && isEntryPage) {
-    return NextResponse.redirect(onboardingUrl);
+    return NextResponse.redirect(withTimestamp(onboardingUrl));
   }
 
   return res;

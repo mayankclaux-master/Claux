@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type UpdateOrgRequest = {
@@ -46,13 +45,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Forbidden org access." }, { status: 403 });
   }
 
-  const adminClient = createSupabaseAdminClient();
   const sanitizedOrgPayload = {
     ...organizationPayload,
     id: orgId
   };
 
-  const { error: orgError } = await adminClient
+  const { error: orgError } = await supabase
     .from("organizations")
     .upsert(sanitizedOrgPayload, { onConflict: "id" });
 
@@ -69,10 +67,7 @@ export async function POST(request: Request) {
   let competitorSaveWarning: string | null = null;
 
   try {
-    const { error: deleteCompetitorsError } = await adminClient
-      .from("organization_competitors")
-      .delete()
-      .eq("org_id", orgId);
+    const { error: deleteCompetitorsError } = await supabase.from("organization_competitors").delete().eq("org_id", orgId);
 
     if (deleteCompetitorsError) {
       console.error("[onboarding-api] competitor delete failed", {
@@ -95,7 +90,7 @@ export async function POST(request: Request) {
         .filter((row) => row.competitor_url.length > 0 && Number.isFinite(row.rank));
 
       if (sanitizedCompetitorRows.length > 0) {
-        const { error: insertCompetitorsError } = await adminClient
+        const { error: insertCompetitorsError } = await supabase
           .from("organization_competitors")
           .insert(sanitizedCompetitorRows);
 

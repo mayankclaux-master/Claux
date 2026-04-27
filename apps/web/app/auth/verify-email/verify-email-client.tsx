@@ -67,7 +67,13 @@ export function VerifyEmailClient() {
     setChecking(true);
     setError(null);
 
-    await supabase.auth.getSession();
+    const {
+      data: { session }
+    } = await supabase.auth.getSession();
+
+    if (!session) {
+      await supabase.auth.refreshSession();
+    }
 
     const { data, error: userError } = await supabase.auth.getUser();
 
