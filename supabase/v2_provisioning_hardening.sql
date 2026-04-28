@@ -31,7 +31,7 @@ declare
   v_existing_profile profiles%rowtype;
   v_existing_org organizations%rowtype;
 begin
-  v_lock_key := ('x' || substr(p_user_id::text, 1, 16))::bit(64)::bigint;
+  v_lock_key := ('x' || substr(replace(p_user_id::text, '-', ''), 1, 16))::bit(64)::bigint;
 
   perform pg_advisory_lock(v_lock_key);
 
