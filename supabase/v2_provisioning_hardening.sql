@@ -1,7 +1,19 @@
 begin;
 
-drop function if exists public.bootstrap_organization_for_user(uuid, text, text);
-drop function if exists public.bootstrap_organization_for_user(uuid, text);
+-- Drop every overload of bootstrap_organization_for_user so we can recreate with a single, clean signature.
+do $$
+declare
+  rec record;
+begin
+  for rec in
+    select oid::regprocedure as proc
+    from pg_proc
+    where proname = 'bootstrap_organization_for_user'
+      and pronamespace = 'public'::regnamespace
+  loop
+    execute format('drop function if exists %s cascade', rec.proc);
+  end loop;
+end $$;
 
 create or replace function public.bootstrap_organization_for_user(
   p_user_id uuid,
