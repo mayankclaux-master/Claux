@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseMiddlewareClient } from "@/lib/supabase/middleware";
 
 const publicRoutes = [
+  "/",
   "/login",
   "/auth/signup",
   "/auth/verify-email",
