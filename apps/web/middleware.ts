@@ -1,130 +1,101 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from 'next/server'
+import { createServerClient } from '@supabase/ssr'
 
-import { createSupabaseMiddlewareClient } from "@/lib/supabase/middleware";
+const PUBLIC_ROUTES = ['/', '/login', '/auth/signup', '/auth/callback',
+  '/auth/verify-email', '/auth/reset-password', '/auth/update-password']
 
-const publicRoutes = [
-  "/",
-  "/login",
-  "/auth/signup",
-  "/auth/verify-email",
-  "/auth/callback",
-  "/auth/reset-password",
-  "/auth/update-password",
-  "/onboarding/provisioning"
-];
+const AUTH_ONLY_ROUTES = ['/login', '/auth/signup']
 
-function isPublicRoute(pathname: string) {
-  return publicRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
-}
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl
 
-function withTimestamp(url: URL) {
-  url.searchParams.set("t", String(Date.now()));
-  return url;
-}
+  if (
+    pathname.startsWith('/_next') ||
+    pathname.startsWith('/api/') ||
+    pathname.startsWith('/favicon') ||
+    pathname.includes('.')
+  ) {
+    return NextResponse.next()
+  }
 
-export async function middleware(req: NextRequest) {
-  const res = NextResponse.next();
-  const supabase = createSupabaseMiddlewareClient(req, res);
+  let response = NextResponse.next({
+    request: { headers: request.headers },
+  })
 
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-
-  const pathname = req.nextUrl.pathname;
-  const isSignupPage = pathname.startsWith("/auth/signup");
-  const isResetPasswordPage = pathname.startsWith("/auth/reset-password");
-  const isUpdatePasswordPage = pathname.startsWith("/auth/update-password");
-  const isVerifyEmailPage = pathname.startsWith("/auth/verify-email");
-  const isCallbackPage = pathname.startsWith("/auth/callback");
-  const isRecoveryPage = isResetPasswordPage || isUpdatePasswordPage;
-  const isLoginPage = pathname.startsWith("/login");
-  const isProvisioningPage = pathname.startsWith("/onboarding/provisioning");
-  const isOnboardingPage = pathname.startsWith("/onboarding");
-  const isDashboardPage = pathname.startsWith("/dashboard");
-  const isPublicPage = pathname === "/";
-  const isEntryPage = isPublicPage || isLoginPage || isSignupPage;
-
-  // Explicit check: if no user, ensure they stay on public pages
-  if (!user) {
-    if (!isPublicRoute(pathname)) {
-      return NextResponse.redirect(withTimestamp(new URL("/", req.url)));
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() { return request.cookies.getAll() },
+        setAll(cookiesToSet: any[]) {
+          cookiesToSet.forEach(({ name, value }: any) => request.cookies.set(name, value))
+          response = NextResponse.next({ request: { headers: request.headers } })
+          cookiesToSet.forEach(({ name, value, options }: any) =>
+            response.cookies.set(name, value, options)
+          )
+        },
+      },
     }
-    return res;
+  )
+
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+
+  const isPublicRoute = PUBLIC_ROUTES.includes(pathname)
+  const isAuthOnlyRoute = AUTH_ONLY_ROUTES.includes(pathname)
+  const isProvisioningRoute = pathname === '/onboarding/provisioning'
+  const isOnboardingRoute = pathname === '/onboarding'
+  const isDashboardRoute = pathname.startsWith('/dashboard')
+
+  if (!user || userError) {
+    if (isPublicRoute) return response
+    return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  if (!user.email_confirmed_at && !isVerifyEmailPage && !isRecoveryPage && !isCallbackPage) {
-    const verifyUrl = new URL("/auth/verify-email", req.url);
-    verifyUrl.searchParams.set("email", user.email ?? "");
-    return NextResponse.redirect(withTimestamp(verifyUrl));
+  if (isAuthOnlyRoute) {
+    return NextResponse.redirect(new URL('/onboarding/provisioning', request.url))
   }
 
-  if (user.email_confirmed_at && isVerifyEmailPage) {
-    const onboardingUrl = new URL("/onboarding", req.url);
-    return NextResponse.redirect(withTimestamp(onboardingUrl));
-  }
-
-  if (isProvisioningPage) {
-    if (!user) {
-      return NextResponse.redirect(withTimestamp(new URL("/login", req.url)));
+  if (!user.email_confirmed_at) {
+    if (pathname === '/auth/verify-email' || pathname === '/auth/callback') {
+      return response
     }
-    return res;
+    return NextResponse.redirect(new URL('/auth/verify-email', request.url))
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("tenant_id, provisioning_status")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError) {
-    return res;
+  if (isProvisioningRoute) {
+    return response
   }
 
-  if (!profile?.tenant_id) {
-    if (isDashboardPage || isOnboardingPage || isEntryPage) {
-      return NextResponse.redirect(new URL("/onboarding/provisioning", req.url));
+  if (isOnboardingRoute || isDashboardRoute) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('tenant_id, provisioning_status')
+      .eq('id', user.id)
+      .single()
+
+    if (!profile?.tenant_id || profile.provisioning_status !== 'completed') {
+      return NextResponse.redirect(new URL('/onboarding/provisioning', request.url))
     }
 
-    return res;
+    if (isDashboardRoute) {
+      const { data: tenant } = await supabase
+        .from('tenants')
+        .select('onboarding_completed')
+        .eq('id', profile.tenant_id)
+        .single()
+
+      if (!tenant?.onboarding_completed) {
+        return NextResponse.redirect(new URL('/onboarding', request.url))
+      }
+    }
   }
 
-  const { data: tenant, error: tenantError } = await supabase
-    .from("tenants")
-    .select("status, deleted_at")
-    .eq("id", profile.tenant_id)
-    .is("deleted_at", null)
-    .maybeSingle();
-
-  if (tenantError) {
-    return res;
-  }
-
-  // Soft-delete check: if tenant is deleted, redirect to login
-  if (!tenant || tenant.deleted_at !== null) {
-    return NextResponse.redirect(withTimestamp(new URL("/", req.url)));
-  }
-
-  const isProvisioningComplete = profile.provisioning_status === "completed";
-  const isTenantActive = tenant?.status === "active";
-  const isFullySetup = isProvisioningComplete && isTenantActive;
-
-  const onboardingUrl = withTimestamp(new URL("/onboarding", req.url));
-
-  if (isDashboardPage && !isFullySetup) {
-    return NextResponse.redirect(onboardingUrl);
-  }
-
-  if (isOnboardingPage && isFullySetup) {
-    return NextResponse.redirect(withTimestamp(new URL("/dashboard", req.url)));
-  }
-
-  if (isEntryPage) {
-    return NextResponse.redirect(isFullySetup ? withTimestamp(new URL("/dashboard", req.url)) : onboardingUrl);
-  }
-
-  return res;
+  return response
 }
 
 export const config = {
-  matcher: ["/", "/login", "/auth/:path*", "/onboarding/:path*", "/dashboard/:path*"]
-};
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
+}

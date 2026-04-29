@@ -136,7 +136,7 @@ export async function GET(request: Request) {
     return NextResponse.redirect(errorUrl);
   }
 
-  const fullName = String(user.user_metadata?.full_name ?? "").trim() || null;
+  const fullName = String(user.user_metadata?.full_name ?? "").trim() || undefined;
   const businessName =
     String(user.user_metadata?.business_name ?? "").trim() ||
     String(user.email ?? "").split("@")[0] ||

@@ -1,54 +1,58 @@
-import { redirect } from "next/navigation";
+import { redirect } from 'next/navigation'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+import { ensureWorkspaceForUser } from '@/lib/auth/ensure-workspace'
 
-import { ensureWorkspaceForUser } from "@/lib/auth/ensure-workspace";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+export default async function ProvisioningPage() {
+  const cookieStore = await cookies()
 
-export const dynamic = "force-dynamic";
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() { return cookieStore.getAll() },
+        setAll() {},
+      },
+    }
+  )
 
-export default async function OnboardingProvisioningPage() {
-  const supabase = createSupabaseServerClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
+  const { data: { user }, error } = await supabase.auth.getUser()
 
-  if (!user) {
-    redirect("/login");
+  if (!user || error) {
+    redirect('/login')
   }
 
-  const fullName = String(user.user_metadata?.full_name ?? "").trim() || null;
-  const businessName =
-    String(user.user_metadata?.business_name ?? "").trim() ||
-    String(user.email ?? "").split("@")[0] ||
-    "My Workspace";
+  if (!user.email_confirmed_at) {
+    redirect('/auth/verify-email')
+  }
 
-  const workspaceResult = await ensureWorkspaceForUser(user.id);
+  const result = await ensureWorkspaceForUser(user.id, {
+    businessName: user.user_metadata?.business_name,
+    fullName: user.user_metadata?.full_name,
+  })
 
-  if (workspaceResult.status === "healthy" && workspaceResult.tenantId) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("provisioning_status")
-      .eq("id", user.id)
-      .maybeSingle();
+  if (result.status === 'healthy') {
+    const { data: tenant } = await supabase
+      .from('tenants')
+      .select('onboarding_completed')
+      .eq('id', result.tenantId)
+      .single()
 
-    const isDone = profile?.provisioning_status === "completed";
-
-    redirect(isDone ? "/dashboard" : "/onboarding");
+    if (tenant?.onboarding_completed) {
+      redirect('/dashboard')
+    } else {
+      redirect('/onboarding')
+    }
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-xl items-center px-6 py-12">
-      <div className="w-full rounded-xl border border-border/70 bg-card/95 p-8 text-center backdrop-blur">
-        <p className="text-xs uppercase tracking-[0.2em] text-primary">Workspace Provisioning</p>
-        <h1 className="mt-3 text-2xl font-semibold">Setting up your workspace</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Your workspace is being initialized securely. This usually takes a few seconds.
-        </p>
-        <div className="mt-6 inline-flex items-center gap-2 text-sm text-muted-foreground">
-          <span className="inline-block h-2 w-2 animate-ping rounded-full bg-emerald-400" />
-          <span>{workspaceResult.error ?? "Please refresh in a moment."}</span>
-        </div>
-        <p className="mt-3 text-xs text-muted-foreground">Event ID: {workspaceResult.eventId}</p>
+    <div className="min-h-screen flex items-center justify-center bg-[#0a0f1e]">
+      <div className="text-center max-w-md px-6">
+        <h1 className="text-white text-xl font-semibold mb-2">Setup issue</h1>
+        <p className="text-gray-400 text-sm mb-6">Event ID: {result.eventId}</p>
+        <a href="/onboarding/provisioning" className="px-4 py-2 bg-indigo-600 text-white rounded-lg">Try again</a>
       </div>
-    </main>
-  );
+    </div>
+  )
 }
