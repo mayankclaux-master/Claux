@@ -9,7 +9,6 @@ export default async function DashboardPage() {
     data: { user }
   } = await supabase.auth.getUser();
 
-  let tenantName = "your workspace";
   let isWordPress = false;
   let tenantId: string | null = null;
 
@@ -18,17 +17,8 @@ export default async function DashboardPage() {
 
     if (profile?.tenant_id) {
       tenantId = profile.tenant_id;
-      const { data: tenant } = await supabase
-        .from("tenants")
-        .select("name")
-        .eq("id", profile.tenant_id)
-        .maybeSingle();
-
-      if (tenant?.name) {
-        tenantName = tenant.name;
-      }
     }
   }
 
-  return <MissionControl organizationName={tenantName} isWordPress={isWordPress} orgId={tenantId} />;
+  return <MissionControl isWordPress={isWordPress} orgId={tenantId} />;
 }

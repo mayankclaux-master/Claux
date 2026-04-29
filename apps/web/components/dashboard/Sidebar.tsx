@@ -7,9 +7,6 @@ import { useEffect, useState } from 'react';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { useTenant } from '@/contexts/TenantContext';
 
-type SidebarProps = {
-  organizationName: string;
-};
 
 const navItems = [
   { label: 'Dashboard', href: '/dashboard' as Route, icon: '⊞' },
@@ -21,7 +18,7 @@ const navItems = [
   { label: 'Billing', href: '/dashboard/billing' as Route, icon: '₹' }
 ];
 
-export default function Sidebar({ organizationName }: SidebarProps) {
+export default function Sidebar() {
   const pathname = usePathname();
   const [userName, setUserName] = useState('');
   const { tenant, businessProfile, loading } = useTenant();
@@ -37,7 +34,7 @@ export default function Sidebar({ organizationName }: SidebarProps) {
     loadIdentity();
   }, []);
 
-  const displayName = businessProfile?.business_name || tenant?.name || organizationName;
+  const displayName = businessProfile?.business_name || tenant?.name || 'My Workspace';
   const tenantStatus = tenant?.status || 'provisioning';
   const isActive = tenantStatus === 'active';
 

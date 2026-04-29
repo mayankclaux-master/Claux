@@ -8,9 +8,6 @@ import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { useTenant } from '@/contexts/TenantContext';
 import { getAgentAuditLogs } from '@/actions/audit-log';
 
-type AgentsPageClientProps = {
-  organizationName: string;
-};
 
 type AgentName = 'ARIA' | 'SCRIBE' | 'VISUAL' | 'FORGE' | 'CORE' | 'LINX' | 'LOCL' | 'REPUTE' | 'AMPLI';
 
@@ -166,7 +163,7 @@ const agentChipColors: Record<string, string> = {
 
 const thinkingLogByAgent: Record<string, ThinkingEntry[]> = {};
 
-export default function AgentsPageClient({ organizationName }: AgentsPageClientProps) {
+export default function AgentsPageClient() {
   const { tenant, loading } = useTenant();
   const [hoveredAgent, setHoveredAgent] = useState<string | null>(null);
   const [activeAgent, setActiveAgent] = useState<Agent | null>(null);
@@ -391,7 +388,7 @@ export default function AgentsPageClient({ organizationName }: AgentsPageClientP
 
   return (
     <div className="flex min-h-screen bg-[#0A0B0F] text-[#F0F2F8]">
-      <Sidebar organizationName={organizationName} />
+      <Sidebar />
       <main className="flex-1 overflow-y-auto p-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}

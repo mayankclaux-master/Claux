@@ -8,9 +8,6 @@ import { useTenant } from '@/contexts/TenantContext';
 import { getAriaKeywords } from '@/actions/artifacts';
 import { getPulseRankings } from '@/actions/artifacts';
 
-type RankingsPageClientProps = {
-  organizationName: string;
-};
 
 type KeywordRow = {
   keyword: string;
@@ -27,7 +24,7 @@ const chartData = [
   { week: 'W4', value: 0 }
 ];
 
-export default function RankingsPageClient({ organizationName }: RankingsPageClientProps) {
+export default function RankingsPageClient() {
   const { tenant, loading } = useTenant();
   const [activeFilter, setActiveFilter] = useState<'all' | 'top10' | 'improved' | 'new'>('all');
   const [allKeywords, setAllKeywords] = useState<KeywordRow[]>([]);
@@ -80,7 +77,7 @@ export default function RankingsPageClient({ organizationName }: RankingsPageCli
   if (loading || fetching) {
     return (
       <div className="flex min-h-screen bg-[#0A0B0F] text-[#F0F2F8]">
-        <Sidebar organizationName={organizationName} />
+        <Sidebar />
         <main className="flex-1 overflow-y-auto p-8">
           <div className="flex items-center justify-center min-h-screen">
             <div className="text-[#8892A4]">Loading rankings...</div>
@@ -92,7 +89,7 @@ export default function RankingsPageClient({ organizationName }: RankingsPageCli
 
   return (
     <div className="flex min-h-screen bg-[#0A0B0F] text-[#F0F2F8]">
-      <Sidebar organizationName={organizationName} />
+      <Sidebar />
       <main className="flex-1 overflow-y-auto p-8">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-[1200px] mx-auto">
           <h1 className="text-3xl font-bold mb-2">Keyword Rankings</h1>

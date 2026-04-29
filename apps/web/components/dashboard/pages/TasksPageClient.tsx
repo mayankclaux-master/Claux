@@ -4,9 +4,6 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import Sidebar from '@/components/dashboard/Sidebar';
 
-type TasksPageClientProps = {
-  organizationName: string;
-};
 
 type TaskRow = [string, string, string, string, string];
 
@@ -20,7 +17,7 @@ const summary = [
 const tasks: TaskRow[] = [
 ];
 
-export default function TasksPageClient({ organizationName }: TasksPageClientProps) {
+export default function TasksPageClient() {
   const [exporting, setExporting] = useState(false);
 
   const exportCSV = () => {
@@ -47,7 +44,7 @@ export default function TasksPageClient({ organizationName }: TasksPageClientPro
 
   return (
     <div className="flex min-h-screen bg-[#0A0B0F] text-[#F0F2F8]">
-      <Sidebar organizationName={organizationName} />
+      <Sidebar />
       <main className="flex-1 overflow-y-auto p-8">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-[1200px] mx-auto">
           <div className="flex items-start justify-between mb-6">

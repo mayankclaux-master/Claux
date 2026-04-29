@@ -23,7 +23,6 @@ type AgentCardProps = {
 };
 
 type MissionControlProps = {
-  organizationName: string;
   isWordPress: boolean;
   orgId: string | null;
 };
@@ -312,7 +311,7 @@ function AgentCard({ name, role, action, progress, time, statusLine, delay = 0 }
   );
 }
 
-export default function MissionControl({ organizationName, isWordPress, orgId }: MissionControlProps) {
+export default function MissionControl({ isWordPress, orgId }: MissionControlProps) {
   const [liveTaskFeed, setLiveTaskFeed] = useState<FeedItem[]>(initialLiveTaskFeed);
   const [keywordRankings, setKeywordRankings] = useState<RankingRow[]>(initialKeywordRankings);
   const [agentStateByName, setAgentStateByName] = useState<Record<AgentName, AgentState>>(() => getInitialAgentStateByName());
@@ -487,7 +486,7 @@ export default function MissionControl({ organizationName, isWordPress, orgId }:
 
   return (
     <div className="flex h-screen bg-claux-bg text-claux-text overflow-hidden">
-      <Sidebar organizationName={organizationName} />
+      <Sidebar />
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-[1200px] mx-auto p-8 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">

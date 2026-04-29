@@ -7,9 +7,6 @@ import Sidebar from '@/components/dashboard/Sidebar';
 import { useTenant } from '@/contexts/TenantContext';
 import { getAriaKeywords, getScribeContent, getReputeReviews, getLinxBacklinks, getPrismAssets } from '@/actions/artifacts';
 
-type ReportsPageClientProps = {
-  organizationName: string;
-};
 
 type ReportKey = string;
 
@@ -31,7 +28,7 @@ const growthData = [
   { month: 'M6', value: 0, projected: true }
 ];
 
-export default function ReportsPageClient({ organizationName }: ReportsPageClientProps) {
+export default function ReportsPageClient() {
   const { tenant, loading } = useTenant();
   const [artifactSummary, setArtifactSummary] = useState<ArtifactSummary>({
     ariaKeywords: 0,
@@ -78,7 +75,7 @@ export default function ReportsPageClient({ organizationName }: ReportsPageClien
   if (loading || fetching) {
     return (
       <div className="flex min-h-screen bg-[#0A0B0F] text-[#F0F2F8]">
-        <Sidebar organizationName={organizationName} />
+        <Sidebar />
         <main className="flex-1 overflow-y-auto p-8">
           <div className="flex items-center justify-center min-h-screen">
             <div className="text-[#8892A4]">Loading reports...</div>
@@ -90,7 +87,7 @@ export default function ReportsPageClient({ organizationName }: ReportsPageClien
 
   return (
     <div className="flex min-h-screen bg-[#0A0B0F] text-[#F0F2F8]">
-      <Sidebar organizationName={organizationName} />
+      <Sidebar />
       <main className="flex-1 overflow-y-auto p-8">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-[1200px] mx-auto">
           <h1 className="text-3xl font-bold mb-2">Reports</h1>

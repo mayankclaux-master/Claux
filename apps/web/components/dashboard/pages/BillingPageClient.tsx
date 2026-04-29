@@ -3,9 +3,6 @@
 import { motion } from 'framer-motion';
 import Sidebar from '@/components/dashboard/Sidebar';
 
-type BillingPageClientProps = {
-  organizationName: string;
-};
 
 const usage = [
   { label: 'Keywords Tracked', value: 0, total: 70 },
@@ -23,10 +20,10 @@ const plans = [
 type InvoiceRow = [string, string, string, string];
 const invoices: InvoiceRow[] = [];
 
-export default function BillingPageClient({ organizationName }: BillingPageClientProps) {
+export default function BillingPageClient() {
   return (
     <div className="flex min-h-screen bg-[#0A0B0F] text-[#F0F2F8]">
-      <Sidebar organizationName={organizationName} />
+      <Sidebar />
       <main className="flex-1 overflow-y-auto p-8">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-[1200px] mx-auto">
           <h1 className="text-3xl font-bold mb-2">Billing</h1>
