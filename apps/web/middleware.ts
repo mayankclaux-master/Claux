@@ -69,7 +69,7 @@ export async function middleware(req: NextRequest) {
 
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("org_id")
+    .select("tenant_id, provisioning_status")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -77,7 +77,7 @@ export async function middleware(req: NextRequest) {
     return res;
   }
 
-  if (!profile?.org_id) {
+  if (!profile?.tenant_id) {
     if (isDashboardPage || isOnboardingPage || isEntryPage) {
       return NextResponse.redirect(new URL("/onboarding/provisioning", req.url));
     }
@@ -85,38 +85,38 @@ export async function middleware(req: NextRequest) {
     return res;
   }
 
-  const { data: organization, error: organizationError } = await supabase
-    .from("organizations")
-    .select("onboarding_status, onboarding_step, onboarding_completed")
-    .eq("id", profile.org_id)
+  const { data: tenant, error: tenantError } = await supabase
+    .from("tenants")
+    .select("status, deleted_at")
+    .eq("id", profile.tenant_id)
+    .is("deleted_at", null)
     .maybeSingle();
 
-  if (organizationError || !organization) {
-    if (isDashboardPage || isOnboardingPage || isEntryPage) {
-      return NextResponse.redirect(new URL("/onboarding/provisioning", req.url));
-    }
-
+  if (tenantError) {
     return res;
   }
 
-  const normalizedOnboardingStatus = String(organization.onboarding_status ?? "").trim().toLowerCase();
-  const isDone =
-    normalizedOnboardingStatus === "completed" ||
-    Boolean(organization.onboarding_completed) ||
-    Number(organization.onboarding_step ?? 0) >= 4;
+  // Soft-delete check: if tenant is deleted, redirect to login
+  if (!tenant || tenant.deleted_at !== null) {
+    return NextResponse.redirect(withTimestamp(new URL("/", req.url)));
+  }
+
+  const isProvisioningComplete = profile.provisioning_status === "completed";
+  const isTenantActive = tenant?.status === "active";
+  const isFullySetup = isProvisioningComplete && isTenantActive;
 
   const onboardingUrl = withTimestamp(new URL("/onboarding", req.url));
 
-  if (isDashboardPage && !isDone) {
+  if (isDashboardPage && !isFullySetup) {
     return NextResponse.redirect(onboardingUrl);
   }
 
-  if (isOnboardingPage && isDone) {
+  if (isOnboardingPage && isFullySetup) {
     return NextResponse.redirect(withTimestamp(new URL("/dashboard", req.url)));
   }
 
   if (isEntryPage) {
-    return NextResponse.redirect(isDone ? withTimestamp(new URL("/dashboard", req.url)) : onboardingUrl);
+    return NextResponse.redirect(isFullySetup ? withTimestamp(new URL("/dashboard", req.url)) : onboardingUrl);
   }
 
   return res;

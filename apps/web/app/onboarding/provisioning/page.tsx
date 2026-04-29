@@ -21,22 +21,16 @@ export default async function OnboardingProvisioningPage() {
     String(session.user.email ?? "").split("@")[0] ||
     "My Workspace";
 
-  const workspaceResult = await ensureWorkspaceForUser(session.user.id, {
-    businessName,
-    fullName
-  });
+  const workspaceResult = await ensureWorkspaceForUser(session.user.id);
 
-  if (workspaceResult.status === "healthy" && workspaceResult.orgId) {
-    const { data: organization } = await supabase
-      .from("organizations")
-      .select("onboarding_status, onboarding_step, onboarding_completed")
-      .eq("id", workspaceResult.orgId)
+  if (workspaceResult.status === "healthy" && workspaceResult.tenantId) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("provisioning_status")
+      .eq("id", session.user.id)
       .maybeSingle();
 
-    const isDone =
-      String(organization?.onboarding_status ?? "").trim().toLowerCase() === "completed" ||
-      Boolean(organization?.onboarding_completed) ||
-      Number(organization?.onboarding_step ?? 0) >= 4;
+    const isDone = profile?.provisioning_status === "completed";
 
     redirect(isDone ? "/dashboard" : "/onboarding");
   }

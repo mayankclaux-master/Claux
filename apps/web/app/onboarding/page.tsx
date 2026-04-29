@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type OnboardingState = {
-  orgId: string;
+  tenantId: string;
   businessName: string;
   category: string;
   phoneCountryCode: string;
@@ -34,7 +34,7 @@ type OnboardingState = {
 };
 
 const initialState: OnboardingState = {
-  orgId: "",
+  tenantId: "",
   businessName: "",
   category: "",
   phoneCountryCode: "+91",
@@ -222,81 +222,63 @@ export default function OnboardingPage() {
         return;
       }
 
-      const { data: profile } = await supabase.from("profiles").select("org_id").eq("id", user.id).maybeSingle();
+      const { data: profile } = await supabase.from("profiles").select("tenant_id, provisioning_status").eq("id", user.id).maybeSingle();
 
-      if (!profile?.org_id) {
+      if (!profile?.tenant_id) {
         router.replace("/onboarding/provisioning");
         return;
       }
 
-      const { data: organization } = await supabase
-        .from("organizations")
-        .select("*")
-        .eq("id", profile.org_id)
-        .maybeSingle();
-
-      if (!organization) {
-        setError("Workspace is still provisioning. Please retry in a moment.");
-        setLoading(false);
-        return;
-      }
-
-      const isDone =
-        String(organization.onboarding_status ?? "").trim().toLowerCase() === "completed" ||
-        Boolean(organization.onboarding_completed) ||
-        Number(organization.onboarding_step ?? 0) >= 4;
-
-      if (isDone) {
+      if (profile.provisioning_status === "completed") {
         router.replace(`/dashboard?t=${Date.now()}`);
         router.refresh();
         return;
       }
 
-      const { data: connection } = await supabase
-        .from("connections")
-        .select("website_url, tech_stack, google_api_links")
-        .eq("org_id", profile.org_id)
+      const { data: tenant } = await supabase
+        .from("tenants")
+        .select("*")
+        .eq("id", profile.tenant_id)
         .maybeSingle();
 
+      if (!tenant) {
+        setError("Workspace is still provisioning. Please retry in a moment.");
+        setLoading(false);
+        return;
+      }
+
       const { data: competitors } = await supabase
-        .from("organization_competitors")
+        .from("business_competitors")
         .select("competitor_url, rank")
-        .eq("org_id", profile.org_id)
+        .eq("tenant_id", profile.tenant_id)
         .order("rank", { ascending: true });
 
-      const existingScan = (connection?.google_api_links?.website_scan ?? {}) as Record<string, unknown>;
       const competitorUrls = competitors?.map((entry) => entry.competitor_url) ?? [];
-      const parsedPhone = splitPhone(String(organization.business_phone ?? ""));
-      const targetMarketType = String(organization.target_market_type ?? "") === "national" ? "national" : "local_city";
+      const parsedPhone = splitPhone(String(tenant.business_phone ?? ""));
+      const targetMarketType = String(tenant.target_market_type ?? "") === "national" ? "national" : "local_city";
 
       setState({
-        orgId: String(organization.id ?? profile.org_id),
-        businessName: String(organization.name ?? ""),
-        category: String(organization.category ?? ""),
+        tenantId: String(tenant.id ?? profile.tenant_id),
+        businessName: String(tenant.name ?? ""),
+        category: String(tenant.category ?? ""),
         phoneCountryCode: parsedPhone.phoneCountryCode,
         businessPhone: parsedPhone.businessPhone,
-        fullPhysicalAddress: String(organization.full_physical_address ?? ""),
-        gmbUrl: String(organization.gmb_url ?? ""),
+        fullPhysicalAddress: String(tenant.full_physical_address ?? ""),
+        gmbUrl: String(tenant.gmb_url ?? ""),
         targetMarketType,
-        targetCity: String(organization.target_city ?? ""),
-        primaryLanguage: String(organization.primary_language ?? ""),
+        targetCity: String(tenant.target_city ?? ""),
+        primaryLanguage: String(tenant.primary_language ?? ""),
         competitorOneUrl: competitorUrls[0] ?? "",
         competitorTwoUrl: competitorUrls[1] ?? "",
         competitorThreeUrl: competitorUrls[2] ?? "",
-        websiteUrl: String(connection?.website_url ?? ""),
-        hasSearchConsoleAccess: Boolean(connection?.google_api_links?.has_search_console_access),
-        isServiceAreaBusiness: Boolean(organization.is_service_area_business ?? false),
-        techStack: String(connection?.tech_stack ?? "unknown"),
-        detectedStackLabel: String(existingScan.detected_label ?? "Stack not scanned yet"),
-        seoHasSsl:
-          typeof existingScan.seo_health === "object" && existingScan.seo_health !== null
-            ? Boolean((existingScan.seo_health as Record<string, unknown>).has_ssl)
-            : null,
-        seoHasRobotsTxt:
-          typeof existingScan.seo_health === "object" && existingScan.seo_health !== null
-            ? Boolean((existingScan.seo_health as Record<string, unknown>).has_robots_txt)
-            : null,
-        shopifyStoreUrl: String(connection?.google_api_links?.shopify_store_url ?? "")
+        websiteUrl: "",
+        hasSearchConsoleAccess: false,
+        isServiceAreaBusiness: Boolean(tenant.is_service_area_business ?? false),
+        techStack: "unknown",
+        detectedStackLabel: "Stack not scanned yet",
+        seoHasSsl: null,
+        seoHasRobotsTxt: null,
+        shopifyStoreUrl: ""
       });
 
       setLoading(false);
@@ -375,7 +357,7 @@ export default function OnboardingPage() {
   }, [state.websiteUrl]);
 
   async function handleSubmit() {
-    if (!state.orgId) {
+    if (!state.tenantId) {
       setError("Workspace is still initializing. Please wait a moment and retry.");
       return;
     }
@@ -423,7 +405,7 @@ export default function OnboardingPage() {
     setError(null);
 
     const response = await postOnboardingJson("/api/onboarding/complete", {
-      orgId: state.orgId,
+      tenantId: state.tenantId,
       businessIdentity: {
         businessName: state.businessName.trim(),
         category: state.category.trim(),
@@ -465,6 +447,33 @@ export default function OnboardingPage() {
     }
 
     setSaving(false);
+    
+    // Save CMS credentials if tech stack is shopify
+    if (resolvedTechStack === "shopify" && state.shopifyStoreUrl.trim()) {
+      try {
+        const supabase = createSupabaseBrowserClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (user) {
+          const { data: profile } = await supabase.from("profiles").select("tenant_id").eq("id", user.id).maybeSingle();
+          
+          if (profile?.tenant_id) {
+            await supabase.from("cms_credentials").upsert({
+              tenant_id: profile.tenant_id,
+              cms_type: "shopify",
+              site_url: state.shopifyStoreUrl.trim(),
+              encrypted_credentials: {},
+              updated_at: new Date().toISOString()
+            }, {
+              onConflict: "tenant_id,cms_type"
+            });
+          }
+        }
+      } catch (cmsError) {
+        console.warn("Failed to save CMS credentials:", cmsError);
+      }
+    }
+    
     router.replace(`/dashboard?t=${Date.now()}`);
     router.refresh();
   }

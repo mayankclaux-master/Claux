@@ -42,17 +42,31 @@ type FeedItem = {
   status?: 'pending' | 'completed' | 'failed';
 };
 
-type AgentName = 'ARIA' | 'SCRIBE' | 'VISUAL' | 'FORGE' | 'CORE' | 'LINX' | 'LOCL' | 'REPUTE' | 'AMPLI';
+type AgentName = 'ARIA' | 'SCRIBE' | 'LOCL' | 'LINX' | 'CORE' | 'REPUTE' | 'AMPLI' | 'PRISM' | 'PULSE';
 type AgentState = {
   statusLine: string;
   progress: number;
+  runCount?: number;
+  errorCount?: number;
+  lastRunAt?: string | null;
 };
 
-type ConnectionAgentState = Partial<
-  Record<`${Lowercase<AgentName>}_status` | `${Lowercase<AgentName>}_progress`, string | number | null>
->;
+type AgentStateRow = {
+  id: string;
+  tenant_id: string;
+  agent: AgentName;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  progress: number;
+  current_task: string | null;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  run_count: number;
+  error_count: number;
+  last_error: string | null;
+  enabled: boolean;
+};
 
-const AGENT_NAMES: AgentName[] = ['ARIA', 'SCRIBE', 'VISUAL', 'FORGE', 'CORE', 'LINX', 'LOCL', 'REPUTE', 'AMPLI'];
+const AGENT_NAMES: AgentName[] = ['ARIA', 'SCRIBE', 'LOCL', 'LINX', 'CORE', 'REPUTE', 'AMPLI', 'PRISM', 'PULSE'];
 
 const baseAgents = [
   {
@@ -61,7 +75,10 @@ const baseAgents = [
     action: 'System initializing. Waiting for connected assets.',
     progress: 0,
     time: 'N/A',
-    statusLine: 'System Initializing'
+    statusLine: 'System Initializing',
+    runCount: 0,
+    errorCount: 0,
+    lastRunAt: null
   },
   {
     name: 'SCRIBE',
@@ -69,7 +86,10 @@ const baseAgents = [
     action: 'System initializing. Waiting for connected assets.',
     progress: 0,
     time: 'N/A',
-    statusLine: 'System Initializing'
+    statusLine: 'System Initializing',
+    runCount: 0,
+    errorCount: 0,
+    lastRunAt: null
   },
   {
     name: 'LOCL',
@@ -77,7 +97,10 @@ const baseAgents = [
     action: 'System initializing. Waiting for connected assets.',
     progress: 0,
     time: 'N/A',
-    statusLine: 'System Initializing'
+    statusLine: 'System Initializing',
+    runCount: 0,
+    errorCount: 0,
+    lastRunAt: null
   },
   {
     name: 'LINX',
@@ -85,7 +108,10 @@ const baseAgents = [
     action: 'System initializing. Waiting for connected assets.',
     progress: 0,
     time: 'N/A',
-    statusLine: 'System Initializing'
+    statusLine: 'System Initializing',
+    runCount: 0,
+    errorCount: 0,
+    lastRunAt: null
   },
   {
     name: 'CORE',
@@ -93,23 +119,10 @@ const baseAgents = [
     action: 'System initializing. Waiting for connected assets.',
     progress: 0,
     time: 'N/A',
-    statusLine: 'System Initializing'
-  },
-  {
-    name: 'VISUAL',
-    role: 'Creative Agent',
-    action: 'System initializing. Waiting for connected assets.',
-    progress: 0,
-    time: 'N/A',
-    statusLine: 'System Initializing'
-  },
-  {
-    name: 'FORGE',
-    role: 'Implementation Agent',
-    action: 'System initializing. Waiting for connected assets.',
-    progress: 0,
-    time: 'N/A',
-    statusLine: 'System Initializing'
+    statusLine: 'System Initializing',
+    runCount: 0,
+    errorCount: 0,
+    lastRunAt: null
   },
   {
     name: 'REPUTE',
@@ -117,7 +130,10 @@ const baseAgents = [
     action: 'System initializing. Waiting for connected assets.',
     progress: 0,
     time: 'N/A',
-    statusLine: 'System Initializing'
+    statusLine: 'System Initializing',
+    runCount: 0,
+    errorCount: 0,
+    lastRunAt: null
   },
   {
     name: 'AMPLI',
@@ -125,7 +141,32 @@ const baseAgents = [
     action: 'System initializing. Waiting for connected assets.',
     progress: 0,
     time: 'N/A',
-    statusLine: 'System Initializing'
+    statusLine: 'System Initializing',
+    runCount: 0,
+    errorCount: 0,
+    lastRunAt: null
+  },
+  {
+    name: 'PRISM',
+    role: 'Analytics Agent',
+    action: 'System initializing. Waiting for connected assets.',
+    progress: 0,
+    time: 'N/A',
+    statusLine: 'System Initializing',
+    runCount: 0,
+    errorCount: 0,
+    lastRunAt: null
+  },
+  {
+    name: 'PULSE',
+    role: 'Monitoring Agent',
+    action: 'System initializing. Waiting for connected assets.',
+    progress: 0,
+    time: 'N/A',
+    statusLine: 'System Initializing',
+    runCount: 0,
+    errorCount: 0,
+    lastRunAt: null
   }
 ] as const;
 
@@ -170,31 +211,44 @@ function normalizeAgentProgress(value: string | number | null | undefined) {
 }
 
 function getInitialAgentStateByName(): Record<AgentName, AgentState> {
-  return AGENT_NAMES.reduce(
-    (acc, agentName) => {
-      acc[agentName] = { statusLine: 'System Initializing', progress: 0 };
-      return acc;
-    },
-    {} as Record<AgentName, AgentState>
-  );
+  const state: Record<AgentName, AgentState> = {} as Record<AgentName, AgentState>;
+  for (const name of AGENT_NAMES) {
+    state[name] = { statusLine: 'System Initializing', progress: 0, runCount: 0, errorCount: 0, lastRunAt: null };
+  }
+  return state;
 }
 
-function mapConnectionStateToAgents(connectionState: ConnectionAgentState | null | undefined): Record<AgentName, AgentState> {
+function mapAgentStatesToUI(agentStates: AgentStateRow[] | null | undefined): Record<AgentName, AgentState> {
   const nextState = getInitialAgentStateByName();
 
-  if (!connectionState) {
+  if (!agentStates || agentStates.length === 0) {
     return nextState;
   }
 
   for (const agentName of AGENT_NAMES) {
-    const key = agentName.toLowerCase() as Lowercase<AgentName>;
-    const statusKey = `${key}_status` as const;
-    const progressKey = `${key}_progress` as const;
+    const agentState = agentStates.find(state => state.agent === agentName);
 
-    nextState[agentName] = {
-      statusLine: normalizeAgentStatus(connectionState[statusKey]),
-      progress: normalizeAgentProgress(connectionState[progressKey])
-    };
+    if (agentState) {
+      let statusLine = 'System Initializing';
+      let progress = agentState.progress;
+
+      if (!agentState.enabled) {
+        statusLine = 'Disabled';
+        progress = 0;
+      } else if (agentState.status === 'running') {
+        statusLine = 'In Progress';
+      } else if (agentState.status === 'completed') {
+        statusLine = 'Completed';
+      } else if (agentState.status === 'failed') {
+        statusLine = 'Failed';
+      } else if (agentState.status === 'cancelled') {
+        statusLine = 'Cancelled';
+      } else if (agentState.status === 'queued') {
+        statusLine = 'Queued';
+      }
+
+      nextState[agentName] = { statusLine, progress };
+    }
   }
 
   return nextState;
@@ -285,7 +339,7 @@ export default function MissionControl({ organizationName, isWordPress, orgId }:
       const { data, error } = await supabase
         .from('agent_activities')
         .select('agent_name, status_message, status')
-        .eq('org_id', orgId)
+        .eq('tenant_id', orgId)
         .order('created_at', { ascending: false })
         .limit(60);
 
@@ -308,7 +362,7 @@ export default function MissionControl({ organizationName, isWordPress, orgId }:
       const { data, error } = await supabase
         .from('keyword_insights')
         .select('keyword, position, volume, agent_name')
-        .eq('org_id', orgId)
+        .eq('tenant_id', orgId)
         .order('created_at', { ascending: false })
         .limit(60);
 
@@ -329,26 +383,30 @@ export default function MissionControl({ organizationName, isWordPress, orgId }:
       setKeywordRankings(nextKeywords);
     }
 
-    async function loadConnectionAgentState() {
+    async function loadAgentStates() {
       const { data, error } = await supabase
-        .from('connections')
-        .select(
-          'aria_status, aria_progress, scribe_status, scribe_progress, visual_status, visual_progress, forge_status, forge_progress, core_status, core_progress, linx_status, linx_progress, locl_status, locl_progress, repute_status, repute_progress, ampli_status, ampli_progress'
-        )
-        .eq('org_id', orgId)
-        .maybeSingle();
+        .from('agent_states')
+        .select('*')
+        .eq('tenant_id', orgId);
 
-      if (error || !data) {
+      if (error) {
+        console.error('Failed to load agent states:', error);
         return;
       }
 
-      const connectionState = data as ConnectionAgentState;
-      setAgentStateByName(mapConnectionStateToAgents(connectionState));
+      if (!data || data.length === 0) {
+        // Agent states not yet initialized by trigger - show system initializing state
+        setAgentStateByName(getInitialAgentStateByName());
+        return;
+      }
+
+      const agentStates = data as AgentStateRow[];
+      setAgentStateByName(mapAgentStatesToUI(agentStates));
     }
 
     void loadInitialFeed();
     void loadKeywordInsights();
-    void loadConnectionAgentState();
+    void loadAgentStates();
 
     const channel = supabase
       .channel(`agent-activities-${orgId}`)
@@ -358,7 +416,7 @@ export default function MissionControl({ organizationName, isWordPress, orgId }:
           event: 'INSERT',
           schema: 'public',
           table: 'agent_activities',
-          filter: `org_id=eq.${orgId}`
+          filter: `tenant_id=eq.${orgId}`
         },
         (payload) => {
           const row = payload.new as {
@@ -380,26 +438,25 @@ export default function MissionControl({ organizationName, isWordPress, orgId }:
       )
       .subscribe();
 
-    const connectionsChannel = supabase
-      .channel(`connections-${orgId}`)
+    const agentStatesChannel = supabase
+      .channel(`agent-states-${orgId}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
-          table: 'connections',
-          filter: `org_id=eq.${orgId}`
+          table: 'agent_states',
+          filter: `tenant_id=eq.${orgId}`
         },
-        (payload) => {
-          const row = payload.new as ConnectionAgentState;
-          setAgentStateByName(mapConnectionStateToAgents(row));
+        async () => {
+          await loadAgentStates();
         }
       )
       .subscribe();
 
     return () => {
       void supabase.removeChannel(channel);
-      void supabase.removeChannel(connectionsChannel);
+      void supabase.removeChannel(agentStatesChannel);
     };
   }, [orgId]);
 

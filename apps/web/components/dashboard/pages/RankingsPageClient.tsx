@@ -1,9 +1,12 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AreaChart, Area, ResponsiveContainer, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts';
 import Sidebar from '@/components/dashboard/Sidebar';
+import { useTenant } from '@/contexts/TenantContext';
+import { getAriaKeywords } from '@/actions/artifacts';
+import { getPulseRankings } from '@/actions/artifacts';
 
 type RankingsPageClientProps = {
   organizationName: string;
@@ -17,9 +20,6 @@ type KeywordRow = {
   agent: string;
 };
 
-const allKeywords: KeywordRow[] = [
-];
-
 const chartData = [
   { week: 'W1', value: 0 },
   { week: 'W2', value: 0 },
@@ -28,7 +28,41 @@ const chartData = [
 ];
 
 export default function RankingsPageClient({ organizationName }: RankingsPageClientProps) {
+  const { tenant, loading } = useTenant();
   const [activeFilter, setActiveFilter] = useState<'all' | 'top10' | 'improved' | 'new'>('all');
+  const [allKeywords, setAllKeywords] = useState<KeywordRow[]>([]);
+  const [fetching, setFetching] = useState(false);
+
+  useEffect(() => {
+    async function loadData() {
+      if (!tenant?.id || loading) return;
+
+      setFetching(true);
+      try {
+        const [keywordsData, rankingsData] = await Promise.all([
+          getAriaKeywords(tenant.id),
+          getPulseRankings(tenant.id)
+        ]);
+
+        // Map aria_keywords to KeywordRow format
+        const mappedKeywords = (keywordsData as any[]).map((k) => ({
+          keyword: k.keyword,
+          position: k.current_rank || 0,
+          change: k.rank_change || 'NEW' as any,
+          volume: k.search_volume || 0,
+          agent: 'ARIA'
+        }));
+
+        setAllKeywords(mappedKeywords);
+      } catch (error) {
+        console.error('Failed to load rankings data:', error);
+      } finally {
+        setFetching(false);
+      }
+    }
+
+    loadData();
+  }, [tenant?.id, loading]);
 
   const filteredKeywords = useMemo(() => {
     switch (activeFilter) {
@@ -41,7 +75,20 @@ export default function RankingsPageClient({ organizationName }: RankingsPageCli
       default:
         return allKeywords;
     }
-  }, [activeFilter]);
+  }, [activeFilter, allKeywords]);
+
+  if (loading || fetching) {
+    return (
+      <div className="flex min-h-screen bg-[#0A0B0F] text-[#F0F2F8]">
+        <Sidebar organizationName={organizationName} />
+        <main className="flex-1 overflow-y-auto p-8">
+          <div className="flex items-center justify-center min-h-screen">
+            <div className="text-[#8892A4]">Loading rankings...</div>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen bg-[#0A0B0F] text-[#F0F2F8]">
@@ -49,7 +96,11 @@ export default function RankingsPageClient({ organizationName }: RankingsPageCli
       <main className="flex-1 overflow-y-auto p-8">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-[1200px] mx-auto">
           <h1 className="text-3xl font-bold mb-2">Keyword Rankings</h1>
-          <p className="text-[#8892A4] mb-6">Awaiting Connection — keyword tracking starts after assets are connected.</p>
+          <p className="text-[#8892A4] mb-6">
+            {allKeywords.length === 0 
+              ? "Run ARIA agent to discover keywords and PULSE agent to track rankings."
+              : "Track your keyword performance and ranking history"}
+          </p>
 
           <div className="flex gap-2 mb-3 flex-wrap">
             {[
@@ -104,7 +155,7 @@ export default function RankingsPageClient({ organizationName }: RankingsPageCli
                 {filteredKeywords.length === 0 ? (
                   <tr className="border-t border-[#1E2130]">
                     <td colSpan={5} className="p-8 text-center text-[#8892A4]">
-                      Awaiting Connection
+                      No keywords found. Run ARIA agent to start research.
                     </td>
                   </tr>
                 ) : (

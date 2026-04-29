@@ -5,6 +5,7 @@ import type { Route } from 'next';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+import { useTenant } from '@/contexts/TenantContext';
 
 type SidebarProps = {
   organizationName: string;
@@ -16,28 +17,29 @@ const navItems = [
   { label: 'Rankings', href: '/dashboard/rankings' as Route, icon: '↑' },
   { label: 'Tasks', href: '/dashboard/tasks' as Route, icon: '✓' },
   { label: 'Reports', href: '/dashboard/reports' as Route, icon: '◫' },
+  { label: 'Settings', href: '/dashboard/settings' as Route, icon: '⚙' },
   { label: 'Billing', href: '/dashboard/billing' as Route, icon: '₹' }
 ];
 
 export default function Sidebar({ organizationName }: SidebarProps) {
   const pathname = usePathname();
   const [userName, setUserName] = useState('');
-  const [orgName, setOrgName] = useState(organizationName);
+  const { tenant, businessProfile, loading } = useTenant();
 
   useEffect(() => {
     async function loadIdentity() {
       const supabase = createSupabaseBrowserClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const { data: profile } = await supabase.from('profiles').select('full_name, org_id').eq('id', user.id).maybeSingle();
+      const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', user.id).maybeSingle();
       setUserName(profile?.full_name || user.email?.split('@')[0] || '');
-      if (profile?.org_id) {
-        const { data: org } = await supabase.from('organizations').select('name').eq('id', profile.org_id).maybeSingle();
-        if (org?.name) setOrgName(org.name);
-      }
     }
     loadIdentity();
   }, []);
+
+  const displayName = businessProfile?.business_name || tenant?.name || organizationName;
+  const tenantStatus = tenant?.status || 'provisioning';
+  const isActive = tenantStatus === 'active';
 
   return (
     <aside className="w-60 bg-claux-surface border-r border-claux-border flex flex-col">
@@ -67,14 +69,14 @@ export default function Sidebar({ organizationName }: SidebarProps) {
       <div className="p-4 border-t border-claux-border space-y-3">
         <div className="px-4 py-3 bg-claux-border/30 rounded-lg">
           <div className="text-xs text-claux-muted mb-1">{userName || 'User'}</div>
-          <div className="text-sm font-medium text-claux-text">{orgName || organizationName}</div>
+          <div className="text-sm font-medium text-claux-text">{displayName}</div>
         </div>
         <div className="flex items-center gap-2 px-4 py-2">
           <div className="relative">
-            <div className="w-2 h-2 bg-claux-teal rounded-full"></div>
-            <div className="absolute inset-0 w-2 h-2 bg-claux-teal rounded-full animate-ping"></div>
+            <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-claux-teal' : 'bg-yellow-500'}`}></div>
+            {isActive && <div className="absolute inset-0 w-2 h-2 bg-claux-teal rounded-full animate-ping"></div>}
           </div>
-          <span className="text-xs text-claux-muted">Active</span>
+          <span className="text-xs text-claux-muted">{isActive ? 'Active' : 'Provisioning'}</span>
         </div>
       </div>
     </aside>

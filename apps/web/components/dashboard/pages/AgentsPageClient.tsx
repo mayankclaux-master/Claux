@@ -5,6 +5,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { LineChart, Line, ResponsiveContainer, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts';
 import Sidebar from '@/components/dashboard/Sidebar';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+import { useTenant } from '@/contexts/TenantContext';
+import { getAgentAuditLogs } from '@/actions/audit-log';
 
 type AgentsPageClientProps = {
   organizationName: string;
@@ -13,7 +15,7 @@ type AgentsPageClientProps = {
 type AgentName = 'ARIA' | 'SCRIBE' | 'VISUAL' | 'FORGE' | 'CORE' | 'LINX' | 'LOCL' | 'REPUTE' | 'AMPLI';
 
 type ViewerProfile = {
-  orgId: string;
+  tenantId: string;
   role: 'owner' | 'admin' | 'member';
 };
 
@@ -26,6 +28,8 @@ type Agent = {
   taskHistory: Array<{ task: string; timestamp: string }>;
   performance: Array<{ day: string; score: number }>;
   progress: number;
+  action: string;
+  last_error?: string | null;
 };
 
 type ThinkingEntry = {
@@ -44,7 +48,9 @@ const agents: Agent[] = [
     tasks: ['System Initializing'],
     taskHistory: [],
     performance: [],
-    progress: 0
+    progress: 0,
+    action: 'System Initializing',
+    last_error: null
   },
   {
     name: 'SCRIBE',
@@ -54,7 +60,9 @@ const agents: Agent[] = [
     tasks: ['System Initializing'],
     taskHistory: [],
     performance: [],
-    progress: 0
+    progress: 0,
+    action: 'System Initializing',
+    last_error: null
   },
   {
     name: 'LOCL',
@@ -64,7 +72,9 @@ const agents: Agent[] = [
     tasks: ['System Initializing'],
     taskHistory: [],
     performance: [],
-    progress: 0
+    progress: 0,
+    action: 'System Initializing',
+    last_error: null
   },
   {
     name: 'LINX',
@@ -74,7 +84,9 @@ const agents: Agent[] = [
     tasks: ['System Initializing'],
     taskHistory: [],
     performance: [],
-    progress: 0
+    progress: 0,
+    action: 'System Initializing',
+    last_error: null
   },
   {
     name: 'CORE',
@@ -84,7 +96,9 @@ const agents: Agent[] = [
     tasks: ['System Initializing'],
     taskHistory: [],
     performance: [],
-    progress: 0
+    progress: 0,
+    action: 'System Initializing',
+    last_error: null
   },
   {
     name: 'VISUAL',
@@ -94,7 +108,9 @@ const agents: Agent[] = [
     tasks: ['System Initializing'],
     taskHistory: [],
     performance: [],
-    progress: 0
+    progress: 0,
+    action: 'System Initializing',
+    last_error: null
   },
   {
     name: 'REPUTE',
@@ -104,7 +120,9 @@ const agents: Agent[] = [
     tasks: ['System Initializing'],
     taskHistory: [],
     performance: [],
-    progress: 0
+    progress: 0,
+    action: 'System Initializing',
+    last_error: null
   },
   {
     name: 'FORGE',
@@ -114,7 +132,9 @@ const agents: Agent[] = [
     tasks: ['System Initializing'],
     taskHistory: [],
     performance: [],
-    progress: 0
+    progress: 0,
+    action: 'System Initializing',
+    last_error: null
   },
   {
     name: 'AMPLI',
@@ -124,7 +144,9 @@ const agents: Agent[] = [
     tasks: ['System Initializing'],
     taskHistory: [],
     performance: [],
-    progress: 0
+    progress: 0,
+    action: 'System Initializing',
+    last_error: null
   }
 ];
 
@@ -145,6 +167,7 @@ const agentChipColors: Record<string, string> = {
 const thinkingLogByAgent: Record<string, ThinkingEntry[]> = {};
 
 export default function AgentsPageClient({ organizationName }: AgentsPageClientProps) {
+  const { tenant, loading } = useTenant();
   const [hoveredAgent, setHoveredAgent] = useState<string | null>(null);
   const [activeAgent, setActiveAgent] = useState<Agent | null>(null);
   const [activeTab, setActiveTab] = useState<'thinking' | 'history' | 'performance'>('thinking');
@@ -166,6 +189,8 @@ export default function AgentsPageClient({ organizationName }: AgentsPageClientP
     }, {})
   );
   const [typedReasoning, setTypedReasoning] = useState('');
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [loadingAuditLogs, setLoadingAuditLogs] = useState(false);
   const isInitializing = true;
   const isAdminOrOwner = viewerProfile?.role === 'owner' || viewerProfile?.role === 'admin';
 
@@ -184,7 +209,7 @@ export default function AgentsPageClient({ organizationName }: AgentsPageClientP
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('org_id, role')
+        .select('tenant_id, role')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -198,7 +223,7 @@ export default function AgentsPageClient({ organizationName }: AgentsPageClientP
         normalizedRole === 'owner' || normalizedRole === 'admin' ? (normalizedRole as ViewerProfile['role']) : 'member';
 
       setViewerProfile({
-        orgId: String(data.org_id),
+        tenantId: String(data.tenant_id),
         role
       });
     }
@@ -207,8 +232,8 @@ export default function AgentsPageClient({ organizationName }: AgentsPageClientP
   }, []);
 
   async function triggerAgentNow(agentName: AgentName) {
-    if (!viewerProfile?.orgId) {
-      setDeveloperMessage('Workspace org context is missing. Refresh and try again.');
+    if (!viewerProfile?.tenantId) {
+      setDeveloperMessage('Workspace tenant context is missing. Refresh and try again.');
       return;
     }
 
@@ -220,10 +245,10 @@ export default function AgentsPageClient({ organizationName }: AgentsPageClientP
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          org_id: viewerProfile.orgId,
+          tenant_id: viewerProfile.tenantId,
           agent_name: agentName,
-          task_type: `manual_${agentName.toLowerCase()}_demo`,
-          idempotency_key: `agents-page:${viewerProfile.orgId}:${agentName}:${Date.now()}`,
+          task_type: `manual_${agentName.toLowerCase()}_run`,
+          idempotency_key: `agents-page:${viewerProfile.tenantId}:${agentName}:${Date.now()}`,
           payload: {
             source: 'agents_page_admin_panel'
           }
@@ -262,8 +287,8 @@ export default function AgentsPageClient({ organizationName }: AgentsPageClientP
   }
 
   async function runSanityCheck() {
-    if (!viewerProfile?.orgId) {
-      setDeveloperMessage('Workspace org context is missing. Refresh and try again.');
+    if (!viewerProfile?.tenantId) {
+      setDeveloperMessage('Workspace tenant context is missing. Refresh and try again.');
       return;
     }
 
@@ -275,7 +300,7 @@ export default function AgentsPageClient({ organizationName }: AgentsPageClientP
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          org_id: viewerProfile.orgId,
+          tenant_id: viewerProfile.tenantId,
           agent_name: 'ARIA'
         })
       });
@@ -336,6 +361,28 @@ export default function AgentsPageClient({ organizationName }: AgentsPageClientP
 
     return () => clearInterval(typer);
   }, [activeAgent, activeTab, activeThinkingEntries]);
+
+  useEffect(() => {
+    async function loadAuditLogs() {
+      if (!tenant?.id || !activeAgent || activeAgent.name !== 'CORE') {
+        setAuditLogs([]);
+        return;
+      }
+
+      setLoadingAuditLogs(true);
+      try {
+        const logs = await getAgentAuditLogs(tenant.id);
+        setAuditLogs(logs);
+      } catch (error) {
+        console.error('Failed to load audit logs:', error);
+        setAuditLogs([]);
+      } finally {
+        setLoadingAuditLogs(false);
+      }
+    }
+
+    loadAuditLogs();
+  }, [tenant?.id, activeAgent?.name, activeTab]);
 
   const closeModal = () => {
     setActiveAgent(null);
@@ -455,9 +502,9 @@ export default function AgentsPageClient({ organizationName }: AgentsPageClientP
                 <p className="text-sm text-[#8892A4] leading-relaxed mb-4 min-h-[56px]">{agent.description}</p>
 
                 <div className="mb-4">
-                  <div className="text-xs text-[#8892A4] mb-2">Last Action</div>
+                  <div className="text-xs text-[#8892A4] mb-2">Current Task</div>
                   <div className="min-h-[44px] rounded-lg border border-[#1E2130] bg-[#0E1016] p-3">
-                    <p className="text-sm text-[#8892A4]">System Initializing...</p>
+                    <p className="text-sm text-white">{agent.action}</p>
                   </div>
                 </div>
 
@@ -466,8 +513,8 @@ export default function AgentsPageClient({ organizationName }: AgentsPageClientP
                   <span className="text-[#8892A4] font-medium">N/A</span>
                 </div>
                 <div className="w-full bg-[#1E2130] rounded-full h-2 mb-4 relative overflow-hidden">
-                  <div className="bg-[#7F77DD] h-2 rounded-full relative" style={{ width: '0%' }} />
-                  <div className={`progress-shimmer ${hoveredAgent === agent.name ? 'progress-shimmer-active' : ''}`} />
+                  <div className={`bg-[#7F77DD] h-2 rounded-full relative ${agent.progress > 0 ? 'animate-pulse' : ''}`} style={{ width: `${agent.progress}%` }} />
+                  <div className={`progress-shimmer ${hoveredAgent === agent.name || agent.progress > 0 ? 'progress-shimmer-active' : ''}`} />
                 </div>
 
                 <button
@@ -651,9 +698,54 @@ export default function AgentsPageClient({ organizationName }: AgentsPageClientP
                       exit={{ opacity: 0, y: -6 }}
                     >
                       <div className="rounded-xl border border-[#1E2130] bg-[#12141A] p-5">
-                        <h3 className="text-lg font-semibold mb-1">Performance Trajectory</h3>
-                        <p className="text-sm text-[#8892A4] mb-4">Awaiting data from first completed agent cycles</p>
-                        {isInitializing ? (
+                        <h3 className="text-lg font-semibold mb-1">
+                          {activeAgent.name === 'CORE' ? 'Technical Audit Log' : 'Performance Trajectory'}
+                        </h3>
+                        <p className="text-sm text-[#8892A4] mb-4">
+                          {activeAgent.name === 'CORE' 
+                            ? 'Recent technical fixes and agent actions'
+                            : 'Awaiting data from first completed agent cycles'}
+                        </p>
+                        {activeAgent.name === 'CORE' ? (
+                          <>
+                            {activeAgent.last_error && (
+                              <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                                <div className="text-xs text-red-400 mb-1">Last Error</div>
+                                <div className="text-sm text-red-300">{activeAgent.last_error}</div>
+                              </div>
+                            )}
+                            {loadingAuditLogs ? (
+                              <div className="h-[320px] rounded-lg border border-[#1E2130] bg-[#0E1016] flex items-center justify-center text-sm text-[#8892A4]">
+                                Loading audit logs...
+                              </div>
+                            ) : auditLogs.length === 0 ? (
+                              <div className="h-[320px] rounded-lg border border-[#1E2130] bg-[#0E1016] flex items-center justify-center text-sm text-[#8892A4]">
+                                No audit logs found
+                              </div>
+                            ) : (
+                              <div className="space-y-2 max-h-[320px] overflow-y-auto">
+                                {auditLogs.map((log) => (
+                                  <div key={log.id} className="p-3 bg-[#0E1016] rounded-lg border border-[#1E2130]">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <span className="text-xs text-[#8892A4]">{log.table_name}</span>
+                                      <span className="text-xs text-[#8892A4]">
+                                        {new Date(log.created_at).toLocaleString()}
+                                      </span>
+                                    </div>
+                                    <div className="text-sm text-white mb-1">
+                                      <span className="text-[#7F77DD] font-semibold">{log.action}</span>: {log.record_id}
+                                    </div>
+                                    {log.new_values && typeof log.new_values === 'object' && (
+                                      <div className="text-xs text-[#8892A4] mt-2">
+                                        {JSON.stringify(log.new_values).slice(0, 100)}
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        ) : isInitializing ? (
                           <div className="h-[320px] rounded-lg border border-[#1E2130] bg-[#0E1016] flex items-center justify-center text-sm text-[#8892A4]">
                             N/A — System Initializing
                           </div>
