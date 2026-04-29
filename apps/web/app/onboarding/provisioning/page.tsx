@@ -8,26 +8,26 @@ export const dynamic = "force-dynamic";
 export default async function OnboardingProvisioningPage() {
   const supabase = createSupabaseServerClient();
   const {
-    data: { session }
-  } = await supabase.auth.getSession();
+    data: { user }
+  } = await supabase.auth.getUser();
 
-  if (!session?.user) {
+  if (!user) {
     redirect("/login");
   }
 
-  const fullName = String(session.user.user_metadata?.full_name ?? "").trim() || null;
+  const fullName = String(user.user_metadata?.full_name ?? "").trim() || null;
   const businessName =
-    String(session.user.user_metadata?.business_name ?? "").trim() ||
-    String(session.user.email ?? "").split("@")[0] ||
+    String(user.user_metadata?.business_name ?? "").trim() ||
+    String(user.email ?? "").split("@")[0] ||
     "My Workspace";
 
-  const workspaceResult = await ensureWorkspaceForUser(session.user.id);
+  const workspaceResult = await ensureWorkspaceForUser(user.id);
 
   if (workspaceResult.status === "healthy" && workspaceResult.tenantId) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("provisioning_status")
-      .eq("id", session.user.id)
+      .eq("id", user.id)
       .maybeSingle();
 
     const isDone = profile?.provisioning_status === "completed";

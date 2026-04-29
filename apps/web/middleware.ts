@@ -44,11 +44,11 @@ export async function middleware(req: NextRequest) {
   const isPublicPage = pathname === "/";
   const isEntryPage = isPublicPage || isLoginPage || isSignupPage;
 
+  // Explicit check: if no user, ensure they stay on public pages
   if (!user) {
     if (!isPublicRoute(pathname)) {
       return NextResponse.redirect(withTimestamp(new URL("/", req.url)));
     }
-
     return res;
   }
 
@@ -64,6 +64,9 @@ export async function middleware(req: NextRequest) {
   }
 
   if (isProvisioningPage) {
+    if (!user) {
+      return NextResponse.redirect(withTimestamp(new URL("/login", req.url)));
+    }
     return res;
   }
 

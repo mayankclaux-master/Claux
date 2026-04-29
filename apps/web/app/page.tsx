@@ -11,11 +11,11 @@ export const dynamic = "force-dynamic";
 export default async function HomePage() {
   const supabase = createSupabaseServerClient();
   const {
-    data: { session }
-  } = await supabase.auth.getSession();
+    data: { user }
+  } = await supabase.auth.getUser();
 
-  if (session) {
-    const { data: profile } = await supabase.from("profiles").select("tenant_id, provisioning_status").eq("id", session.user.id).maybeSingle();
+  if (user) {
+    const { data: profile } = await supabase.from("profiles").select("tenant_id, provisioning_status").eq("id", user.id).maybeSingle();
 
     if (profile?.tenant_id) {
       const { data: tenant } = await supabase.from("tenants").select("status").eq("id", profile.tenant_id).maybeSingle();
