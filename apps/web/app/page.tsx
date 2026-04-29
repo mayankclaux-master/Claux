@@ -1,9 +1,39 @@
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+
 import Link from "next/link";
 
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { redirect } from "next/navigation";
 
-export default function HomePage() {
+export const dynamic = "force-dynamic";
+
+export default async function HomePage() {
+  const supabase = createSupabaseServerClient();
+  const {
+    data: { session }
+  } = await supabase.auth.getSession();
+
+  if (session) {
+    const { data: profile } = await supabase.from("profiles").select("tenant_id, provisioning_status").eq("id", session.user.id).maybeSingle();
+
+    if (profile?.tenant_id) {
+      const { data: tenant } = await supabase.from("tenants").select("status").eq("id", profile.tenant_id).maybeSingle();
+
+      const isProvisioningComplete = profile.provisioning_status === "completed";
+      const isTenantActive = tenant?.status === "active";
+      const isFullySetup = isProvisioningComplete && isTenantActive;
+
+      if (isFullySetup) {
+        redirect("/dashboard");
+      } else {
+        redirect("/onboarding");
+      }
+    } else {
+      redirect("/onboarding/provisioning");
+    }
+  }
+
   return (
     <main className="mx-auto flex min-h-screen max-w-5xl flex-col items-center justify-center px-6 text-center">
       <p className="mb-4 rounded-full border border-border bg-card px-4 py-1 text-xs uppercase tracking-[0.22em] text-muted-foreground">
@@ -16,14 +46,8 @@ export default function HomePage() {
         Create your workspace, connect your website, and activate intelligence syncing in under 3 minutes.
       </p>
       <div className="mt-10 flex flex-wrap justify-center gap-3">
-        <Link href="/login" className={cn(buttonVariants({ size: "lg", variant: "secondary" }))}>
-          Sign in
-        </Link>
         <Link href="/auth/signup" className={cn(buttonVariants({ size: "lg" }))}>
-          Create account
-        </Link>
-        <Link href="/onboarding" className={cn(buttonVariants({ size: "lg", variant: "ghost" }))}>
-          Resume onboarding
+          Get Started
         </Link>
       </div>
     </main>

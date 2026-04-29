@@ -235,45 +235,23 @@ export default function OnboardingPage() {
         return;
       }
 
-      const { data: tenant } = await supabase
-        .from("tenants")
-        .select("*")
-        .eq("id", profile.tenant_id)
-        .maybeSingle();
-
-      if (!tenant) {
-        setError("Workspace is still provisioning. Please retry in a moment.");
-        setLoading(false);
-        return;
-      }
-
-      const { data: competitors } = await supabase
-        .from("business_competitors")
-        .select("competitor_url, rank")
-        .eq("tenant_id", profile.tenant_id)
-        .order("rank", { ascending: true });
-
-      const competitorUrls = competitors?.map((entry) => entry.competitor_url) ?? [];
-      const parsedPhone = splitPhone(String(tenant.business_phone ?? ""));
-      const targetMarketType = String(tenant.target_market_type ?? "") === "national" ? "national" : "local_city";
-
       setState({
-        tenantId: String(tenant.id ?? profile.tenant_id),
-        businessName: String(tenant.name ?? ""),
-        category: String(tenant.category ?? ""),
-        phoneCountryCode: parsedPhone.phoneCountryCode,
-        businessPhone: parsedPhone.businessPhone,
-        fullPhysicalAddress: String(tenant.full_physical_address ?? ""),
-        gmbUrl: String(tenant.gmb_url ?? ""),
-        targetMarketType,
-        targetCity: String(tenant.target_city ?? ""),
-        primaryLanguage: String(tenant.primary_language ?? ""),
-        competitorOneUrl: competitorUrls[0] ?? "",
-        competitorTwoUrl: competitorUrls[1] ?? "",
-        competitorThreeUrl: competitorUrls[2] ?? "",
+        tenantId: profile.tenant_id,
+        businessName: "",
+        category: "",
+        phoneCountryCode: "+91",
+        businessPhone: "",
+        fullPhysicalAddress: "",
+        gmbUrl: "",
+        targetMarketType: "local_city",
+        targetCity: "",
+        primaryLanguage: "",
+        competitorOneUrl: "",
+        competitorTwoUrl: "",
+        competitorThreeUrl: "",
         websiteUrl: "",
         hasSearchConsoleAccess: false,
-        isServiceAreaBusiness: Boolean(tenant.is_service_area_business ?? false),
+        isServiceAreaBusiness: false,
         techStack: "unknown",
         detectedStackLabel: "Stack not scanned yet",
         seoHasSsl: null,

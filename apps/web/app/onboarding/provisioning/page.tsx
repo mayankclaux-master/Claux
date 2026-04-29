@@ -41,7 +41,7 @@ export default async function OnboardingProvisioningPage() {
         <p className="text-xs uppercase tracking-[0.2em] text-primary">Workspace Provisioning</p>
         <h1 className="mt-3 text-2xl font-semibold">Setting up your workspace</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Your organization is being initialized securely. This usually takes a few seconds.
+          Your workspace is being initialized securely. This usually takes a few seconds.
         </p>
         <div className="mt-6 inline-flex items-center gap-2 text-sm text-muted-foreground">
           <span className="inline-block h-2 w-2 animate-ping rounded-full bg-emerald-400" />
