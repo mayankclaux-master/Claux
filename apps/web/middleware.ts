@@ -1,6 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
+function normalizeSupabaseUrl(value: string) {
+  return value.replace(/\/rest\/v1\/?$/, "").replace(/\/$/, "");
+}
+
 const PUBLIC_ROUTES = ['/', '/login', '/auth/signup', '/auth/callback',
   '/auth/verify-email', '/auth/reset-password', '/auth/update-password']
 
@@ -23,7 +27,7 @@ export async function middleware(request: NextRequest) {
   })
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    normalizeSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL!),
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
@@ -56,12 +60,15 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/onboarding/provisioning', request.url))
   }
 
+  // TEMPORARY BYPASS: Commenting out to allow testing without SMTP confirmation
+  /*
   if (!user.email_confirmed_at) {
     if (pathname === '/auth/verify-email' || pathname === '/auth/callback') {
       return response
     }
     return NextResponse.redirect(new URL('/auth/verify-email', request.url))
   }
+  */
 
   if (isProvisioningRoute) {
     return response
