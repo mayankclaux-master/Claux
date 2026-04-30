@@ -7,8 +7,17 @@ function normalizeSupabaseUrl(value: string) {
 }
 
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = new URL(request.url)
+  const { searchParams, hash, origin } = new URL(request.url)
   const code = searchParams.get('code')
+
+  // Check for hash fragment errors (implicit flow fallback)
+  if (hash.includes('error=')) {
+    const errorParams = new URLSearchParams(hash.slice(1))
+    const errorCode = errorParams.get('error_code')
+    const errorDesc = errorParams.get('error_description')
+    console.error('Auth callback hash error:', errorCode, errorDesc)
+    return NextResponse.redirect(`${origin}/login?error=${errorCode || 'auth_error'}`)
+  }
 
   if (!code) {
     return NextResponse.redirect(`${origin}/login?error=missing_code`)
@@ -20,6 +29,9 @@ export async function GET(request: NextRequest) {
     normalizeSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL!),
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      auth: {
+        flowType: 'pkce',
+      },
       cookies: {
         getAll() { return cookieStore.getAll() },
         setAll(cookiesToSet: any[]) {

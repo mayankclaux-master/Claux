@@ -154,6 +154,16 @@ export default function OnboardingPage() {
   }
 
   useEffect(() => {
+    // Check for hash fragment errors from Supabase auth
+    if (typeof window !== 'undefined' && window.location.hash.includes('error=')) {
+      const errorParams = new URLSearchParams(window.location.hash.slice(1))
+      const errorCode = errorParams.get('error_code')
+      if (errorCode === 'otp_expired' || errorCode === 'access_denied') {
+        router.replace('/login?error=session_expired')
+        return
+      }
+    }
+
     if (loadedRef.current) return;
     loadedRef.current = true;
 
