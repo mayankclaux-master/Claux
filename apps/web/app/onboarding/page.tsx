@@ -229,7 +229,10 @@ export default function OnboardingPage() {
         return;
       }
 
-      if (profile.provisioning_status === "completed") {
+      // Check if onboarding is actually completed by checking tenant.onboarding_completed
+      const { data: tenant } = await supabase.from("tenants").select("onboarding_completed").eq("id", profile.tenant_id).maybeSingle();
+
+      if (tenant?.onboarding_completed) {
         router.replace(`/dashboard?t=${Date.now()}`);
         router.refresh();
         return;

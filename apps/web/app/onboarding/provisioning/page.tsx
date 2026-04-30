@@ -43,6 +43,22 @@ export default async function ProvisioningPage() {
       .update({ provisioning_status: 'completed' })
       .eq('id', user.id)
 
+    // Update tenant status to 'active' and name to ensure downstream components know provisioning is finished
+    const businessName = user.user_metadata?.business_name || 'My Business'
+    await supabase
+      .from('tenants')
+      .update({ 
+        status: 'active',
+        name: businessName
+      })
+      .eq('id', result.tenantId)
+
+    // Also update business_profiles if it exists with the business name
+    await supabase
+      .from('business_profiles')
+      .update({ business_name: businessName })
+      .eq('tenant_id', result.tenantId)
+
     const { data: tenant } = await supabase
       .from('tenants')
       .select('onboarding_completed')
