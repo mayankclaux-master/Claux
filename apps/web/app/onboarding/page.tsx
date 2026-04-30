@@ -178,29 +178,33 @@ export default function OnboardingPage() {
           return;
         }
 
-        const { data: profile, error: profileError } = await supabase
-          .from("profiles")
-          .select("tenant_id")
-          .eq("id", user.id)
-          .maybeSingle();
+        // FIX: Use API route with service role key to bypass RLS restrictions
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          setLoading(false);
+          router.replace("/login");
+          return;
+        }
 
-        if (profileError) {
+        const response = await fetch("/api/onboarding/get-profile", {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
+
+        if (!response.ok) {
           setError("Failed to load profile. Please refresh.");
           setLoading(false);
           return;
         }
+
+        const { profile, tenant } = await response.json();
 
         if (!profile?.tenant_id) {
           setLoading(false);
           router.replace("/onboarding/provisioning");
           return;
         }
-
-        const { data: tenant } = await supabase
-          .from("tenants")
-          .select("onboarding_completed")
-          .eq("id", profile.tenant_id)
-          .maybeSingle();
 
         if (tenant?.onboarding_completed) {
           setLoading(false);
