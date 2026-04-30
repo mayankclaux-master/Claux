@@ -60,24 +60,19 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/onboarding/provisioning', request.url))
   }
 
-  // TEMPORARY BYPASS: Commenting out to allow testing without SMTP confirmation
-  /*
-  if (!user.email_confirmed_at) {
-    if (pathname === '/auth/verify-email' || pathname === '/auth/callback') {
-      return response
-    }
-    return NextResponse.redirect(new URL('/auth/verify-email', request.url))
-  }
-  */
+  // Email verification disabled for smooth SaaS-like signup experience
+  // Users can proceed immediately after signup without waiting for email confirmation
 
   if (isProvisioningRoute) {
     return response
   }
 
-  if (isOnboardingRoute || isDashboardRoute) {
-    // EXCEPTION: If user is already on /onboarding, don't redirect back to provisioning
-    if (isOnboardingRoute) return response;
+  if (isOnboardingRoute) {
+    // Allow onboarding page to handle its own logic
+    return response
+  }
 
+  if (isDashboardRoute) {
     const { data: profile } = await supabase
       .from('profiles')
       .select('tenant_id, provisioning_status')
@@ -88,16 +83,14 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL('/onboarding/provisioning', request.url))
     }
 
-    if (isDashboardRoute) {
-      const { data: tenant } = await supabase
-        .from('tenants')
-        .select('onboarding_completed')
-        .eq('id', profile.tenant_id)
-        .single()
+    const { data: tenant } = await supabase
+      .from('tenants')
+      .select('onboarding_completed')
+      .eq('id', profile.tenant_id)
+      .single()
 
-      if (!tenant?.onboarding_completed) {
-        return NextResponse.redirect(new URL('/onboarding', request.url))
-      }
+    if (!tenant?.onboarding_completed) {
+      return NextResponse.redirect(new URL('/onboarding', request.url))
     }
   }
 

@@ -31,10 +31,7 @@ export default async function ProvisioningPage() {
     redirect('/login')
   }
 
-  if (!user.email_confirmed_at) {
-    redirect('/auth/verify-email')
-  }
-
+  // Email verification disabled for smooth SaaS-like signup experience
   const result = await ensureWorkspaceForUser(user.id, {
     businessName: user.user_metadata?.business_name,
     fullName: user.user_metadata?.full_name,

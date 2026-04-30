@@ -466,6 +466,9 @@ export default function OnboardingPage() {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl items-center px-6 py-12">
         <p className="w-full text-center text-sm text-muted-foreground">Loading onboarding...</p>
+        {error && (
+          <p className="w-full mt-4 text-center text-sm text-red-500">{error}</p>
+        )}
       </main>
     );
   }
