@@ -75,6 +75,9 @@ export async function middleware(request: NextRequest) {
   }
 
   if (isOnboardingRoute || isDashboardRoute) {
+    // EXCEPTION: If user is already on /onboarding, don't redirect back to provisioning
+    if (isOnboardingRoute) return response;
+
     const { data: profile } = await supabase
       .from('profiles')
       .select('tenant_id, provisioning_status')

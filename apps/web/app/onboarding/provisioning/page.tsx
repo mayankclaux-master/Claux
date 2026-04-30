@@ -37,6 +37,12 @@ export default async function ProvisioningPage() {
   })
 
   if (result.status === 'healthy') {
+    // Fallback: Force profile update to ensure provisioning_status = 'completed'
+    await supabase
+      .from('profiles')
+      .update({ provisioning_status: 'completed' })
+      .eq('id', user.id)
+
     const { data: tenant } = await supabase
       .from('tenants')
       .select('onboarding_completed')
