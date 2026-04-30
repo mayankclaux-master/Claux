@@ -9,8 +9,6 @@ function normalizeSupabaseUrl(value: string) {
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  // Force redirect to provisioning to ensure DB state is synced
-  const next = searchParams.get('next') ?? '/onboarding/provisioning'
 
   if (!code) {
     return NextResponse.redirect(`${origin}/login?error=missing_code`)
@@ -40,6 +38,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`)
   }
 
-  const forwardTo = next.startsWith('/') ? `${origin}${next}` : `${origin}/onboarding/provisioning` 
-  return NextResponse.redirect(forwardTo)
+  return NextResponse.redirect(`${origin}/onboarding/provisioning`)
 }

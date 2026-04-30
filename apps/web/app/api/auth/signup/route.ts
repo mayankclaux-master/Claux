@@ -53,9 +53,7 @@ export async function POST(request: Request) {
   const normalizedEmail = normalizeEmail(String(email));
   const normalizedBusinessName = String(businessName).trim();
   const normalizedFullName = String(fullName ?? "").trim() || null;
-  const emailRedirectTo = request.headers.get("origin")
-    ? `${request.headers.get("origin")}/auth/callback?next=/onboarding`
-    : undefined;
+  const emailRedirectTo = `${process.env.NEXT_PUBLIC_SITE_URL || 'https://claux-xi.vercel.app'}/auth/callback`;
 
   let userId: string | null = null;
   let requiresEmailVerification = true;

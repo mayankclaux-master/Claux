@@ -15,7 +15,11 @@ export function createSupabaseBrowserClient() {
       throw new Error("CRITICAL: Database Keys Missing");
     }
 
-    return createBrowserClient(normalizeSupabaseUrl(supabaseUrl), supabaseAnonKey);
+    return createBrowserClient(normalizeSupabaseUrl(supabaseUrl), supabaseAnonKey, {
+      auth: {
+        flowType: 'pkce',
+      }
+    });
   } catch (error) {
     console.error("CRITICAL: Database Keys Missing", error);
     return "CRITICAL: Database Keys Missing" as never;

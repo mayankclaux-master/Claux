@@ -22,6 +22,9 @@ export function createSupabaseServerClient() {
       normalizeSupabaseUrl(supabaseUrl),
       supabaseAnonKey,
       {
+        auth: {
+          flowType: 'pkce',
+        },
         cookies: {
           get(name: string) {
             return cookieStore.get(name)?.value;
