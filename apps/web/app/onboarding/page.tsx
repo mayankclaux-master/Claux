@@ -169,23 +169,38 @@ export default function OnboardingPage() {
 
     async function loadState() {
       try {
-        // FIX: always getUser() — validates with Supabase Auth server
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        // Retry session hydration check - session cookie may not be fully hydrated at Edge level
+        let user = null;
+        let userError = null;
+        let session = null;
 
-        if (userError || !user) {
+        for (let attempt = 0; attempt < 5; attempt++) {
+          // FIX: always getUser() — validates with Supabase Auth server
+          const userResult = await supabase.auth.getUser();
+          user = userResult.data.user;
+          userError = userResult.error;
+
+          if (!userError && user) {
+            // Session hydrated, get session data
+            const sessionResult = await supabase.auth.getSession();
+            session = sessionResult.data.session;
+            if (session) break;
+          }
+
+          // Wait before retrying (300ms, 600ms, 900ms, 1200ms)
+          if (attempt < 4) {
+            await new Promise(r => setTimeout(r, 300 * (attempt + 1)));
+          }
+        }
+
+        if (userError || !user || !session) {
+          console.error("Session hydration failed after retries:", userError);
           setLoading(false);
           router.replace("/login");
           return;
         }
 
         // FIX: Use API route with service role key to bypass RLS restrictions
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
-          setLoading(false);
-          router.replace("/login");
-          return;
-        }
-
         const response = await fetch("/api/onboarding/get-profile", {
           headers: {
             Authorization: `Bearer ${session.access_token}`,
@@ -193,6 +208,7 @@ export default function OnboardingPage() {
         });
 
         if (!response.ok) {
+          console.error("Profile API response not OK:", response.status);
           setError("Failed to load profile. Please refresh.");
           setLoading(false);
           return;
