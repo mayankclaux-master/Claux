@@ -166,6 +166,7 @@ export default function OnboardingPage() {
     } = await supabase.auth.refreshSession();
 
     if (refreshError || !refreshedSession) {
+      setLoading(false);
       router.replace(`/login?error=auth_session_missing&t=${Date.now()}`);
       router.refresh();
       return false;
@@ -218,6 +219,7 @@ export default function OnboardingPage() {
       } = await supabase.auth.getUser();
 
       if (!user) {
+        setLoading(false);
         router.replace("/");
         return;
       }
@@ -233,6 +235,7 @@ export default function OnboardingPage() {
       const { data: tenant } = await supabase.from("tenants").select("onboarding_completed").eq("id", profile.tenant_id).maybeSingle();
 
       if (tenant?.onboarding_completed) {
+        setLoading(false);
         router.replace(`/dashboard?t=${Date.now()}`);
         router.refresh();
         return;

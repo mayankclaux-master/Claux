@@ -16,7 +16,11 @@ export default async function ProvisioningPage() {
     {
       cookies: {
         getAll() { return cookieStore.getAll() },
-        setAll() {}, // This is fine for Read-only, but the URL was the crash point
+        setAll(cookiesToSet: any[]) {
+          cookiesToSet.forEach(({ name, value, options }: any) =>
+            cookieStore.set(name, value, options)
+          )
+        },
       },
     }
   )
