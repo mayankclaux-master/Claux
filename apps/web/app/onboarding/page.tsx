@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
@@ -58,16 +58,8 @@ const initialState: OnboardingState = {
 };
 
 const CATEGORY_OPTIONS = [
-  "Dental",
-  "E-commerce",
-  "Real Estate",
-  "SaaS",
-  "Legal",
-  "Healthcare",
-  "Education",
-  "Hospitality",
-  "Finance",
-  "Other"
+  "Dental", "E-commerce", "Real Estate", "SaaS", "Legal",
+  "Healthcare", "Education", "Hospitality", "Finance", "Other"
 ];
 
 const PHONE_COUNTRY_CODES = ["+91", "+1", "+44", "+61", "+971"];
@@ -83,97 +75,75 @@ function isValidUrl(value: string) {
 
 function normalizeWebsiteUrlInput(value: string) {
   const trimmed = value.trim();
-
-  if (!trimmed) {
-    return "";
-  }
-
-  if (/^https?:\/\//i.test(trimmed)) {
-    return trimmed;
-  }
-
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
   return `https://${trimmed}`;
 }
 
 function resolveValidWebsiteUrl(value: string) {
   const normalized = normalizeWebsiteUrlInput(value);
-
-  if (!normalized || !isValidUrl(normalized)) {
-    return null;
-  }
-
+  if (!normalized || !isValidUrl(normalized)) return null;
   return normalized;
 }
 
 function detectTechStackFromUrl(url: string) {
   const normalized = url.toLowerCase();
-
-  if (normalized.includes("myshopify.com") || normalized.includes("shopify")) {
-    return "shopify";
-  }
-  if (normalized.includes("wp-") || normalized.includes("wordpress")) {
-    return "wordpress";
-  }
-  if (normalized.includes("laravel")) {
-    return "laravel";
-  }
-  if (normalized.includes("react") || normalized.includes("vercel.app") || normalized.includes("netlify.app")) {
-    return "react";
-  }
-  if (normalized.includes("php")) {
-    return "custom_php";
-  }
-
+  if (normalized.includes("myshopify.com") || normalized.includes("shopify")) return "shopify";
+  if (normalized.includes("wp-") || normalized.includes("wordpress")) return "wordpress";
+  if (normalized.includes("laravel")) return "laravel";
+  if (normalized.includes("react") || normalized.includes("vercel.app") || normalized.includes("netlify.app")) return "react";
+  if (normalized.includes("php")) return "custom_php";
   return "unknown";
 }
 
 function splitPhone(phone: string) {
   const trimmed = phone.trim();
   const matchedPrefix = PHONE_COUNTRY_CODES.find((prefix) => trimmed.startsWith(prefix));
-
-  if (!matchedPrefix) {
-    return { phoneCountryCode: "+91", businessPhone: trimmed };
-  }
-
-  return {
-    phoneCountryCode: matchedPrefix,
-    businessPhone: trimmed.replace(matchedPrefix, "").trim()
-  };
+  if (!matchedPrefix) return { phoneCountryCode: "+91", businessPhone: trimmed };
+  return { phoneCountryCode: matchedPrefix, businessPhone: trimmed.replace(matchedPrefix, "").trim() };
 }
 
 export default function OnboardingPage() {
   const router = useRouter();
+
+  // FIX: memoized client — stable reference, never recreated on re-render
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 
+  // FIX: useRef to prevent double-execution in React StrictMode
+  const loadedRef = useRef(false);
+
+  // FIX: single angle bracket on useState
   const [state, setState] = useState<OnboardingState>(initialState);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [detectingStack, setDetectingStack] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // FIX: postOnboardingJson now uses getUser() not getSession()
   async function postOnboardingJson(path: string, payload: Record<string, unknown>) {
-    const { data: { session } } = await supabase.auth.getSession();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
 
-    if (!session) {
-      const { data: { session: refreshedSession } } = await supabase.auth.refreshSession();
-      if (!refreshedSession) {
+    if (!user || userError) {
+      const { error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError) {
+        router.replace("/login");
         return null;
       }
     }
 
-    let response = await fetch(path, {
+    const response = await fetch(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
 
     if (response.status === 401) {
-      const { data: { session: refreshedSession } } = await supabase.auth.refreshSession();
-      if (!refreshedSession) {
+      const { error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError) {
+        router.replace("/login");
         return null;
       }
-
-      response = await fetch(path, {
+      return fetch(path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -184,70 +154,65 @@ export default function OnboardingPage() {
   }
 
   useEffect(() => {
+    if (loadedRef.current) return;
+    loadedRef.current = true;
+
     async function loadState() {
       try {
-        const { data: { user }, error: userError } = await supabase.auth.getUser()
+        // FIX: always getUser() — validates with Supabase Auth server
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
 
         if (userError || !user) {
-          setLoading(false)
-          router.replace('/login')
-          return
+          setLoading(false);
+          router.replace("/login");
+          return;
         }
 
-        const { data: profile } = await supabase.from("profiles")
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
           .select("tenant_id")
           .eq("id", user.id)
-          .maybeSingle()
+          .maybeSingle();
 
-        if (!profile?.tenant_id) {
-          setLoading(false)
-          router.replace('/onboarding/provisioning')
-          return
+        if (profileError) {
+          setError("Failed to load profile. Please refresh.");
+          setLoading(false);
+          return;
         }
 
-        const { data: tenant } = await supabase.from("tenants")
+        if (!profile?.tenant_id) {
+          setLoading(false);
+          router.replace("/onboarding/provisioning");
+          return;
+        }
+
+        const { data: tenant } = await supabase
+          .from("tenants")
           .select("onboarding_completed")
           .eq("id", profile.tenant_id)
-          .maybeSingle()
+          .maybeSingle();
 
         if (tenant?.onboarding_completed) {
-          setLoading(false)
-          router.replace('/dashboard')
-          return
+          setLoading(false);
+          router.replace("/dashboard");
+          return;
         }
 
         setState({
+          ...initialState,
           tenantId: profile.tenant_id,
-          businessName: "",
-          category: "",
-          phoneCountryCode: "+91",
-          businessPhone: "",
-          fullPhysicalAddress: "",
-          gmbUrl: "",
-          targetMarketType: "local_city",
-          targetCity: "",
-          primaryLanguage: "",
-          competitorOneUrl: "",
-          competitorTwoUrl: "",
-          competitorThreeUrl: "",
-          websiteUrl: "",
-          hasSearchConsoleAccess: false,
-          isServiceAreaBusiness: false,
-          techStack: "unknown",
-          detectedStackLabel: "Stack not scanned yet",
-          seoHasSsl: null,
-          seoHasRobotsTxt: null,
-          shopifyStoreUrl: ""
         });
 
-        setLoading(false)
+        setLoading(false);
       } catch (err) {
-        setError('Something went wrong. Please refresh.')
-        setLoading(false)
+        console.error("Onboarding loadState error:", err);
+        setError("Something went wrong. Please refresh.");
+        setLoading(false);
       }
     }
-    loadState()
-  }, [])
+
+    loadState();
+  }, []);
 
   useEffect(() => {
     const normalizedWebsiteUrl = resolveValidWebsiteUrl(state.websiteUrl);
@@ -274,9 +239,7 @@ export default function OnboardingPage() {
           seoHealth?: { hasSsl: boolean; hasRobotsTxt: boolean };
         };
 
-        if (isCancelled) {
-          return;
-        }
+        if (isCancelled) return;
 
         if (response.ok) {
           setState((prev) => ({
@@ -306,9 +269,7 @@ export default function OnboardingPage() {
           }));
         }
       } finally {
-        if (!isCancelled) {
-          setDetectingStack(false);
-        }
+        if (!isCancelled) setDetectingStack(false);
       }
     }, 900);
 
@@ -409,16 +370,17 @@ export default function OnboardingPage() {
     }
 
     setSaving(false);
-    
-    // Save CMS credentials if tech stack is shopify
+
     if (resolvedTechStack === "shopify" && state.shopifyStoreUrl.trim()) {
       try {
-        const supabase = createSupabaseBrowserClient();
         const { data: { user } } = await supabase.auth.getUser();
-        
         if (user) {
-          const { data: profile } = await supabase.from("profiles").select("tenant_id").eq("id", user.id).maybeSingle();
-          
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("tenant_id")
+            .eq("id", user.id)
+            .maybeSingle();
+
           if (profile?.tenant_id) {
             await supabase.from("cms_credentials").upsert({
               tenant_id: profile.tenant_id,
@@ -426,16 +388,14 @@ export default function OnboardingPage() {
               site_url: state.shopifyStoreUrl.trim(),
               encrypted_credentials: {},
               updated_at: new Date().toISOString()
-            }, {
-              onConflict: "tenant_id,cms_type"
-            });
+            }, { onConflict: "tenant_id,cms_type" });
           }
         }
       } catch (cmsError) {
         console.warn("Failed to save CMS credentials:", cmsError);
       }
     }
-    
+
     router.replace(`/dashboard?t=${Date.now()}`);
     router.refresh();
   }
@@ -443,10 +403,27 @@ export default function OnboardingPage() {
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading onboarding...</p>
-        {error && (
-          <p className="mt-4 text-sm text-red-500">{error}</p>
-        )}
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-sm text-muted-foreground">Loading onboarding...</p>
+          {error && <p className="mt-4 text-sm text-red-500">{error}</p>}
+        </div>
+      </main>
+    );
+  }
+
+  if (!state.tenantId) {
+    return (
+      <main className="flex min-h-screen items-center justify-center">
+        <div className="text-center">
+          <p className="text-sm text-red-500">{error ?? "Unable to load workspace. Please refresh."}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 bg-primary text-primary-foreground text-sm rounded-lg"
+          >
+            Refresh
+          </button>
+        </div>
       </main>
     );
   }
@@ -494,9 +471,7 @@ export default function OnboardingPage() {
                   className="h-10 rounded-md border border-input bg-background px-3 text-sm"
                 >
                   {PHONE_COUNTRY_CODES.map((code) => (
-                    <option key={code} value={code}>
-                      {code}
-                    </option>
+                    <option key={code} value={code}>{code}</option>
                   ))}
                 </select>
                 <Input
@@ -560,7 +535,7 @@ export default function OnboardingPage() {
                 {detectingStack ? "Scanning..." : state.techStack === "unknown" ? "Custom Stack Detected" : state.detectedStackLabel}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                SSL: {state.seoHasSsl === null ? "Unknown" : state.seoHasSsl ? "Enabled" : "Missing"} · Robots.txt: {" "}
+                SSL: {state.seoHasSsl === null ? "Unknown" : state.seoHasSsl ? "Enabled" : "Missing"} · Robots.txt:{" "}
                 {state.seoHasRobotsTxt === null ? "Unknown" : state.seoHasRobotsTxt ? "Found" : "Not Found"}
               </p>
             </div>
