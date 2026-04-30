@@ -151,35 +151,14 @@ export default function OnboardingPage() {
   const [detectingStack, setDetectingStack] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function ensureSessionHeartbeat() {
-    const {
-      data: { session }
-    } = await supabase.auth.getSession();
-
-    if (session) {
-      return true;
-    }
-
-    const {
-      data: { session: refreshedSession },
-      error: refreshError
-    } = await supabase.auth.refreshSession();
-
-    if (refreshError || !refreshedSession) {
-      setLoading(false);
-      router.replace(`/login?error=auth_session_missing&t=${Date.now()}`);
-      router.refresh();
-      return false;
-    }
-
-    return true;
-  }
-
   async function postOnboardingJson(path: string, payload: Record<string, unknown>) {
-    const hasSession = await ensureSessionHeartbeat();
+    const { data: { session } } = await supabase.auth.getSession();
 
-    if (!hasSession) {
-      return null;
+    if (!session) {
+      const { data: { session: refreshedSession } } = await supabase.auth.refreshSession();
+      if (!refreshedSession) {
+        return null;
+      }
     }
 
     let response = await fetch(path, {
@@ -189,9 +168,8 @@ export default function OnboardingPage() {
     });
 
     if (response.status === 401) {
-      const recovered = await ensureSessionHeartbeat();
-
-      if (!recovered) {
+      const { data: { session: refreshedSession } } = await supabase.auth.refreshSession();
+      if (!refreshedSession) {
         return null;
       }
 
@@ -207,69 +185,69 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     async function loadState() {
-      const hasSession = await ensureSessionHeartbeat();
+      try {
+        const { data: { user }, error: userError } = await supabase.auth.getUser()
 
-      if (!hasSession) {
-        setLoading(false);
-        return;
+        if (userError || !user) {
+          setLoading(false)
+          router.replace('/login')
+          return
+        }
+
+        const { data: profile } = await supabase.from("profiles")
+          .select("tenant_id")
+          .eq("id", user.id)
+          .maybeSingle()
+
+        if (!profile?.tenant_id) {
+          setLoading(false)
+          router.replace('/onboarding/provisioning')
+          return
+        }
+
+        const { data: tenant } = await supabase.from("tenants")
+          .select("onboarding_completed")
+          .eq("id", profile.tenant_id)
+          .maybeSingle()
+
+        if (tenant?.onboarding_completed) {
+          setLoading(false)
+          router.replace('/dashboard')
+          return
+        }
+
+        setState({
+          tenantId: profile.tenant_id,
+          businessName: "",
+          category: "",
+          phoneCountryCode: "+91",
+          businessPhone: "",
+          fullPhysicalAddress: "",
+          gmbUrl: "",
+          targetMarketType: "local_city",
+          targetCity: "",
+          primaryLanguage: "",
+          competitorOneUrl: "",
+          competitorTwoUrl: "",
+          competitorThreeUrl: "",
+          websiteUrl: "",
+          hasSearchConsoleAccess: false,
+          isServiceAreaBusiness: false,
+          techStack: "unknown",
+          detectedStackLabel: "Stack not scanned yet",
+          seoHasSsl: null,
+          seoHasRobotsTxt: null,
+          shopifyStoreUrl: ""
+        });
+
+        setLoading(false)
+      } catch (err) {
+        setError('Something went wrong. Please refresh.')
+        setLoading(false)
       }
-
-      const {
-        data: { user }
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        setLoading(false);
-        router.replace("/");
-        return;
-      }
-
-      const { data: profile } = await supabase.from("profiles").select("tenant_id, provisioning_status").eq("id", user.id).maybeSingle();
-
-      if (!profile?.tenant_id) {
-        router.replace("/onboarding/provisioning");
-        return;
-      }
-
-      // Check if onboarding is actually completed by checking tenant.onboarding_completed
-      const { data: tenant } = await supabase.from("tenants").select("onboarding_completed").eq("id", profile.tenant_id).maybeSingle();
-
-      if (tenant?.onboarding_completed) {
-        setLoading(false);
-        router.replace(`/dashboard?t=${Date.now()}`);
-        router.refresh();
-        return;
-      }
-
-      setState({
-        tenantId: profile.tenant_id,
-        businessName: "",
-        category: "",
-        phoneCountryCode: "+91",
-        businessPhone: "",
-        fullPhysicalAddress: "",
-        gmbUrl: "",
-        targetMarketType: "local_city",
-        targetCity: "",
-        primaryLanguage: "",
-        competitorOneUrl: "",
-        competitorTwoUrl: "",
-        competitorThreeUrl: "",
-        websiteUrl: "",
-        hasSearchConsoleAccess: false,
-        isServiceAreaBusiness: false,
-        techStack: "unknown",
-        detectedStackLabel: "Stack not scanned yet",
-        seoHasSsl: null,
-        seoHasRobotsTxt: null,
-        shopifyStoreUrl: ""
-      });
-
-      setLoading(false);
     }
-
-    loadState();
-  }, [router, supabase]);
+    loadState()
+  }, [])
 
   useEffect(() => {
     const normalizedWebsiteUrl = resolveValidWebsiteUrl(state.websiteUrl);
@@ -464,10 +442,10 @@ export default function OnboardingPage() {
 
   if (loading) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-4xl items-center px-6 py-12">
-        <p className="w-full text-center text-sm text-muted-foreground">Loading onboarding...</p>
+      <main className="flex min-h-screen items-center justify-center">
+        <p className="text-sm text-muted-foreground">Loading onboarding...</p>
         {error && (
-          <p className="w-full mt-4 text-center text-sm text-red-500">{error}</p>
+          <p className="mt-4 text-sm text-red-500">{error}</p>
         )}
       </main>
     );
