@@ -1,6 +1,18 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { auth } from "@clerk/nextjs/server";
 
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+function normalizeSupabaseUrl(value: string) {
+  return value.replace(/\/rest\/v1\/?$/, "").replace(/\/$/, "");
+}
+
+function createServiceRoleClient() {
+  return createClient(
+    normalizeSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL!),
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+}
 
 type CompleteOnboardingRequest = {
   tenant_id: string;
@@ -40,24 +52,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Incomplete onboarding payload." }, { status: 400 });
   }
 
-  const supabase = createSupabaseServerClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
+  // Verify Clerk authentication
+  const { userId } = await auth();
 
-  if (!user) {
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const { data: profile, error: profileError } = await supabase
+  const admin = createServiceRoleClient();
+
+  const { data: profile, error: profileError } = await admin
     .from("profiles")
     .select("tenant_id")
-    .eq("id", user.id)
+    .eq("id", userId)
     .maybeSingle();
 
   if (profileError) {
     console.error("[onboarding-complete] profile lookup failed", {
-      userId: user.id,
+      userId,
       message: profileError?.message,
       hint: profileError?.hint,
       code: profileError?.code
@@ -69,7 +81,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Forbidden tenant access." }, { status: 403 });
   }
 
-  const { error: completionError } = await supabase.rpc("complete_onboarding", {
+  const { error: completionError } = await admin.rpc("complete_onboarding", {
     p_tenant_id: tenant_id,
     p_business_name: business_name.trim(),
     p_category: category.trim(),

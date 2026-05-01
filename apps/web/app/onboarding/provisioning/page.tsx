@@ -1,7 +1,6 @@
 import { redirect } from 'next/navigation'
-import { createServerClient } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
-import { cookies } from 'next/headers'
+import { auth } from '@clerk/nextjs/server'
 
 function normalizeSupabaseUrl(value: string) {
   return value.replace(/\/rest\/v1\/?$/, '').replace(/\/$/, '')
@@ -29,44 +28,25 @@ async function waitForAuthUser(admin: ReturnType<typeof createAdminClient>, user
 }
 
 export default async function ProvisioningPage() {
-  const cookieStore = await cookies()
+  // Get Clerk user ID
+  const { userId } = await auth()
 
-  const supabase = createServerClient(
-    normalizeSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL!),
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      auth: {
-        flowType: 'pkce',
-      },
-      cookies: {
-        getAll() { return cookieStore.getAll() },
-        setAll(cookiesToSet: any[]) {
-          cookiesToSet.forEach(({ name, value, options }: any) =>
-            cookieStore.set(name, value, options)
-          )
-        },
-      },
-    }
-  )
-
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-  if (!user || authError) {
+  if (!userId) {
     redirect('/login')
   }
 
-  const eventId = `ws_${user.id.slice(0, 8)}_${Date.now()}` 
+  const eventId = `ws_${userId.slice(0, 8)}_${Date.now()}` 
   const admin = createAdminClient()
 
-  const authReady = await waitForAuthUser(admin, user.id)
+  const authReady = await waitForAuthUser(admin, userId)
   if (!authReady) {
     return <ProvisioningError eventId={eventId} error="AUTH_USER_SYNC_TIMEOUT" />
   }
 
   const { data: rpcData, error: rpcError } = await admin.rpc('bootstrap_tenant_for_user', {
-    p_user_id:     user.id,
-    p_tenant_name: user.user_metadata?.business_name ?? 'My Business',
-    p_full_name:   user.user_metadata?.full_name ?? '',
+    p_user_id:     userId,
+    p_tenant_name: 'My Business', // TODO: Get from Clerk user metadata
+    p_full_name:   '', // TODO: Get from Clerk user metadata
   })
 
   if (rpcError) {
@@ -77,16 +57,12 @@ export default async function ProvisioningPage() {
 
   await admin.from('tenants').update({
     status: 'active',
-    name: user.user_metadata?.business_name ?? 'My Business',
+    name: 'My Business', // TODO: Get from Clerk user metadata
   }).eq('id', result.tenant_id)
 
-  await admin.from('profiles').update({ provisioning_status: 'completed' }).eq('id', user.id)
+  await admin.from('profiles').update({ provisioning_status: 'completed' }).eq('id', userId)
 
-  if (user.user_metadata?.business_name) {
-    await admin.from('business_profiles').update({ 
-      business_name: user.user_metadata.business_name 
-    }).eq('tenant_id', result.tenant_id)
-  }
+  // TODO: Update business_profiles when Clerk metadata is available
 
   const { data: tenant } = await admin.from('tenants')
     .select('onboarding_completed')

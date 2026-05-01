@@ -1,16 +1,18 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-
-function normalizeSupabaseUrl(value: string) {
-  return value.replace(/\/rest\/v1\/?$/, "").replace(/\/$/, "");
-}
+import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 
 const PUBLIC_ROUTES = ['/', '/login', '/auth/signup', '/auth/callback',
   '/auth/verify-email', '/auth/reset-password', '/auth/update-password']
 
 const AUTH_ONLY_ROUTES = ['/login', '/auth/signup']
 
-export async function middleware(request: NextRequest) {
+const isPublicRoute = createRouteMatcher([...PUBLIC_ROUTES].map(route => route))
+const isAuthOnlyRoute = createRouteMatcher([...AUTH_ONLY_ROUTES].map(route => route))
+const isProvisioningRoute = createRouteMatcher(['/onboarding/provisioning'])
+const isOnboardingRoute = createRouteMatcher(['/onboarding'])
+const isDashboardRoute = createRouteMatcher(['/dashboard(.*)'])
+
+export default clerkMiddleware(async (auth, request) => {
   const { pathname } = request.nextUrl
 
   if (
@@ -22,83 +24,35 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  let response = NextResponse.next({
-    request: { headers: request.headers },
-  })
+  const { userId } = await auth()
 
-  const supabase = createServerClient(
-    normalizeSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL!),
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      auth: {
-        flowType: 'pkce',
-      },
-      cookies: {
-        getAll() { return request.cookies.getAll() },
-        setAll(cookiesToSet: any[]) {
-          cookiesToSet.forEach(({ name, value }: any) => request.cookies.set(name, value))
-          response = NextResponse.next({ request: { headers: request.headers } })
-          cookiesToSet.forEach(({ name, value, options }: any) =>
-            response.cookies.set(name, value, options)
-          )
-        },
-      },
-    }
-  )
-
-  const { data: { user }, error: userError } = await supabase.auth.getUser()
-
-  const isPublicRoute = PUBLIC_ROUTES.includes(pathname)
-  const isAuthOnlyRoute = AUTH_ONLY_ROUTES.includes(pathname)
-  const isProvisioningRoute = pathname === '/onboarding/provisioning'
-  const isOnboardingRoute = pathname === '/onboarding'
-  const isDashboardRoute = pathname.startsWith('/dashboard')
-
-  if (!user || userError) {
-    if (isPublicRoute) return response
-    return NextResponse.redirect(new URL('/login', request.url))
+  // Allow public routes without authentication
+  if (isPublicRoute(request)) {
+    return NextResponse.next()
   }
 
-  if (isAuthOnlyRoute) {
+  // Redirect authenticated users away from auth-only routes
+  if (isAuthOnlyRoute(request) && userId) {
     return NextResponse.redirect(new URL('/onboarding/provisioning', request.url))
   }
 
-  // Email verification disabled for smooth SaaS-like signup experience
-  // Users can proceed immediately after signup without waiting for email confirmation
-
-  if (isProvisioningRoute) {
-    return response
+  // Require authentication for protected routes
+  if (!userId) {
+    return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  if (isOnboardingRoute) {
-    // Allow onboarding page to handle its own logic
-    return response
+  // Allow provisioning and onboarding routes to handle their own logic
+  if (isProvisioningRoute(request) || isOnboardingRoute(request)) {
+    return NextResponse.next()
   }
 
-  if (isDashboardRoute) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('tenant_id, provisioning_status')
-      .eq('id', user.id)
-      .single()
-
-    if (!profile?.tenant_id || profile.provisioning_status !== 'completed') {
-      return NextResponse.redirect(new URL('/onboarding/provisioning', request.url))
-    }
-
-    const { data: tenant } = await supabase
-      .from('tenants')
-      .select('onboarding_completed')
-      .eq('id', profile.tenant_id)
-      .single()
-
-    if (!tenant?.onboarding_completed) {
-      return NextResponse.redirect(new URL('/onboarding', request.url))
-    }
+  // Dashboard routes require profile/tenant checks (will be handled by page logic)
+  if (isDashboardRoute(request)) {
+    return NextResponse.next()
   }
 
-  return response
-}
+  return NextResponse.next()
+})
 
 export const config = {
   matcher: [

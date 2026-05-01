@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useUser } from "@clerk/nextjs";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type OnboardingState = {
   tenantId: string;
@@ -105,9 +105,7 @@ function splitPhone(phone: string) {
 
 export default function OnboardingPage() {
   const router = useRouter();
-
-  // FIX: memoized client — stable reference, never recreated on re-render
-  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  const { user, isLoaded: isUserLoaded } = useUser();
 
   // FIX: useRef to prevent double-execution in React StrictMode
   const loadedRef = useRef(false);
@@ -119,18 +117,8 @@ export default function OnboardingPage() {
   const [detectingStack, setDetectingStack] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // FIX: postOnboardingJson now uses getUser() not getSession()
+  // FIX: postOnboardingJson now relies on Clerk middleware auth
   async function postOnboardingJson(path: string, payload: Record<string, unknown>) {
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-    if (!user || userError) {
-      const { error: refreshError } = await supabase.auth.refreshSession();
-      if (refreshError) {
-        router.replace("/login");
-        return null;
-      }
-    }
-
     const response = await fetch(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -138,74 +126,35 @@ export default function OnboardingPage() {
     });
 
     if (response.status === 401) {
-      const { error: refreshError } = await supabase.auth.refreshSession();
-      if (refreshError) {
-        router.replace("/login");
-        return null;
-      }
-      return fetch(path, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
+      router.replace("/login");
+      return null;
     }
 
     return response;
   }
 
   useEffect(() => {
-    // Check for hash fragment errors from Supabase auth
-    if (typeof window !== 'undefined' && window.location.hash.includes('error=')) {
-      const errorParams = new URLSearchParams(window.location.hash.slice(1))
-      const errorCode = errorParams.get('error_code')
-      if (errorCode === 'otp_expired' || errorCode === 'access_denied') {
-        router.replace('/login?error=session_expired')
-        return
-      }
-    }
-
     if (loadedRef.current) return;
     loadedRef.current = true;
 
     async function loadState() {
       try {
-        // Retry session hydration check - session cookie may not be fully hydrated at Edge level
-        let user = null;
-        let userError = null;
-        let session = null;
-
-        for (let attempt = 0; attempt < 5; attempt++) {
-          // FIX: always getUser() — validates with Supabase Auth server
-          const userResult = await supabase.auth.getUser();
-          user = userResult.data.user;
-          userError = userResult.error;
-
-          if (!userError && user) {
-            // Session hydrated, get session data
-            const sessionResult = await supabase.auth.getSession();
-            session = sessionResult.data.session;
-            if (session) break;
-          }
-
-          // Wait before retrying (300ms, 600ms, 900ms, 1200ms)
-          if (attempt < 4) {
-            await new Promise(r => setTimeout(r, 300 * (attempt + 1)));
-          }
+        // Wait for Clerk user to load
+        if (!isUserLoaded) {
+          setLoading(false);
+          return;
         }
 
-        if (userError || !user || !session) {
-          console.error("Session hydration failed after retries:", userError);
+        // Check if user is authenticated with Clerk
+        if (!user) {
+          console.error("User not authenticated with Clerk");
           setLoading(false);
           router.replace("/login");
           return;
         }
 
-        // FIX: Use API route with service role key to bypass RLS restrictions
-        const response = await fetch("/api/onboarding/get-profile", {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        });
+        // FIX: Use API route with Clerk auth (middleware handles auth)
+        const response = await fetch("/api/onboarding/get-profile");
 
         if (!response.ok) {
           console.error("Profile API response not OK:", response.status);
@@ -401,29 +350,9 @@ export default function OnboardingPage() {
 
     setSaving(false);
 
+    // TODO: Implement CMS credential saving via API route with Clerk auth
     if (resolvedTechStack === "shopify" && state.shopifyStoreUrl.trim()) {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("tenant_id")
-            .eq("id", user.id)
-            .maybeSingle();
-
-          if (profile?.tenant_id) {
-            await supabase.from("cms_credentials").upsert({
-              tenant_id: profile.tenant_id,
-              cms_type: "shopify",
-              site_url: state.shopifyStoreUrl.trim(),
-              encrypted_credentials: {},
-              updated_at: new Date().toISOString()
-            }, { onConflict: "tenant_id,cms_type" });
-          }
-        }
-      } catch (cmsError) {
-        console.warn("Failed to save CMS credentials:", cmsError);
-      }
+      console.warn("CMS credential saving needs to be implemented with Clerk auth");
     }
 
     router.replace(`/dashboard?t=${Date.now()}`);

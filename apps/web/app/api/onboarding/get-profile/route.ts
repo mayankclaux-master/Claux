@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { auth } from "@clerk/nextjs/server";
 
 function normalizeSupabaseUrl(value: string) {
   return value.replace(/\/rest\/v1\/?$/, "").replace(/\/$/, "");
@@ -15,20 +16,14 @@ function createServiceRoleClient() {
 
 export async function GET(request: Request) {
   try {
-    const authHeader = request.headers.get("authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
+    // Verify Clerk authentication
+    const { userId } = await auth();
+
+    if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const token = authHeader.substring(7);
     const admin = createServiceRoleClient();
-
-    // Verify the token and get user
-    const { data: { user }, error: userError } = await admin.auth.getUser(token);
-
-    if (userError || !user) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-    }
 
     // Fetch profile using service role key (bypasses RLS)
     // Retry up to 3 times with exponential backoff for transient delays
@@ -39,7 +34,7 @@ export async function GET(request: Request) {
       const result = await admin
         .from("profiles")
         .select("tenant_id, provisioning_status")
-        .eq("id", user.id)
+        .eq("id", userId)
         .maybeSingle();
 
       profile = result.data;

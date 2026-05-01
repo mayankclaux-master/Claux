@@ -10,18 +10,11 @@ export async function GET(request: NextRequest) {
   const { searchParams, hash, origin } = new URL(request.url)
   const code = searchParams.get('code')
 
-  // Check for hash fragment errors (implicit flow fallback)
-  if (hash.includes('error=')) {
-    const errorParams = new URLSearchParams(hash.slice(1))
-    const errorCode = errorParams.get('error_code')
-    const errorDesc = errorParams.get('error_description')
-    console.error('Auth callback hash error:', errorCode, errorDesc)
-    return NextResponse.redirect(`${origin}/login?error=${errorCode || 'auth_error'}`)
-  }
-
-  if (!code) {
-    return NextResponse.redirect(`${origin}/login?error=missing_code`)
-  }
+  console.log('Auth callback invoked:', {
+    hasCode: !!code,
+    hasHash: !!hash,
+    url: request.url
+  })
 
   const cookieStore = await cookies()
 
@@ -43,12 +36,49 @@ export async function GET(request: NextRequest) {
     }
   )
 
+  // Check for hash fragment errors (implicit flow fallback)
+  if (hash.includes('error=')) {
+    const errorParams = new URLSearchParams(hash.slice(1))
+    const errorCode = errorParams.get('error_code')
+    const errorDesc = errorParams.get('error_description')
+    console.error('Auth callback hash error:', errorCode, errorDesc)
+    
+    // Fallback: check if user already has a valid session despite hash error
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      console.log('Hash error but user has valid session, proceeding to provisioning')
+      return NextResponse.redirect(`${origin}/onboarding/provisioning`)
+    }
+    
+    return NextResponse.redirect(`${origin}/login?error=${errorCode || 'auth_error'}`)
+  }
+
+  if (!code) {
+    // Fallback: check if user already has a valid session without code
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      console.log('No code but user has valid session, proceeding to provisioning')
+      return NextResponse.redirect(`${origin}/onboarding/provisioning`)
+    }
+    
+    return NextResponse.redirect(`${origin}/login?error=missing_code`)
+  }
+
   const { error } = await supabase.auth.exchangeCodeForSession(code)
 
   if (error) {
-    console.error('Auth callback error:', error.message)
+    console.error('Auth callback code exchange error:', error.message)
+    
+    // Fallback: check if user already has a valid session despite code exchange failure
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      console.log('Code exchange failed but user has valid session, proceeding to provisioning')
+      return NextResponse.redirect(`${origin}/onboarding/provisioning`)
+    }
+    
     return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`)
   }
 
+  console.log('Auth callback successful, redirecting to provisioning')
   return NextResponse.redirect(`${origin}/onboarding/provisioning`)
 }
