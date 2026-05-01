@@ -18,10 +18,10 @@ export function createSupabaseAdminClient() {
 
   const normalizedUrl = normalizeSupabaseUrl(supabaseUrl);
 
-  console.log("[supabase-admin] Initializing admin client", {
-    normalizedUrl,
-    serviceRoleKeyLength: serviceRoleKey.length
-  });
+  // console.log("[supabase-admin] Initializing admin client", {
+  //   normalizedUrl,
+  //   serviceRoleKeyLength: serviceRoleKey.length
+  // });
 
   return createClient(normalizedUrl, serviceRoleKey, {
     auth: {

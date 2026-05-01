@@ -5,7 +5,7 @@ function normalizeSupabaseUrl(value: string) {
   return value.replace(/\/rest\/v1\/?$/, "").replace(/\/$/, "");
 }
 
-console.log("SUPABASE URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
+// console.log("SUPABASE URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
 
 export function createSupabaseServerClient() {
   try {
