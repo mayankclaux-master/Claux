@@ -1,18 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { auth } from "@clerk/nextjs/server";
-
-function normalizeSupabaseUrl(value: string) {
-  return value.replace(/\/rest\/v1\/?$/, "").replace(/\/$/, "");
-}
-
-function createServiceRoleClient() {
-  return createClient(
-    normalizeSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL!),
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  );
-}
+import { createClerkSupabaseClient } from "@/lib/supabase/admin";
 
 type CompleteOnboardingRequest = {
   tenant_id: string;
@@ -52,16 +40,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Incomplete onboarding payload." }, { status: 400 });
   }
 
-  // Verify Clerk authentication
-  const { userId } = await auth();
+  // Verify Clerk authentication and extract JWT
+  const { userId, getToken } = await auth();
+  const token = await getToken({ template: "supabase" });
 
-  if (!userId) {
+  if (!userId || !token) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const admin = createServiceRoleClient();
+  const supabase = createClerkSupabaseClient(token);
 
-  const { data: profile, error: profileError } = await admin
+  const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("tenant_id")
     .eq("id", userId)
@@ -81,7 +70,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Forbidden tenant access." }, { status: 403 });
   }
 
-  const { error: completionError } = await admin.rpc("complete_onboarding", {
+  const { error: completionError } = await supabase.rpc("complete_onboarding", {
     p_tenant_id: tenant_id,
     p_business_name: business_name.trim(),
     p_category: category.trim(),

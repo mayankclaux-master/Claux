@@ -29,10 +29,11 @@ function detectTechStackFromSignals(headers: Headers, html: string) {
 }
 
 export async function POST(request: Request) {
-  // Verify Clerk authentication
-  const { userId } = await auth();
+  // Verify Clerk authentication and extract JWT
+  const { userId, getToken } = await auth();
+  const token = await getToken({ template: "supabase" });
 
-  if (!userId) {
+  if (!userId || !token) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

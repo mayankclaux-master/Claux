@@ -1,39 +1,28 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { auth } from "@clerk/nextjs/server";
+import { createClerkSupabaseClient } from "@/lib/supabase/admin";
 
 export const dynamic = 'force-dynamic';
 
-function normalizeSupabaseUrl(value: string) {
-  return value.replace(/\/rest\/v1\/?$/, "").replace(/\/$/, "");
-}
-
-function createServiceRoleClient() {
-  return createClient(
-    normalizeSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL!),
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  );
-}
-
 export async function GET(request: Request) {
   try {
-    // Verify Clerk authentication
-    const { userId } = await auth();
+    // Verify Clerk authentication and extract JWT
+    const { userId, getToken } = await auth();
+    const token = await getToken({ template: "supabase" });
 
-    if (!userId) {
+    if (!userId || !token) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const admin = createServiceRoleClient();
+    const supabase = createClerkSupabaseClient(token);
 
-    // Fetch profile using service role key (bypasses RLS)
+    // Fetch profile using Clerk JWT (with RLS)
     // Retry up to 3 times with exponential backoff for transient delays
     let profile = null;
     let profileError = null;
 
     for (let attempt = 0; attempt < 3; attempt++) {
-      const result = await admin
+      const result = await supabase
         .from("profiles")
         .select("tenant_id, provisioning_status")
         .eq("id", userId)
@@ -62,7 +51,7 @@ export async function GET(request: Request) {
       let tenantError = null;
 
       for (let attempt = 0; attempt < 3; attempt++) {
-        const result = await admin
+        const result = await supabase
           .from("tenants")
           .select("onboarding_completed")
           .eq("id", profile.tenant_id)

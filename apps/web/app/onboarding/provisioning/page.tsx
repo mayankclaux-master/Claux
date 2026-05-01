@@ -1,24 +1,17 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@supabase/supabase-js'
 import { auth, currentUser } from '@clerk/nextjs/server'
+import { createClerkSupabaseClient } from '@/lib/supabase/admin'
 
 function normalizeSupabaseUrl(value: string) {
   return value.replace(/\/rest\/v1\/?$/, '').replace(/\/$/, '')
 }
 
-function createAdminClient() {
-  return createClient(
-    normalizeSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL!),
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  )
-}
-
 export default async function ProvisioningPage() {
-  // Get Clerk user ID
-  const { userId } = await auth()
+  // Get Clerk user ID and JWT
+  const { userId, getToken } = await auth()
+  const token = await getToken({ template: "supabase" })
 
-  if (!userId) {
+  if (!userId || !token) {
     redirect('/login')
   }
 
@@ -26,7 +19,7 @@ export default async function ProvisioningPage() {
   const user = await currentUser()
 
   const eventId = `ws_${userId.slice(0, 8)}_${Date.now()}`
-  const admin = createAdminClient()
+  const admin = createClerkSupabaseClient(token)
 
   // Extract user metadata from Clerk
   const businessName = user?.unsafeMetadata?.businessName as string || user?.firstName || 'My Business'
