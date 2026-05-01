@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
 
 type ScanRequest = {
   websiteUrl: string;
@@ -28,6 +29,13 @@ function detectTechStackFromSignals(headers: Headers, html: string) {
 }
 
 export async function POST(request: Request) {
+  // Verify Clerk authentication
+  const { userId } = await auth();
+
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { websiteUrl } = (await request.json()) as ScanRequest;
 
   if (!websiteUrl) {

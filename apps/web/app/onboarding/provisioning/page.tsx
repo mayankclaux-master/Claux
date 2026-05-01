@@ -14,19 +14,6 @@ function createAdminClient() {
   )
 }
 
-const MAX_AUTH_WAIT_MS = 8000
-const AUTH_POLL_INTERVAL_MS = 400
-
-async function waitForAuthUser(admin: ReturnType<typeof createAdminClient>, userId: string) {
-  const deadline = Date.now() + MAX_AUTH_WAIT_MS
-  while (Date.now() < deadline) {
-    const { data } = await admin.auth.admin.getUserById(userId)
-    if (data?.user?.id) return true
-    await new Promise(r => setTimeout(r, AUTH_POLL_INTERVAL_MS))
-  }
-  return false
-}
-
 export default async function ProvisioningPage() {
   // Get Clerk user ID
   const { userId } = await auth()
@@ -35,14 +22,10 @@ export default async function ProvisioningPage() {
     redirect('/login')
   }
 
-  const eventId = `ws_${userId.slice(0, 8)}_${Date.now()}` 
+  const eventId = `ws_${userId.slice(0, 8)}_${Date.now()}`
   const admin = createAdminClient()
 
-  const authReady = await waitForAuthUser(admin, userId)
-  if (!authReady) {
-    return <ProvisioningError eventId={eventId} error="AUTH_USER_SYNC_TIMEOUT" />
-  }
-
+  // Directly bootstrap tenant with Clerk userId - no Supabase auth sync needed
   const { data: rpcData, error: rpcError } = await admin.rpc('bootstrap_tenant_for_user', {
     p_user_id:     userId,
     p_tenant_name: 'My Business', // TODO: Get from Clerk user metadata
