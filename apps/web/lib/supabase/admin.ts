@@ -46,10 +46,6 @@ export function createClerkSupabaseClient(token: string) {
   const normalizedUrl = normalizeSupabaseUrl(supabaseUrl);
 
   return createClient(normalizedUrl, supabaseAnonKey, {
-    global: {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    },
+    accessToken: async () => token,
   });
 }
