@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { env } from "@/lib/env";
+import { getAppUrl } from "@/lib/config/app-url";
 
 const USER_LIST_PAGE_SIZE = 200;
 
@@ -55,7 +56,7 @@ export async function POST(request: Request) {
   const normalizedBusinessName = String(businessName).trim();
   const normalizedFullName = String(fullName ?? "").trim() || null;
   
-  const appUrl = env.NEXT_PUBLIC_APP_URL || env.NEXT_PUBLIC_SITE_URL || 'https://claux-xi.vercel.app';
+  const appUrl = getAppUrl();
   const emailRedirectTo = `${appUrl}/auth/callback`;
 
   let userId: string | null = null;

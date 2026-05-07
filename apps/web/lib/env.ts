@@ -15,6 +15,12 @@ function getEnvVar(key: string, required: boolean): string | undefined {
 
 // Required environment variables (needed for app to function)
 export const env = {
+  // Application URL - validated at runtime by getAppUrl()
+  NEXT_PUBLIC_APP_URL: getEnvVar('NEXT_PUBLIC_APP_URL', false),
+  
+  // Legacy: NEXT_PUBLIC_SITE_URL (deprecated, use NEXT_PUBLIC_APP_URL instead)
+  NEXT_PUBLIC_SITE_URL: getEnvVar('NEXT_PUBLIC_SITE_URL', false),
+  
   // Supabase - required for all database operations
   NEXT_PUBLIC_SUPABASE_URL: getEnvVar('NEXT_PUBLIC_SUPABASE_URL', true),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: getEnvVar('NEXT_PUBLIC_SUPABASE_ANON_KEY', true),
@@ -24,10 +30,6 @@ export const env = {
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: getEnvVar('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', true),
   CLERK_SECRET_KEY: getEnvVar('CLERK_SECRET_KEY', true),
   CLERK_WEBHOOK_SECRET: getEnvVar('CLERK_WEBHOOK_SECRET', true),
-  
-  // Application URLs - optional with fallbacks for redirects
-  NEXT_PUBLIC_APP_URL: getEnvVar('NEXT_PUBLIC_APP_URL', false),
-  NEXT_PUBLIC_SITE_URL: getEnvVar('NEXT_PUBLIC_SITE_URL', false),
   
   // Integration encryption - optional (only needed for token storage)
   INTEGRATION_ENCRYPTION_KEY: getEnvVar('INTEGRATION_ENCRYPTION_KEY', false),

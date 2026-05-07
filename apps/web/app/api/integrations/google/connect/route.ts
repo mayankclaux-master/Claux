@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClerkSupabaseClient } from "@/lib/supabase/admin";
 import { env } from "@/lib/env";
+import { getAppUrl } from "@/lib/config/app-url";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,7 @@ export async function GET(request: Request) {
 
   // Google OAuth configuration
   const clientId = env.GOOGLE_OAUTH_CLIENT_ID;
-  const appUrl = env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  const appUrl = getAppUrl();
   const redirectUri = `${appUrl}/api/integrations/google/callback`;
 
   if (!clientId) {

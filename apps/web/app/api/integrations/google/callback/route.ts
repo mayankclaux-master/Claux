@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { createClerkSupabaseClient } from "@/lib/supabase/admin";
 import { encryptSecret, ensureIntegrationRow, updateIntegrationStatus } from "@/lib/integrations/utils";
 import { env } from "@/lib/env";
+import { getAppUrl } from "@/lib/config/app-url";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export async function GET(request: Request) {
   const state = searchParams.get("state");
 
   if (!code || !state) {
-    const appUrl = env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const appUrl = getAppUrl();
     return NextResponse.redirect(`${appUrl}/dashboard/settings/integrations?error=missing_params`);
   }
 
@@ -24,11 +25,11 @@ export async function GET(request: Request) {
     // Validate OAuth credentials
     if (!env.GOOGLE_OAUTH_CLIENT_ID || !env.GOOGLE_OAUTH_CLIENT_SECRET) {
       console.error("Google OAuth not configured");
-      const appUrl = env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      const appUrl = getAppUrl();
       return NextResponse.redirect(`${appUrl}/dashboard/settings/integrations?error=oauth_not_configured`);
     }
 
-    const appUrl = env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const appUrl = getAppUrl();
 
     // Exchange code for tokens
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
@@ -96,7 +97,7 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${appUrl}/dashboard/settings/integrations?success=connected`);
   } catch (error) {
     console.error("OAuth callback error:", error);
-    const appUrl = env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const appUrl = getAppUrl();
     return NextResponse.redirect(`${appUrl}/dashboard/settings/integrations?error=callback_error`);
   }
 }
