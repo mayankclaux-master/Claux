@@ -39,7 +39,20 @@ export async function GET(request: Request) {
   const appUrl = getAppUrl();
   const redirectUri = `${appUrl}/api/integrations/google/callback`;
 
+  // Runtime trace for debugging
+  console.log("[Google OAuth Connect] Runtime values:", {
+    hasClientId: !!env.GOOGLE_OAUTH_CLIENT_ID,
+    clientIdPreview: env.GOOGLE_OAUTH_CLIENT_ID?.slice(0, 20),
+    clientIdLength: env.GOOGLE_OAUTH_CLIENT_ID?.length,
+    appUrl,
+    redirectUri,
+    hasClientSecret: !!env.GOOGLE_OAUTH_CLIENT_SECRET,
+    clientSecretLength: env.GOOGLE_OAUTH_CLIENT_SECRET?.length,
+    nodeEnv: process.env.NODE_ENV,
+  });
+
   if (!clientId) {
+    console.error("[Google OAuth Connect] Missing GOOGLE_OAUTH_CLIENT_ID");
     return NextResponse.json({ error: "Google OAuth not configured" }, { status: 500 });
   }
 
@@ -66,6 +79,8 @@ export async function GET(request: Request) {
   authUrl.searchParams.set("access_type", "offline");
   authUrl.searchParams.set("prompt", "consent");
   authUrl.searchParams.set("state", state);
+
+  console.log("[Google OAuth Connect] Final auth URL:", authUrl.toString());
 
   return NextResponse.redirect(authUrl.toString());
 }
