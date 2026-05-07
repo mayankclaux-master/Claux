@@ -5,6 +5,7 @@ import { GeistMono } from "geist/font/mono";
 import type { Metadata } from "next";
 import { TenantProvider } from "@/contexts/TenantContext";
 import { ClerkProvider } from "@clerk/nextjs";
+import { env } from "@/lib/env";
 
 export const metadata: Metadata = {
   title: "CLAUX",
@@ -16,7 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className="dark">
       <body className={`${GeistSans.variable} ${GeistMono.variable} font-sans`}>
         <ClerkProvider
-          publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+          publishableKey={env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
         >
           <TenantProvider>{children}</TenantProvider>
         </ClerkProvider>

@@ -1,51 +1,38 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { env } from "@/lib/env";
 
 function normalizeSupabaseUrl(value: string) {
   return value.replace(/\/rest\/v1\/?$/, "").replace(/\/$/, "");
 }
 
-// console.log("SUPABASE URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
-
 export function createSupabaseServerClient() {
-  try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const cookieStore = cookies();
 
-    if (!supabaseUrl || !supabaseAnonKey) {
-      throw new Error("CRITICAL: Database Keys Missing");
-    }
-
-    const cookieStore = cookies();
-
-    return createServerClient(
-      normalizeSupabaseUrl(supabaseUrl),
-      supabaseAnonKey,
-      {
-        auth: {},
-        cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value;
-          },
-          set(name: string, value: string, options: Record<string, unknown>) {
-            try {
-              cookieStore.set({ name, value, ...options });
-            } catch {
-              return;
-            }
-          },
-          remove(name: string, options: Record<string, unknown>) {
-            try {
-              cookieStore.set({ name, value: "", ...options });
-            } catch {
-              return;
-            }
+  return createServerClient(
+    normalizeSupabaseUrl(env.NEXT_PUBLIC_SUPABASE_URL),
+    env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    {
+      auth: {},
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value;
+        },
+        set(name: string, value: string, options: Record<string, unknown>) {
+          try {
+            cookieStore.set({ name, value, ...options });
+          } catch {
+            return;
+          }
+        },
+        remove(name: string, options: Record<string, unknown>) {
+          try {
+            cookieStore.set({ name, value: "", ...options });
+          } catch {
+            return;
           }
         }
       }
-    );
-  } catch (error) {
-    console.error("CRITICAL: Database Keys Missing", error);
-    return "CRITICAL: Database Keys Missing" as never;
-  }
+    }
+  );
 }

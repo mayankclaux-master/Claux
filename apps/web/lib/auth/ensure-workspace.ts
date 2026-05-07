@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { env } from '@/lib/env'
 
 export type WorkspaceStatus = 'healthy' | 'failed'
 
@@ -13,11 +14,11 @@ const MAX_AUTH_WAIT_MS = 6000
 const AUTH_POLL_INTERVAL_MS = 400
 
 function createAdminClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const url = env.NEXT_PUBLIC_SUPABASE_URL
     .replace(/\/rest\/v1\/?$/, '')
   return createClient(
     url,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    env.SUPABASE_SERVICE_ROLE_KEY,
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 }

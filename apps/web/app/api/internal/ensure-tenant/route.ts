@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { env } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
@@ -35,18 +36,18 @@ export async function GET(request: Request) {
     }
 
     console.log("STEP 2: Check ENV");
-    console.log("SUPABASE URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
-    console.log("SERVICE ROLE EXISTS:", !!process.env.SUPABASE_SERVICE_ROLE_KEY);
+    console.log("SUPABASE URL:", env.NEXT_PUBLIC_SUPABASE_URL);
+    console.log("SERVICE ROLE EXISTS:", !!env.SUPABASE_SERVICE_ROLE_KEY);
 
     console.log("CLIENT CONFIG CHECK:", {
-      hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-      keyPrefix: process.env.SUPABASE_SERVICE_ROLE_KEY?.slice(0, 10)
+      hasServiceKey: !!env.SUPABASE_SERVICE_ROLE_KEY,
+      keyPrefix: env.SUPABASE_SERVICE_ROLE_KEY?.slice(0, 10)
     });
 
     // Use service role client to bypass RLS
     const admin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
+      env.NEXT_PUBLIC_SUPABASE_URL,
+      env.SUPABASE_SERVICE_ROLE_KEY
     );
 
     console.log("STEP 3: Check current role");
@@ -73,11 +74,11 @@ export async function GET(request: Request) {
     // Direct fetch test (bypass client)
     try {
       const directTest = await fetch(
-        process.env.NEXT_PUBLIC_SUPABASE_URL + "/rest/v1/profiles?select=id&limit=1",
+        env.NEXT_PUBLIC_SUPABASE_URL + "/rest/v1/profiles?select=id&limit=1",
         {
           headers: {
-            apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!,
-            Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY!}`
+            apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+            Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`
           }
         }
       );

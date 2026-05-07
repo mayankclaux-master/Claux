@@ -1,5 +1,6 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getGoogleRefreshToken, encryptSecret, updateIntegrationStatus } from "../utils";
+import { env } from "@/lib/env";
 
 /**
  * Token Refresh Job
@@ -35,6 +36,13 @@ export async function refreshTenantGoogleToken(tenantId: string): Promise<boolea
       return false;
     }
 
+    // Validate OAuth credentials
+    if (!env.GOOGLE_OAUTH_CLIENT_ID || !env.GOOGLE_OAUTH_CLIENT_SECRET) {
+      console.error("Google OAuth not configured");
+      await updateIntegrationStatus(tenantId, "google", "error");
+      return false;
+    }
+
     // Exchange refresh token for new access token
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
@@ -43,8 +51,8 @@ export async function refreshTenantGoogleToken(tenantId: string): Promise<boolea
       },
       body: new URLSearchParams({
         refresh_token: refreshToken,
-        client_id: process.env.GOOGLE_OAUTH_CLIENT_ID!,
-        client_secret: process.env.GOOGLE_OAUTH_CLIENT_SECRET!,
+        client_id: env.GOOGLE_OAUTH_CLIENT_ID,
+        client_secret: env.GOOGLE_OAUTH_CLIENT_SECRET,
         grant_type: "refresh_token",
       }),
     });

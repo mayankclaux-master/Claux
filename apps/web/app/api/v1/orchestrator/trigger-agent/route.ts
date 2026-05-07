@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { env } from "@/lib/env";
 
 type AgentName = "ARIA" | "SCRIBE" | "LOCL" | "LINX" | "CORE" | "REPUTE" | "AMPLI" | "PRISM" | "PULSE";
 
@@ -111,8 +112,8 @@ export async function POST(request: Request) {
   }
 
   // POST to n8n webhook
-  const n8nTriggerUrl = process.env.N8N_HOST
-    ? `${process.env.N8N_HOST.replace(/\/$/, "")}/webhook/trigger-agent`
+  const n8nTriggerUrl = env.N8N_HOST
+    ? `${env.N8N_HOST.replace(/\/$/, "")}/webhook/trigger-agent`
     : "";
 
   if (!n8nTriggerUrl) {

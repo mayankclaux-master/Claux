@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClerkSupabaseClient } from "@/lib/supabase/admin";
 import { getGoogleRefreshToken, encryptSecret, updateIntegrationStatus } from "@/lib/integrations/utils";
+import { env } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No refresh token available" }, { status: 400 });
     }
 
+    // Validate OAuth credentials
+    if (!env.GOOGLE_OAUTH_CLIENT_ID || !env.GOOGLE_OAUTH_CLIENT_SECRET) {
+      console.error("Google OAuth not configured");
+      return NextResponse.json({ error: "Google OAuth not configured" }, { status: 500 });
+    }
+
     // Exchange refresh token for new access token
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
@@ -49,8 +56,8 @@ export async function POST(request: Request) {
       },
       body: new URLSearchParams({
         refresh_token: refreshToken,
-        client_id: process.env.GOOGLE_OAUTH_CLIENT_ID!,
-        client_secret: process.env.GOOGLE_OAUTH_CLIENT_SECRET!,
+        client_id: env.GOOGLE_OAUTH_CLIENT_ID,
+        client_secret: env.GOOGLE_OAUTH_CLIENT_SECRET,
         grant_type: "refresh_token",
       }),
     });

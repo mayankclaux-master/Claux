@@ -1,12 +1,7 @@
 import { NextResponse } from "next/server";
 import { Webhook } from "svix";
 import { createClient } from "@supabase/supabase-js";
-
-const webhookSecret = process.env.CLERK_WEBHOOK_SECRET;
-
-if (!webhookSecret) {
-  throw new Error("CLERK_WEBHOOK_SECRET is not set");
-}
+import { env } from "@/lib/env";
 
 export async function POST(request: Request) {
   console.log("WEBHOOK HIT");
@@ -26,7 +21,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing required headers" }, { status: 400 });
   }
 
-  const wh = new Webhook(webhookSecret);
+  const wh = new Webhook(env.CLERK_WEBHOOK_SECRET);
 
   let event: any;
 
@@ -64,8 +59,8 @@ export async function POST(request: Request) {
     });
 
     const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
+      env.NEXT_PUBLIC_SUPABASE_URL,
+      env.SUPABASE_SERVICE_ROLE_KEY
     );
 
     try {

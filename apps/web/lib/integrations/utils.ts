@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { env } from '@/lib/env';
 
 /**
  * Encrypt a secret using AES-256-GCM
@@ -6,7 +7,8 @@ import crypto from 'crypto';
  */
 export function encryptSecret(secret: string): string {
   const algorithm = 'aes-256-gcm';
-  const key = crypto.scryptSync(process.env.INTEGRATION_ENCRYPTION_KEY || 'default-key-change-in-production', 'salt', 32);
+  const encryptionKey = env.INTEGRATION_ENCRYPTION_KEY || 'default-key-change-in-production';
+  const key = crypto.scryptSync(encryptionKey, 'salt', 32);
   const iv = crypto.randomBytes(16);
   const cipher = crypto.createCipheriv(algorithm, key, iv);
   
@@ -26,7 +28,8 @@ export function encryptSecret(secret: string): string {
  */
 export function decryptSecret(encryptedSecret: string): string {
   const algorithm = 'aes-256-gcm';
-  const key = crypto.scryptSync(process.env.INTEGRATION_ENCRYPTION_KEY || 'default-key-change-in-production', 'salt', 32);
+  const encryptionKey = env.INTEGRATION_ENCRYPTION_KEY || 'default-key-change-in-production';
+  const key = crypto.scryptSync(encryptionKey, 'salt', 32);
   
   // Decode base64
   const combined = Buffer.from(encryptedSecret, 'base64').toString('hex');

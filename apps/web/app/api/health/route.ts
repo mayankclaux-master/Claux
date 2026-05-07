@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { env } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
@@ -11,8 +12,8 @@ export async function GET() {
   // Check database connection
   try {
     const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
+      env.NEXT_PUBLIC_SUPABASE_URL,
+      env.SUPABASE_SERVICE_ROLE_KEY
     );
 
     const { error } = await supabase.from("tenants").select("id").limit(1);
@@ -23,7 +24,7 @@ export async function GET() {
   }
 
   // Check webhook configuration (check if secret is set)
-  webhookActive = !!process.env.CLERK_WEBHOOK_SECRET;
+  webhookActive = !!env.CLERK_WEBHOOK_SECRET;
 
   // Optional: Check recent webhook activity (if we have a logs table)
   // This is a placeholder for future implementation

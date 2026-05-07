@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { env } from "@/lib/env";
 
 function normalizeSupabaseUrl(value: string) {
   return value.replace(/\/rest\/v1\/?$/, "").replace(/\/$/, "");
@@ -7,8 +8,8 @@ function normalizeSupabaseUrl(value: string) {
 
 export function createSupabaseMiddlewareClient(req: NextRequest, res: NextResponse) {
   return createServerClient(
-    normalizeSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL!),
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    normalizeSupabaseUrl(env.NEXT_PUBLIC_SUPABASE_URL),
+    env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     {
       cookies: {
         get(name: string) {

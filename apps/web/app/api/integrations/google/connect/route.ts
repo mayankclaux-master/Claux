@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClerkSupabaseClient } from "@/lib/supabase/admin";
+import { env } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
@@ -33,10 +34,15 @@ export async function GET(request: Request) {
   const tenantId = profile.tenant_id;
 
   // Google OAuth configuration
-  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
-  const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/google/callback`;
-  
+  const clientId = env.GOOGLE_OAUTH_CLIENT_ID;
+  const appUrl = env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  const redirectUri = `${appUrl}/api/integrations/google/callback`;
+
   if (!clientId) {
+    return NextResponse.json({ error: "Google OAuth not configured" }, { status: 500 });
+  }
+
+  if (!env.GOOGLE_OAUTH_CLIENT_SECRET) {
     return NextResponse.json({ error: "Google OAuth not configured" }, { status: 500 });
   }
 
