@@ -43,7 +43,7 @@ export function VerifyEmailClient() {
         callbackUrl.searchParams.set("type", callbackType);
       }
 
-      callbackUrl.searchParams.set("next", "/onboarding");
+      callbackUrl.searchParams.set("next", "/dashboard");
       window.location.assign(callbackUrl.toString());
       return;
     }
@@ -89,7 +89,7 @@ export function VerifyEmailClient() {
       }
 
       window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}`);
-      router.replace(`/onboarding?t=${Date.now()}`);
+      router.replace(`/dashboard?t=${Date.now()}`);
       router.refresh();
     }
 
@@ -101,7 +101,7 @@ export function VerifyEmailClient() {
       const { data } = await supabase.auth.getUser();
 
       if (data.user?.email_confirmed_at) {
-        router.replace(`/onboarding?t=${Date.now()}`);
+        router.replace(`/dashboard?t=${Date.now()}`);
         router.refresh();
       }
     }
@@ -125,7 +125,7 @@ export function VerifyEmailClient() {
     setChecking(true);
     setError(null);
 
-    router.replace(`/onboarding?t=${Date.now()}`);
+    router.replace(`/dashboard?t=${Date.now()}`);
     router.refresh();
   }
 

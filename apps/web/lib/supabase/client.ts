@@ -1,4 +1,4 @@
-import { createBrowserClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 
 function normalizeSupabaseUrl(value: string) {
   return value.replace(/\/rest\/v1\/?$/, "").replace(/\/$/, "");
@@ -15,7 +15,7 @@ export function createSupabaseBrowserClient() {
       throw new Error("CRITICAL: Database Keys Missing");
     }
 
-    return createBrowserClient(normalizeSupabaseUrl(supabaseUrl), supabaseAnonKey, {
+    return createClient(normalizeSupabaseUrl(supabaseUrl), supabaseAnonKey, {
       auth: {}
     });
   } catch (error) {

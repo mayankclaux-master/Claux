@@ -1,86 +1,46 @@
-import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClerkSupabaseClient } from "@/lib/supabase/admin";
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  try {
-    // Verify Clerk authentication and extract JWT
-    const { userId, getToken } = await auth();
-    const token = await getToken({ template: "supabase" });
+  const { userId, getToken } = await auth();
 
-    if (!userId || !token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const supabase = createClerkSupabaseClient(token);
-
-    // Fetch profile using Clerk JWT (with RLS)
-    // Retry up to 3 times with exponential backoff for transient delays
-    let profile = null;
-    let profileError = null;
-
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const result = await supabase
-        .from("profiles")
-        .select("tenant_id, provisioning_status")
-        .eq("id", userId)
-        .maybeSingle();
-
-      profile = result.data;
-      profileError = result.error;
-
-      if (!profileError && profile) break;
-
-      // Wait before retrying (200ms, 400ms, 600ms)
-      if (attempt < 2) {
-        await new Promise(r => setTimeout(r, 200 * (attempt + 1)));
-      }
-    }
-
-    if (profileError) {
-      console.error("Profile fetch error after retries:", profileError);
-      return NextResponse.json({ error: "Failed to load profile" }, { status: 500 });
-    }
-
-    // Fetch tenant if profile exists
-    let tenant = null;
-    if (profile?.tenant_id) {
-      let tenantData = null;
-      let tenantError = null;
-
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const result = await supabase
-          .from("tenants")
-          .select("onboarding_completed")
-          .eq("id", profile.tenant_id)
-          .maybeSingle();
-
-        tenantData = result.data;
-        tenantError = result.error;
-
-        if (!tenantError && tenantData) break;
-
-        // Wait before retrying (200ms, 400ms, 600ms)
-        if (attempt < 2) {
-          await new Promise(r => setTimeout(r, 200 * (attempt + 1)));
-        }
-      }
-
-      if (!tenantError) {
-        tenant = tenantData;
-      } else {
-        console.error("Tenant fetch error after retries:", tenantError);
-      }
-    }
-
-    return NextResponse.json({
-      profile,
-      tenant,
-    });
-  } catch (error) {
-    console.error("Get profile error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  if (!userId) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const token = await getToken({ template: "supabase" });
+
+  if (!token) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const supabase = createClerkSupabaseClient(token);
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (profileError) {
+    return Response.json({ error: "Failed to fetch profile" }, { status: 500 });
+  }
+
+  if (!profile) {
+    return Response.json({ profile: null, tenant: null });
+  }
+
+  const { data: tenant, error: tenantError } = await supabase
+    .from("tenants")
+    .select("*")
+    .eq("id", profile.tenant_id)
+    .maybeSingle();
+
+  if (tenantError) {
+    return Response.json({ error: "Failed to fetch tenant" }, { status: 500 });
+  }
+
+  return Response.json({ profile, tenant });
 }

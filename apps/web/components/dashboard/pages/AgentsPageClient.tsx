@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { LineChart, Line, ResponsiveContainer, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts';
+import { useUser } from '@clerk/nextjs';
 import Sidebar from '@/components/dashboard/Sidebar';
-import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { useTenant } from '@/contexts/TenantContext';
 import { getAgentAuditLogs } from '@/actions/audit-log';
 
@@ -164,12 +164,14 @@ const agentChipColors: Record<string, string> = {
 const thinkingLogByAgent: Record<string, ThinkingEntry[]> = {};
 
 export default function AgentsPageClient() {
+  const { user, isLoaded: isUserLoaded } = useUser();
   const { tenant, loading } = useTenant();
   const [hoveredAgent, setHoveredAgent] = useState<string | null>(null);
   const [activeAgent, setActiveAgent] = useState<Agent | null>(null);
   const [activeTab, setActiveTab] = useState<'thinking' | 'history' | 'performance'>('thinking');
   const [viewerProfile, setViewerProfile] = useState<ViewerProfile | null>(null);
   const [isDeveloperModeOpen, setIsDeveloperModeOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [triggeringByAgent, setTriggeringByAgent] = useState<Record<AgentName, boolean>>(() =>
     AGENT_NAMES.reduce((acc, name) => {
       acc[name] = false;
@@ -192,41 +194,43 @@ export default function AgentsPageClient() {
   const isAdminOrOwner = viewerProfile?.role === 'owner' || viewerProfile?.role === 'admin';
 
   useEffect(() => {
-    const supabase = createSupabaseBrowserClient();
-
     async function loadViewerProfile() {
-      const {
-        data: { user }
-      } = await supabase.auth.getUser();
-
-      if (!user) {
+      if (!isUserLoaded || !user) {
         setViewerProfile(null);
         return;
       }
 
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('tenant_id, role')
-        .eq('id', user.id)
-        .maybeSingle();
+      try {
+        const response = await fetch('/api/dashboard/profile');
+        if (!response.ok) {
+          setError("Failed to load profile");
+          setViewerProfile(null);
+          return;
+        }
+        const json = await response.json();
+        const data = json.data;
 
-      if (error || !data) {
+        if (!data?.profile) {
+          setError("Profile not found");
+          setViewerProfile(null);
+          return;
+        }
+
+        const normalizedRole = String(data.profile.role ?? 'member').toLowerCase();
+        const role: ViewerProfile['role'] =
+          normalizedRole === 'owner' || normalizedRole === 'admin' ? (normalizedRole as ViewerProfile['role']) : 'member';
+
+        setViewerProfile({
+          tenantId: String(data.profile.tenant_id),
+          role
+        });
+      } catch (err) {
+        setError("Failed to load profile");
         setViewerProfile(null);
-        return;
       }
-
-      const normalizedRole = String(data.role ?? 'member').toLowerCase();
-      const role: ViewerProfile['role'] =
-        normalizedRole === 'owner' || normalizedRole === 'admin' ? (normalizedRole as ViewerProfile['role']) : 'member';
-
-      setViewerProfile({
-        tenantId: String(data.tenant_id),
-        role
-      });
     }
-
-    void loadViewerProfile();
-  }, []);
+    loadViewerProfile();
+  }, [isUserLoaded, user]);
 
   async function triggerAgentNow(agentName: AgentName) {
     if (!viewerProfile?.tenantId) {
@@ -395,6 +399,7 @@ export default function AgentsPageClient() {
           animate={{ opacity: 1, y: 0 }}
           className="max-w-[1200px] mx-auto"
         >
+          {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
           <h1 className="text-3xl font-bold mb-2">AI Agents</h1>
           <p className="text-[#8892A4] mb-8">System initializing. Live agent actions will appear after asset connections.</p>
 

@@ -107,9 +107,6 @@ export default function OnboardingPage() {
   const router = useRouter();
   const { user, isLoaded: isUserLoaded } = useUser();
 
-  // FIX: useRef to prevent double-execution in React StrictMode
-  const loadedRef = useRef(false);
-
   // FIX: single angle bracket on useState
   const [state, setState] = useState<OnboardingState>(initialState);
   const [loading, setLoading] = useState(true);
@@ -126,7 +123,7 @@ export default function OnboardingPage() {
     });
 
     if (response.status === 401) {
-      router.replace("/login");
+      // router.replace("/login");
       return null;
     }
 
@@ -134,64 +131,60 @@ export default function OnboardingPage() {
   }
 
   useEffect(() => {
-    if (loadedRef.current) return;
-    loadedRef.current = true;
-
     async function loadState() {
       try {
-        // Wait for Clerk user to load
         if (!isUserLoaded) {
-          setLoading(false);
           return;
         }
 
-        // Check if user is authenticated with Clerk
         if (!user) {
-          console.error("User not authenticated with Clerk");
-          setLoading(false);
-          router.replace("/login");
+          // router.replace("/login");
           return;
         }
 
-        // FIX: Use API route with Clerk auth (middleware handles auth)
         const response = await fetch("/api/onboarding/get-profile");
 
         if (!response.ok) {
-          console.error("Profile API response not OK:", response.status);
           setError("Failed to load profile. Please refresh.");
           setLoading(false);
           return;
         }
 
-        const { profile, tenant } = await response.json();
+        const { profile, tenant, business_profile } = await response.json();
 
-        if (!profile?.tenant_id) {
+        if (!profile) {
+          // router.replace("/onboarding/provisioning");
           setLoading(false);
-          router.replace("/onboarding/provisioning");
           return;
         }
 
-        if (tenant?.onboarding_completed) {
+        if (!tenant) {
+          // router.replace("/onboarding/provisioning");
           setLoading(false);
-          router.replace("/dashboard");
+          return;
+        }
+
+        if (tenant.onboarding_completed) {
+          // router.replace("/dashboard");
+          setLoading(false);
           return;
         }
 
         setState({
           ...initialState,
           tenantId: profile.tenant_id,
+          businessName: business_profile?.business_name || "My Business",
         });
 
         setLoading(false);
       } catch (err) {
-        console.error("Onboarding loadState error:", err);
         setError("Something went wrong. Please refresh.");
         setLoading(false);
       }
     }
 
     loadState();
-  }, []);
+  }, [isUserLoaded, user]);
 
   useEffect(() => {
     const normalizedWebsiteUrl = resolveValidWebsiteUrl(state.websiteUrl);
@@ -355,8 +348,8 @@ export default function OnboardingPage() {
       console.warn("CMS credential saving needs to be implemented with Clerk auth");
     }
 
-    router.replace(`/dashboard?t=${Date.now()}`);
-    router.refresh();
+    // router.replace(`/dashboard?t=${Date.now()}`);
+    // router.refresh();
   }
 
   if (loading) {

@@ -2,22 +2,17 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type AgentUpdateRequest = {
+  api_secret: string;
   tenant_id: string;
   agent: string;
-  status?: "queued" | "running" | "completed" | "failed" | "cancelled";
+  status?: string;
   progress?: number;
   current_task?: string | null;
-  last_error?: string | null;
   metadata?: Record<string, unknown> | null;
 };
 
 export async function POST(request: Request) {
   const supabase = createSupabaseAdminClient();
-  const incomingSecret = request.headers.get("x-claux-secret");
-
-  if (!incomingSecret) {
-    return NextResponse.json({ error: "Missing X-Claux-Secret header." }, { status: 401 });
-  }
 
   let payload: AgentUpdateRequest;
 
@@ -27,38 +22,63 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON payload." }, { status: 400 });
   }
 
-  const { tenant_id, agent, status, progress, current_task, last_error, metadata } = payload;
+  const { api_secret, tenant_id, agent, status, progress, current_task, metadata } = payload;
 
-  if (!tenant_id || !agent) {
-    return NextResponse.json({ error: "Missing tenant_id or agent." }, { status: 400 });
+  if (!api_secret || !tenant_id || !agent) {
+    return NextResponse.json({ error: "Missing api_secret, tenant_id, or agent." }, { status: 400 });
   }
 
-  // Call the agent_update RPC - it handles api_secret verification internally
-  const { error: updateError } = await supabase.rpc("agent_update", {
-    p_tenant_id: tenant_id,
-    p_agent: agent,
-    p_status: status,
-    p_progress: progress,
-    p_current_task: current_task,
-    p_last_error: last_error,
-    p_api_secret: incomingSecret,
-    p_metadata: metadata || null
-  });
+  // Validate tenant exists and api_secret matches
+  const { data: tenant, error: tenantError } = await supabase
+    .from("tenants")
+    .select("id, api_secret")
+    .eq("id", tenant_id)
+    .maybeSingle();
+
+  if (tenantError) {
+    console.error("[agent-update] Tenant query error:", tenantError);
+    return NextResponse.json({ error: "Failed to validate tenant." }, { status: 500 });
+  }
+
+  if (!tenant) {
+    return NextResponse.json({ error: "Tenant not found." }, { status: 404 });
+  }
+
+  if (tenant.api_secret !== api_secret) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  // Update agent_states
+  const { error: updateError } = await supabase
+    .from("agent_states")
+    .update({
+      status: status || null,
+      progress: progress || null,
+      current_task: current_task || null,
+      last_run_at: new Date().toISOString()
+    })
+    .eq("tenant_id", tenant_id)
+    .eq("agent", agent);
 
   if (updateError) {
-    console.error("[agent-update] RPC call failed", {
+    console.error("[agent-update] Agent states update error:", updateError);
+    return NextResponse.json({ error: "Failed to update agent state." }, { status: 500 });
+  }
+
+  // Insert into agent_runs
+  const { error: insertError } = await supabase
+    .from("agent_runs")
+    .insert({
       tenant_id,
       agent,
-      message: updateError.message,
-      hint: updateError.hint,
-      code: updateError.code,
-      details: updateError.details
+      started_at: new Date().toISOString(),
+      status: status || "running",
+      metadata: metadata || null
     });
-    // If RPC fails due to secret verification, return 401
-    if (updateError.code === "P0001" || updateError.message?.toLowerCase().includes("unauthorized")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    return NextResponse.json({ error: updateError.message || "Failed to update agent state." }, { status: 500 });
+
+  if (insertError) {
+    console.error("[agent-update] Agent runs insert error:", insertError);
+    // Don't fail the request if insert fails, just log it
   }
 
   return NextResponse.json({ success: true });

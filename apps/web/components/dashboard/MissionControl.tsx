@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { useUser } from '@clerk/nextjs';
 import Sidebar from '@/components/dashboard/Sidebar';
-import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 
 type StatCardProps = {
   label: string;
@@ -48,21 +48,6 @@ type AgentState = {
   runCount?: number;
   errorCount?: number;
   lastRunAt?: string | null;
-};
-
-type AgentStateRow = {
-  id: string;
-  tenant_id: string;
-  agent: AgentName;
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
-  progress: number;
-  current_task: string | null;
-  last_run_at: string | null;
-  next_run_at: string | null;
-  run_count: number;
-  error_count: number;
-  last_error: string | null;
-  enabled: boolean;
 };
 
 const AGENT_NAMES: AgentName[] = ['ARIA', 'SCRIBE', 'LOCL', 'LINX', 'CORE', 'REPUTE', 'AMPLI', 'PRISM', 'PULSE'];
@@ -217,42 +202,6 @@ function getInitialAgentStateByName(): Record<AgentName, AgentState> {
   return state;
 }
 
-function mapAgentStatesToUI(agentStates: AgentStateRow[] | null | undefined): Record<AgentName, AgentState> {
-  const nextState = getInitialAgentStateByName();
-
-  if (!agentStates || agentStates.length === 0) {
-    return nextState;
-  }
-
-  for (const agentName of AGENT_NAMES) {
-    const agentState = agentStates.find(state => state.agent === agentName);
-
-    if (agentState) {
-      let statusLine = 'System Initializing';
-      let progress = agentState.progress;
-
-      if (!agentState.enabled) {
-        statusLine = 'Disabled';
-        progress = 0;
-      } else if (agentState.status === 'running') {
-        statusLine = 'In Progress';
-      } else if (agentState.status === 'completed') {
-        statusLine = 'Completed';
-      } else if (agentState.status === 'failed') {
-        statusLine = 'Failed';
-      } else if (agentState.status === 'cancelled') {
-        statusLine = 'Cancelled';
-      } else if (agentState.status === 'queued') {
-        statusLine = 'Queued';
-      }
-
-      nextState[agentName] = { statusLine, progress };
-    }
-  }
-
-  return nextState;
-}
-
 function StatCard({ label, value, helper, delay = 0 }: StatCardProps) {
   return (
     <motion.div
@@ -312,152 +261,156 @@ function AgentCard({ name, role, action, progress, time, statusLine, delay = 0 }
 }
 
 export default function MissionControl({ isWordPress, orgId }: MissionControlProps) {
+  const { user, isLoaded: isUserLoaded } = useUser();
   const [liveTaskFeed, setLiveTaskFeed] = useState<FeedItem[]>(initialLiveTaskFeed);
   const [keywordRankings, setKeywordRankings] = useState<RankingRow[]>(initialKeywordRankings);
   const [agentStateByName, setAgentStateByName] = useState<Record<AgentName, AgentState>>(() => getInitialAgentStateByName());
+  const [dashboardStats, setDashboardStats] = useState<{
+    aria: { totalKeywords: number; topKeywords: Array<{ keyword: string; search_volume: number; intent: string }>; intentBreakdown: { [key: string]: number } } | null;
+    scribe: { draftCount: number; publishedCount: number } | null;
+    publish: { successCount: number; failedCount: number; latestPublishedUrls: Array<{ url: string; published_at: string }> } | null;
+    pulse: { averageRank: number | null; averageVisibilityScore: number | null; topImprovingKeywords: Array<{ keyword: string; rank_change: number }> } | null;
+    locl: { optimizationScore: number | null; completenessScore: number | null; recommendations: string[] } | null;
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const stats = [
-    { label: 'Domain Authority', value: 'N/A', helper: 'Connect Assets' },
-    { label: 'Keywords Ranking', value: String(keywordRankings.length), helper: keywordRankings.length ? 'Tracked' : 'Connect Assets' },
-    { label: 'Organic Traffic', value: '0', helper: 'Awaiting Data' },
+    { label: 'Total Keywords', value: String(dashboardStats?.aria?.totalKeywords ?? '0'), helper: dashboardStats?.aria?.totalKeywords ? 'Tracked' : 'Awaiting Data' },
+    { label: 'Draft Content', value: String(dashboardStats?.scribe?.draftCount ?? '0'), helper: dashboardStats?.scribe?.draftCount ? 'Generated' : 'Awaiting Data' },
+    { label: 'Published Posts', value: String(dashboardStats?.scribe?.publishedCount ?? '0'), helper: dashboardStats?.scribe?.publishedCount ? 'Live' : 'Awaiting Data' },
     { label: 'Live Agent Signals', value: String(liveTaskFeed.length), helper: liveTaskFeed.length ? 'Realtime Active' : 'System Initializing' }
   ];
 
   useEffect(() => {
+    if (!isUserLoaded || !user) {
+      setLiveTaskFeed([]);
+      setKeywordRankings([]);
+      setAgentStateByName(getInitialAgentStateByName());
+      setDashboardStats(null);
+      return;
+    }
+
     if (!orgId) {
       setLiveTaskFeed([]);
       setKeywordRankings([]);
       setAgentStateByName(getInitialAgentStateByName());
+      setDashboardStats(null);
       return;
     }
 
-    const supabase = createSupabaseBrowserClient();
-    console.log('Realtime Subscribed for Org:', orgId);
-
-    async function loadInitialFeed() {
-      const { data, error } = await supabase
-        .from('agent_activities')
-        .select('agent_name, status_message, status')
-        .eq('tenant_id', orgId)
-        .order('created_at', { ascending: false })
-        .limit(60);
-
-      if (error || !data) {
-        return;
+    async function loadDashboardStats() {
+      try {
+        const response = await fetch(`/api/dashboard/stats`);
+        if (!response.ok) {
+          setError("Failed to load dashboard stats");
+          return;
+        }
+        const json = await response.json();
+        setDashboardStats(json);
+      } catch (err) {
+        setError("Failed to load dashboard stats");
       }
+    }
 
-      const nextFeed = data
-        .filter((row) => row.agent_name && row.status_message)
-        .map((row) => ({
-          agent: row.agent_name as string,
-          task: row.status_message as string,
+    async function loadActivityFeed() {
+      try {
+        const response = await fetch(`/api/dashboard/activity-feed`);
+        if (!response.ok) {
+          setError("Failed to load activity feed");
+          return;
+        }
+        const json = await response.json();
+        const activities = json.data;
+
+        if (!activities) return;
+
+        const nextFeed = activities.map((row: any) => ({
+          agent: row.agent as string,
+          task: row.message as string,
           status: (row.status as FeedItem['status']) ?? 'completed'
         }));
 
-      setLiveTaskFeed(nextFeed);
-    }
-
-    async function loadKeywordInsights() {
-      const { data, error } = await supabase
-        .from('keyword_insights')
-        .select('keyword, position, volume, agent_name')
-        .eq('tenant_id', orgId)
-        .order('created_at', { ascending: false })
-        .limit(60);
-
-      if (error || !data) {
-        return;
+        setLiveTaskFeed(nextFeed);
+      } catch (err) {
+        setError("Failed to load activity feed");
       }
-
-      const nextKeywords = data
-        .filter((row) => row.keyword && row.agent_name)
-        .map((row) => ({
-          keyword: row.keyword as string,
-          position: Number(row.position ?? 0),
-          change: 0,
-          volume: Number(row.volume ?? 0),
-          agent: row.agent_name as string
-        }));
-
-      setKeywordRankings(nextKeywords);
     }
 
     async function loadAgentStates() {
-      const { data, error } = await supabase
-        .from('agent_states')
-        .select('*')
-        .eq('tenant_id', orgId);
+      try {
+        const response = await fetch(`/api/dashboard/agent-status`);
+        if (!response.ok) {
+          setError("Failed to load agent status");
+          return;
+        }
+        const json = await response.json();
+        const agentStatusData = json.data;
 
-      if (error) {
-        console.error('Failed to load agent states:', error);
-        return;
+        if (!agentStatusData || agentStatusData.length === 0) {
+          setAgentStateByName(getInitialAgentStateByName());
+          return;
+        }
+
+        // Map agent status data to UI state
+        const nextState = getInitialAgentStateByName();
+        for (const status of agentStatusData) {
+          const agentName = status.agent as AgentName;
+          if (AGENT_NAMES.includes(agentName)) {
+            nextState[agentName] = {
+              statusLine: normalizeAgentStatus(status.status),
+              progress: normalizeAgentProgress(status.status === 'running' ? 50 : status.status === 'completed' ? 100 : 0),
+              lastRunAt: status.lastRun
+            };
+          }
+        }
+        setAgentStateByName(nextState);
+      } catch (err) {
+        setError("Failed to load agent status");
       }
-
-      if (!data || data.length === 0) {
-        // Agent states not yet initialized by trigger - show system initializing state
-        setAgentStateByName(getInitialAgentStateByName());
-        return;
-      }
-
-      const agentStates = data as AgentStateRow[];
-      setAgentStateByName(mapAgentStatesToUI(agentStates));
     }
 
-    void loadInitialFeed();
-    void loadKeywordInsights();
+    async function loadKeywordRankings() {
+      try {
+        const response = await fetch(`/api/dashboard/stats`);
+        if (!response.ok) {
+          return;
+        }
+        const json = await response.json();
+        const pulseStats = json.pulse;
+
+        if (!pulseStats || !pulseStats.topImprovingKeywords) {
+          setKeywordRankings([]);
+          return;
+        }
+
+        const nextKeywords = pulseStats.topImprovingKeywords.slice(0, 5).map((item: any) => ({
+          keyword: item.keyword,
+          position: 0, // Will be updated when real ranking data is available
+          change: item.rank_change,
+          volume: 0, // Will be updated when real volume data is available
+          agent: 'PULSE'
+        }));
+
+        setKeywordRankings(nextKeywords);
+      } catch (err) {
+        // Silently fail for keyword rankings
+      }
+    }
+
+    void loadDashboardStats();
+    void loadActivityFeed();
     void loadAgentStates();
+    void loadKeywordRankings();
 
-    const channel = supabase
-      .channel(`agent-activities-${orgId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'agent_activities',
-          filter: `tenant_id=eq.${orgId}`
-        },
-        (payload) => {
-          const row = payload.new as {
-            agent_name?: string;
-            status_message?: string;
-            status?: FeedItem['status'];
-          };
-
-          const agentName = row.agent_name;
-          const statusMessage = row.status_message;
-
-          if (!agentName || !statusMessage) return;
-
-          setLiveTaskFeed((prev) => [
-            { agent: agentName, task: statusMessage, status: row.status ?? 'completed' },
-            ...prev
-          ].slice(0, 60));
-        }
-      )
-      .subscribe();
-
-    const agentStatesChannel = supabase
-      .channel(`agent-states-${orgId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'agent_states',
-          filter: `tenant_id=eq.${orgId}`
-        },
-        async () => {
-          await loadAgentStates();
-        }
-      )
-      .subscribe();
+    const interval = setInterval(() => {
+      void loadAgentStates();
+      void loadActivityFeed();
+    }, 5000);
 
     return () => {
-      void supabase.removeChannel(channel);
-      void supabase.removeChannel(agentStatesChannel);
+      clearInterval(interval);
     };
-  }, [orgId]);
+  }, [orgId, isUserLoaded, user]);
 
   const agents = baseAgents.map((agent) => {
     const runtimeState = agentStateByName[agent.name as AgentName] ?? { statusLine: 'System Initializing', progress: 0 };
@@ -489,6 +442,7 @@ export default function MissionControl({ isWordPress, orgId }: MissionControlPro
       <Sidebar />
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-[1200px] mx-auto p-8 space-y-6">
+          {error && <p className="text-red-500 text-sm">{error}</p>}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
             {stats.map((stat, index) => (
               <StatCard

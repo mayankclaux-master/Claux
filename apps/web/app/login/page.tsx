@@ -15,9 +15,9 @@ export default function LoginPage() {
         </CardHeader>
         <CardContent>
           <SignIn
-            afterSignInUrl="/onboarding/provisioning"
+            afterSignInUrl="/dashboard"
             signUpUrl="/auth/signup"
-            redirectUrl="/onboarding/provisioning"
+            redirectUrl="/dashboard"
           />
           <p className="mt-4 text-center text-sm text-muted-foreground">
             New here?{" "}

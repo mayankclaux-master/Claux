@@ -4,7 +4,7 @@ import Link from 'next/link';
 import type { Route } from 'next';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+import { useUser, SignOutButton } from '@clerk/nextjs';
 import { useTenant } from '@/contexts/TenantContext';
 
 
@@ -20,21 +20,41 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { user, isLoaded: isUserLoaded } = useUser();
   const [userName, setUserName] = useState('');
+  const [businessName, setBusinessName] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const { tenant, businessProfile, loading } = useTenant();
 
   useEffect(() => {
-    async function loadIdentity() {
-      const supabase = createSupabaseBrowserClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', user.id).maybeSingle();
-      setUserName(profile?.full_name || user.email?.split('@')[0] || '');
+    if (!isUserLoaded || !user) {
+      return;
     }
-    loadIdentity();
-  }, []);
 
-  const displayName = businessProfile?.business_name || tenant?.name || 'My Workspace';
+    async function loadDashboardContext() {
+      try {
+        const response = await fetch('/api/dashboard/context');
+        if (!response.ok) {
+          setError("Failed to load dashboard context");
+          return;
+        }
+        const json = await response.json();
+        
+        if (!json) {
+          setError("No data received from dashboard context");
+          return;
+        }
+        
+        setUserName(json.full_name || user?.primaryEmailAddress?.emailAddress?.split('@')[0] || 'User');
+        setBusinessName(json.business_name || 'My Business');
+      } catch (err) {
+        setError("Failed to load dashboard context");
+      }
+    }
+    loadDashboardContext();
+  }, [isUserLoaded, user]);
+
+  const displayName = businessName || 'My Business';
   const tenantStatus = tenant?.status || 'provisioning';
   const isActive = tenantStatus === 'active';
 
@@ -45,6 +65,7 @@ export default function Sidebar() {
           Claux
         </Link>
       </div>
+      {error && <p className="text-red-500 text-xs px-4 py-2">{error}</p>}
 
       <nav className="flex-1 p-4 space-y-1">
         {navItems.map((item) => (
@@ -75,6 +96,11 @@ export default function Sidebar() {
           </div>
           <span className="text-xs text-claux-muted">{isActive ? 'Active' : 'Provisioning'}</span>
         </div>
+        <SignOutButton>
+          <button className="w-full px-4 py-2 text-sm text-claux-muted hover:text-claux-text hover:bg-white/5 rounded-lg transition-colors">
+            Sign Out
+          </button>
+        </SignOutButton>
       </div>
     </aside>
   );

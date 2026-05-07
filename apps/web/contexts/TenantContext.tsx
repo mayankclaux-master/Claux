@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+import { useUser } from '@clerk/nextjs';
 
 type TenantStatus = 'active' | 'provisioning' | 'suspended';
 
@@ -50,6 +50,7 @@ type TenantContextType = {
 const TenantContext = createContext<TenantContextType | undefined>(undefined);
 
 export function TenantProvider({ children }: { children: ReactNode }) {
+  const { user, isLoaded: isUserLoaded } = useUser();
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [businessProfile, setBusinessProfile] = useState<BusinessProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -60,66 +61,44 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       setLoading(true);
       setError(null);
 
-      const supabase = createSupabaseBrowserClient();
-      const { data: { user } } = await supabase.auth.getUser();
-
-      if (!user) {
+      if (!isUserLoaded || !user) {
         setTenant(null);
         setBusinessProfile(null);
+        setLoading(false);
         return;
       }
 
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('tenant_id')
-        .eq('id', user.id)
-        .maybeSingle();
+      const response = await fetch('/api/dashboard/profile');
 
-      if (profileError || !profile?.tenant_id) {
-        setError('Could not load tenant information');
+      if (!response.ok) {
+        setError('Failed to load tenant information');
         setTenant(null);
         setBusinessProfile(null);
+        setLoading(false);
         return;
       }
 
-      const { data: tenantData, error: tenantError } = await supabase
-        .from('tenants')
-        .select('*')
-        .eq('id', profile.tenant_id)
-        .maybeSingle();
+      const json = await response.json();
+      const data = json.data;
 
-      if (tenantError) {
-        setError(`Failed to load tenant: ${tenantError.message}`);
-        setTenant(null);
-        return;
+      if (data?.tenant) {
+        setTenant(data.tenant);
       }
 
-      if (tenantData) {
-        setTenant(tenantData as Tenant);
-      }
+      setBusinessProfile(data?.businessProfile || null);
 
-      const { data: businessProfileData, error: businessProfileError } = await supabase
-        .from('business_profiles')
-        .select('*')
-        .eq('tenant_id', profile.tenant_id)
-        .maybeSingle();
-
-      if (businessProfileError) {
-        console.warn('Failed to load business profile:', businessProfileError.message);
-      } else if (businessProfileData) {
-        setBusinessProfile(businessProfileData as BusinessProfile);
-      }
+      setLoading(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error occurred');
-      console.error('Error loading tenant data:', err);
-    } finally {
+      setError('Failed to load tenant information');
+      setTenant(null);
+      setBusinessProfile(null);
       setLoading(false);
     }
   }
 
   useEffect(() => {
     loadTenantData();
-  }, []);
+  }, [isUserLoaded, user]);
 
   async function refreshTenant() {
     await loadTenantData();

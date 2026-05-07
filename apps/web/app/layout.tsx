@@ -13,12 +13,14 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <ClerkProvider>
-      <html lang="en" className="dark">
-        <body className={`${GeistSans.variable} ${GeistMono.variable} font-sans`}>
+    <html lang="en" className="dark">
+      <body className={`${GeistSans.variable} ${GeistMono.variable} font-sans`}>
+        <ClerkProvider
+          publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+        >
           <TenantProvider>{children}</TenantProvider>
-        </body>
-      </html>
-    </ClerkProvider>
+        </ClerkProvider>
+      </body>
+    </html>
   );
 }

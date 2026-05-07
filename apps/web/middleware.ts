@@ -1,12 +1,26 @@
-import { clerkMiddleware } from '@clerk/nextjs/server';
+import { clerkMiddleware } from "@clerk/nextjs/server";
 
-export default clerkMiddleware();
+const publicRoutes = [
+  "/sign-in",
+  "/sign-up",
+  "/login",
+  "/auth/signup"
+];
 
-// Force Node.js runtime on Vercel to prevent handshake issues
-export const runtime = 'nodejs';
+export default clerkMiddleware((auth, req) => {
+  const { pathname } = req.nextUrl;
+
+  const isPublic = publicRoutes.some(route =>
+    pathname.startsWith(route)
+  );
+
+  if (!isPublic) {
+    auth().protect();
+  }
+});
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico).*)',
+    "/((?!_next|.*\\..*).*)",
   ],
 };
