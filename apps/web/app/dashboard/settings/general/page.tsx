@@ -12,7 +12,9 @@ type CmsType = 'wordpress' | 'custom_php' | 'shopify' | 'wix' | 'squarespace' | 
 
 export default function GeneralSettingsPage() {
   const { tenant, businessProfile, loading, refreshTenant } = useTenant();
-  const supabase = createSupabaseBrowserClient();
+  
+  // Lazy-load Supabase client to avoid RSC module evaluation issue
+  const getSupabase = () => createSupabaseBrowserClient();
   
   const [formData, setFormData] = useState({
     business_name: '',
@@ -93,6 +95,7 @@ export default function GeneralSettingsPage() {
         .map(s => s.trim())
         .filter(s => s.length > 0);
 
+      const supabase = getSupabase();
       const { error } = await supabase
         .from('business_profiles')
         .upsert({
@@ -141,6 +144,7 @@ export default function GeneralSettingsPage() {
     setMessage(null);
 
     try {
+      const supabase = getSupabase();
       const { error } = await supabase
         .from('tenants')
         .update({ deleted_at: new Date().toISOString() })
