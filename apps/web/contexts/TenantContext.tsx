@@ -62,15 +62,19 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       setError(null);
 
       if (!isUserLoaded || !user) {
+        console.log("[TenantContext] No user loaded, clearing tenant data");
         setTenant(null);
         setBusinessProfile(null);
         setLoading(false);
         return;
       }
 
+      console.log("[TenantContext] Loading tenant data for user:", user.id);
+
       const response = await fetch('/api/dashboard/profile');
 
       if (!response.ok) {
+        console.error("[TenantContext] Failed to load tenant information", response.status);
         setError('Failed to load tenant information');
         setTenant(null);
         setBusinessProfile(null);
@@ -81,6 +85,16 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       const json = await response.json();
       const data = json.data;
 
+      console.log("[TenantContext] Tenant data loaded", {
+        userId: user.id,
+        has_tenant: !!data?.tenant,
+        tenant_id: data?.tenant?.id,
+        tenant_name: data?.tenant?.name,
+        has_business_profile: !!data?.businessProfile,
+        business_name: data?.businessProfile?.business_name,
+        timestamp: new Date().toISOString()
+      });
+
       if (data?.tenant) {
         setTenant(data.tenant);
       }
@@ -89,6 +103,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
 
       setLoading(false);
     } catch (err) {
+      console.error("[TenantContext] Error loading tenant data:", err);
       setError('Failed to load tenant information');
       setTenant(null);
       setBusinessProfile(null);

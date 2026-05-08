@@ -21,7 +21,7 @@ export async function GET(request: Request) {
 
   const { data: contextData, error: contextError } = await supabase
     .from("dashboard_context_v1")
-    .select("full_name, business_name")
+    .select("full_name, business_name, tenant_id")
     .eq("user_id", userId)
     .maybeSingle();
 
@@ -31,10 +31,17 @@ export async function GET(request: Request) {
   }
 
   if (!contextData) {
+    console.warn("[Dashboard Context] No context found for user:", userId);
     return NextResponse.json({ error: "Dashboard context not found" }, { status: 404 });
   }
 
-  console.log("DASHBOARD CONTEXT RESPONSE:", contextData);
+  console.log("[Dashboard Context] Response:", {
+    userId,
+    tenant_id: contextData.tenant_id,
+    full_name: contextData.full_name,
+    business_name: contextData.business_name,
+    timestamp: new Date().toISOString()
+  });
 
   return NextResponse.json(contextData);
 }

@@ -54,18 +54,16 @@ export default function DashboardPage() {
           return;
         }
 
-        // Note: dashboard_context_v1 now returns full_name and business_name
-        // onboarding_completed and tenant_id are not in the new response
-        // These should be fetched separately or the view should be updated
         console.log("[Dashboard] Context data:", context);
         
-        // For now, set default values since the API doesn't return these
+        // Use actual tenant_id from context, NOT Clerk user ID
         setOnboardingCompleted(true);
-        setTenantId(user?.id || null);
+        setTenantId(context?.tenant_id || null);
         clearTimeout(timeoutId);
 
         console.log("[Observability] Dashboard loaded", {
           userId: user?.id,
+          tenant_id: context?.tenant_id,
           full_name: context.full_name,
           business_name: context.business_name,
           timestamp: new Date().toISOString(),

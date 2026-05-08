@@ -170,8 +170,28 @@ export default function GeneralSettingsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center">
-        <div className="text-claux-muted">Loading...</div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // Gracefully handle missing tenant without crashing
+  if (!tenant) {
+    return (
+      <div className="flex items-center justify-center min-h-screen p-6">
+        <div className="max-w-md w-full text-center">
+          <h1 className="text-2xl font-semibold mb-4">Workspace Not Found</h1>
+          <p className="text-muted-foreground mb-6">
+            Your workspace could not be loaded. This may be a temporary issue or your workspace needs to be set up.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-primary text-white px-4 py-2 rounded hover:bg-primary/90 transition-colors"
+          >
+            Refresh Page
+          </button>
+        </div>
       </div>
     );
   }

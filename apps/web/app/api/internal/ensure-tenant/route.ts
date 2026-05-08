@@ -106,9 +106,10 @@ export async function GET(request: Request) {
     }
 
     if (profile?.tenant_id) {
-      console.log("[Observability] Tenant exists for userId", {
+      console.log("[ensure-tenant] Tenant exists for userId", {
         userId,
         tenant_id: profile.tenant_id,
+        recovered: false,
         timestamp: new Date().toISOString(),
       });
       return NextResponse.json({
@@ -117,7 +118,52 @@ export async function GET(request: Request) {
       });
     }
 
-    console.log("STEP 4: No tenant → calling bootstrap");
+    console.log("[ensure-tenant] No tenant_id in profile, checking for orphaned tenants");
+
+    // Check for orphaned tenants created by this user
+    const { data: orphanedTenant, error: orphanedError } = await admin
+      .from("tenants")
+      .select("id, name, status")
+      .eq("created_by", userId)
+      .maybeSingle();
+
+    if (orphanedError) {
+      console.error("[ensure-tenant] Orphaned tenant query error:", orphanedError);
+    }
+
+    if (orphanedTenant) {
+      console.log("[ensure-tenant] Found orphaned tenant, relinking to profile", {
+        userId,
+        orphaned_tenant_id: orphanedTenant.id,
+        orphaned_tenant_name: orphanedTenant.name,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Relink profile to orphaned tenant
+      const { error: relinkError } = await admin
+        .from("profiles")
+        .update({ tenant_id: orphanedTenant.id })
+        .eq("id", userId);
+
+      if (relinkError) {
+        console.error("[ensure-tenant] Failed to relink profile to orphaned tenant:", relinkError);
+        return NextResponse.json({ error: "Failed to recover tenant" }, { status: 500 });
+      }
+
+      console.log("[ensure-tenant] Successfully recovered orphaned tenant", {
+        userId,
+        tenant_id: orphanedTenant.id,
+        recovered: true,
+        timestamp: new Date().toISOString(),
+      });
+
+      return NextResponse.json({
+        tenant_id: orphanedTenant.id,
+        recovered: true
+      });
+    }
+
+    console.log("[ensure-tenant] No orphaned tenant found, creating new tenant");
 
     try {
       console.log("BOOTSTRAP INPUT:", {
