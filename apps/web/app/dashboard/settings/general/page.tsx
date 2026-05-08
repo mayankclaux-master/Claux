@@ -11,18 +11,19 @@ import { getTenantAuditLogs } from '@/actions/get-audit-logs';
 type CmsType = 'wordpress' | 'custom_php' | 'shopify' | 'wix' | 'squarespace' | 'unknown';
 
 export default function GeneralSettingsPage() {
-  const { tenant, businessProfile, loading, refreshTenant } = useTenant();
-  
-  console.log("[Settings General] Component render", {
-    loading,
-    hasTenant: !!tenant,
-    tenantId: tenant?.id,
-    hasBusinessProfile: !!businessProfile,
-    timestamp: new Date().toISOString()
-  });
-  
-  // Lazy-load Supabase client to avoid RSC module evaluation issue
-  const getSupabase = () => createSupabaseBrowserClient();
+  try {
+    const { tenant, businessProfile, loading, refreshTenant } = useTenant();
+    
+    console.log("[Settings General] Component render START", {
+      loading,
+      hasTenant: !!tenant,
+      tenantId: tenant?.id,
+      hasBusinessProfile: !!businessProfile,
+      timestamp: new Date().toISOString()
+    });
+    
+    // Lazy-load Supabase client to avoid RSC module evaluation issue
+    const getSupabase = () => createSupabaseBrowserClient();
   
   const [formData, setFormData] = useState({
     business_name: '',
@@ -44,59 +45,68 @@ export default function GeneralSettingsPage() {
   const [loadingAuditLogs, setLoadingAuditLogs] = useState(false);
 
   useEffect(() => {
-    console.log("[Settings General] businessProfile changed", {
-      hasBusinessProfile: !!businessProfile,
-      businessName: businessProfile?.business_name,
-      timestamp: new Date().toISOString()
-    });
-    
-    if (businessProfile) {
-      setFormData({
-        business_name: businessProfile.business_name || '',
-        category: businessProfile.category || '',
-        phone: businessProfile.phone || '',
-        address: businessProfile.address || '',
-        service_areas: Array.isArray(businessProfile.service_areas)
-          ? businessProfile.service_areas.join(', ')
-          : (businessProfile.service_areas || ''),
-        website_url: businessProfile.website_url || '',
-        tech_stack: businessProfile.tech_stack || '',
-        cms_type: businessProfile.cms_type || 'unknown',
-        gbp_location_id: businessProfile.gbp_location_id || '',
-        place_id: businessProfile.place_id || '',
-        competitor_urls: Array.isArray(businessProfile.competitor_urls)
-          ? businessProfile.competitor_urls.join(', ')
-          : (businessProfile.competitor_urls || '')
+    try {
+      console.log("[Settings General] businessProfile useEffect START", {
+        hasBusinessProfile: !!businessProfile,
+        businessName: businessProfile?.business_name,
+        timestamp: new Date().toISOString()
       });
+      
+      if (businessProfile) {
+        setFormData({
+          business_name: businessProfile.business_name || '',
+          category: businessProfile.category || '',
+          phone: businessProfile.phone || '',
+          address: businessProfile.address || '',
+          service_areas: Array.isArray(businessProfile.service_areas)
+            ? businessProfile.service_areas.join(', ')
+            : (businessProfile.service_areas || ''),
+          website_url: businessProfile.website_url || '',
+          tech_stack: businessProfile.tech_stack || '',
+          cms_type: businessProfile.cms_type || 'unknown',
+          gbp_location_id: businessProfile.gbp_location_id || '',
+          place_id: businessProfile.place_id || '',
+          competitor_urls: Array.isArray(businessProfile.competitor_urls)
+            ? businessProfile.competitor_urls.join(', ')
+            : (businessProfile.competitor_urls || '')
+        });
+      }
+      console.log("[Settings General] businessProfile useEffect SUCCESS");
+    } catch (error) {
+      console.error("[Settings General] businessProfile useEffect CRASH:", error);
     }
   }, [businessProfile]);
 
   useEffect(() => {
-    async function loadAuditLogs() {
-      console.log("[Settings General] Loading audit logs", {
-        hasTenantId: !!tenant?.id,
-        tenantId: tenant?.id,
-        timestamp: new Date().toISOString()
-      });
-      
-      if (!tenant?.id) return;
-
-      setLoadingAuditLogs(true);
-      try {
-        const logs = await getTenantAuditLogs(tenant.id);
-        console.log("[Settings General] Audit logs loaded", {
-          count: logs.length,
+    try {
+      async function loadAuditLogs() {
+        console.log("[Settings General] auditLogs useEffect START", {
+          hasTenantId: !!tenant?.id,
+          tenantId: tenant?.id,
           timestamp: new Date().toISOString()
         });
-        setAuditLogs(logs);
-      } catch (error) {
-        console.error('[Settings General] Failed to load audit logs:', error);
-      } finally {
-        setLoadingAuditLogs(false);
-      }
-    }
+        
+        if (!tenant?.id) return;
 
-    loadAuditLogs();
+        setLoadingAuditLogs(true);
+        try {
+          const logs = await getTenantAuditLogs(tenant.id);
+          console.log("[Settings General] Audit logs loaded", {
+            count: logs.length,
+            timestamp: new Date().toISOString()
+          });
+          setAuditLogs(logs);
+        } catch (error) {
+          console.error('[Settings General] Failed to load audit logs:', error);
+        } finally {
+          setLoadingAuditLogs(false);
+        }
+      }
+
+      loadAuditLogs();
+    } catch (error) {
+      console.error("[Settings General] auditLogs useEffect CRASH:", error);
+    }
   }, [tenant?.id]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -259,7 +269,14 @@ export default function GeneralSettingsPage() {
               <Label className="text-claux-muted">Onboarding Completed</Label>
               <div className="mt-1 text-claux-text">
                 {tenant?.onboarding_completed_at 
-                  ? new Date(tenant.onboarding_completed_at).toLocaleDateString() 
+                  ? (() => {
+                      try {
+                        return new Date(tenant.onboarding_completed_at).toLocaleDateString();
+                      } catch (e) {
+                        console.error("[Settings General] Date parsing error (onboarding):", e);
+                        return 'Invalid date';
+                      }
+                    })() 
                   : 'Not completed'}
               </div>
             </div>
@@ -453,25 +470,72 @@ export default function GeneralSettingsPage() {
             <div className="text-claux-muted">No audit logs found</div>
           ) : (
             <div className="space-y-2 max-h-[400px] overflow-y-auto">
-              {auditLogs.map((log) => (
-                <div key={log.id} className="p-3 bg-claux-border/30 rounded-lg border border-claux-border">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs text-claux-muted font-semibold">{log.action}</span>
-                    <span className="text-xs text-claux-muted">
-                      {new Date(log.created_at).toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="text-sm text-claux-text mb-1">
-                    <span className="text-[#7F77DD]">{log.table_name}</span>: {log.record_id}
-                  </div>
-                  <div className="text-xs text-claux-muted">
-                    Actor: {log.actor_type} ({log.actor_id?.slice(0, 8)}...)
-                  </div>
-                </div>
-              ))}
+              {auditLogs.map((log) => {
+                try {
+                  return (
+                    <div key={log.id} className="p-3 bg-claux-border/30 rounded-lg border border-claux-border">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs text-claux-muted font-semibold">{log.action || 'Unknown action'}</span>
+                        <span className="text-xs text-claux-muted">
+                          {(() => {
+                            try {
+                              return new Date(log.created_at).toLocaleString();
+                            } catch (e) {
+                              console.error("[Settings General] Date parsing error (audit log):", e);
+                              return 'Invalid date';
+                            }
+                          })()}
+                        </span>
+                      </div>
+                      <div className="text-sm text-claux-text mb-1">
+                        <span className="text-[#7F77DD]">{log.table_name || 'Unknown table'}</span>: {log.record_id || 'N/A'}
+                      </div>
+                      <div className="text-xs text-claux-muted">
+                        Actor: {log.actor_type || 'Unknown'} ({(() => {
+                          try {
+                            return log.actor_id?.slice(0, 8) || 'N/A';
+                          } catch (e) {
+                            console.error("[Settings General] actor_id slice error:", e);
+                            return 'N/A';
+                          }
+                        })()}...)
+                      </div>
+                    </div>
+                  );
+                } catch (error) {
+                  console.error("[Settings General] Audit log item render error:", error, log);
+                  return (
+                    <div key={log.id} className="p-3 bg-red-500/10 rounded-lg border border-red-500/30">
+                      <span className="text-xs text-red-400">Error rendering audit log</span>
+                    </div>
+                  );
+                }
+              })}
             </div>
           )}
         </div>
       </div>
   );
+  } catch (error) {
+    console.error("[Settings General] COMPONENT RENDER CRASH:", error);
+    return (
+      <div className="flex items-center justify-center min-h-screen p-6">
+        <div className="max-w-md w-full text-center">
+          <h1 className="text-2xl font-semibold mb-4">Render Error</h1>
+          <p className="text-muted-foreground mb-6">
+            An error occurred while rendering this page. This has been logged for investigation.
+          </p>
+          <pre className="text-xs text-left bg-red-500/10 p-4 rounded overflow-auto max-h-40">
+            {error instanceof Error ? error.message : String(error)}
+          </pre>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 bg-primary text-white px-4 py-2 rounded hover:bg-primary/90 transition-colors"
+          >
+            Refresh Page
+          </button>
+        </div>
+      </div>
+    );
+  }
 }
