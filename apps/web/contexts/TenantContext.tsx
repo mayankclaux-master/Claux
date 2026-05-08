@@ -43,6 +43,7 @@ type TenantContextType = {
   tenant: Tenant | null;
   businessProfile: BusinessProfile | null;
   loading: boolean;
+  loadingTimeout: boolean;
   error: string | null;
   refreshTenant: () => Promise<void>;
 };
@@ -54,12 +55,42 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [businessProfile, setBusinessProfile] = useState<BusinessProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingTimeout, setLoadingTimeout] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Add 15-second loading timeout to prevent infinite loading
+  useEffect(() => {
+    console.log("[TenantContext] Loading timeout timer START", {
+      loading,
+      timestamp: new Date().toISOString()
+    });
+
+    const timeoutId = setTimeout(() => {
+      console.error("[TenantContext] Loading timeout EXCEEDED after 15 seconds", {
+        loading,
+        timestamp: new Date().toISOString()
+      });
+      setLoadingTimeout(true);
+      setLoading(false);
+    }, 15000);
+
+    return () => {
+      console.log("[TenantContext] Loading timeout timer CLEARED");
+      clearTimeout(timeoutId);
+    };
+  }, [loading]);
 
   async function loadTenantData() {
     try {
       setLoading(true);
       setError(null);
+
+      console.log("[TenantContext] loadTenantData START", {
+        isUserLoaded,
+        hasUser: !!user,
+        userId: user?.id,
+        timestamp: new Date().toISOString()
+      });
 
       if (!isUserLoaded || !user) {
         console.log("[TenantContext] No user loaded, clearing tenant data");
@@ -69,9 +100,19 @@ export function TenantProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      console.log("[TenantContext] Loading tenant data for user:", user.id);
+      console.log("[TenantContext] Fetching /api/dashboard/profile START", {
+        userId: user.id,
+        timestamp: new Date().toISOString()
+      });
 
       const response = await fetch('/api/dashboard/profile');
+
+      console.log("[TenantContext] Fetch /api/dashboard/profile COMPLETE", {
+        userId: user.id,
+        status: response.status,
+        ok: response.ok,
+        timestamp: new Date().toISOString()
+      });
 
       if (!response.ok) {
         console.error("[TenantContext] Failed to load tenant information", response.status);
@@ -83,9 +124,18 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       }
 
       const json = await response.json();
+
+      console.log("[TenantContext] Raw API response payload", {
+        userId: user.id,
+        responseKeys: Object.keys(json),
+        hasData: !!json.data,
+        response: json,
+        timestamp: new Date().toISOString()
+      });
+
       const data = json.data;
 
-      console.log("[TenantContext] Tenant data loaded", {
+      console.log("[TenantContext] Tenant data loaded SUCCESS", {
         userId: user.id,
         has_tenant: !!data?.tenant,
         tenant_id: data?.tenant?.id,
@@ -97,16 +147,30 @@ export function TenantProvider({ children }: { children: ReactNode }) {
 
       if (data?.tenant) {
         setTenant(data.tenant);
+      } else {
+        console.warn("[TenantContext] No tenant in response data, setting tenant to null");
+        setTenant(null);
       }
 
       setBusinessProfile(data?.businessProfile || null);
 
+      console.log("[TenantContext] Loading state CLEARED (loading=false)", {
+        userId: user.id,
+        timestamp: new Date().toISOString()
+      });
+
       setLoading(false);
     } catch (err) {
-      console.error("[TenantContext] Error loading tenant data:", err);
+      console.error("[TenantContext] Error loading tenant data CRASH:", err);
       setError('Failed to load tenant information');
       setTenant(null);
       setBusinessProfile(null);
+      setLoading(false);
+    } finally {
+      console.log("[TenantContext] loadTenantData FINALLY - ensuring loading=false", {
+        userId: user?.id,
+        timestamp: new Date().toISOString()
+      });
       setLoading(false);
     }
   }
@@ -120,7 +184,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <TenantContext.Provider value={{ tenant, businessProfile, loading, error, refreshTenant }}>
+    <TenantContext.Provider value={{ tenant, businessProfile, loading, loadingTimeout, error, refreshTenant }}>
       {children}
     </TenantContext.Provider>
   );

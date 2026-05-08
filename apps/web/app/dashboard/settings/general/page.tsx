@@ -12,7 +12,7 @@ type CmsType = 'wordpress' | 'custom_php' | 'shopify' | 'wix' | 'squarespace' | 
 
 export default function GeneralSettingsPage() {
   try {
-    const { tenant, businessProfile, loading, refreshTenant } = useTenant();
+    const { tenant, businessProfile, loading, loadingTimeout, refreshTenant } = useTenant();
     
     console.log("[Settings General] Component render START", {
       loading,
@@ -204,6 +204,38 @@ export default function GeneralSettingsPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  if (loadingTimeout) {
+    console.log("[Settings General] Rendering timeout state from TenantContext");
+    return (
+      <div className="flex items-center justify-center min-h-screen p-6">
+        <div className="max-w-md w-full">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
+            <h1 className="text-2xl font-semibold mb-4 text-red-600 dark:text-red-400">
+              Loading timeout
+            </h1>
+            <p className="text-muted-foreground mb-6">
+              We couldn't load your workspace settings. Please refresh the page or contact support.
+            </p>
+            <div className="space-y-3">
+              <button
+                onClick={() => window.location.reload()}
+                className="w-full bg-primary text-white px-4 py-2 rounded hover:bg-primary/90 transition-colors"
+              >
+                Refresh Page
+              </button>
+              <a
+                href="mailto:support@claux.com"
+                className="block w-full text-center border border-border px-4 py-2 rounded hover:bg-accent transition-colors"
+              >
+                Contact Support
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (loading) {
