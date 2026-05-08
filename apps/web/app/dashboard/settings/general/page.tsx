@@ -13,6 +13,14 @@ type CmsType = 'wordpress' | 'custom_php' | 'shopify' | 'wix' | 'squarespace' | 
 export default function GeneralSettingsPage() {
   const { tenant, businessProfile, loading, refreshTenant } = useTenant();
   
+  console.log("[Settings General] Component render", {
+    loading,
+    hasTenant: !!tenant,
+    tenantId: tenant?.id,
+    hasBusinessProfile: !!businessProfile,
+    timestamp: new Date().toISOString()
+  });
+  
   // Lazy-load Supabase client to avoid RSC module evaluation issue
   const getSupabase = () => createSupabaseBrowserClient();
   
@@ -36,6 +44,12 @@ export default function GeneralSettingsPage() {
   const [loadingAuditLogs, setLoadingAuditLogs] = useState(false);
 
   useEffect(() => {
+    console.log("[Settings General] businessProfile changed", {
+      hasBusinessProfile: !!businessProfile,
+      businessName: businessProfile?.business_name,
+      timestamp: new Date().toISOString()
+    });
+    
     if (businessProfile) {
       setFormData({
         business_name: businessProfile.business_name || '',
@@ -59,14 +73,24 @@ export default function GeneralSettingsPage() {
 
   useEffect(() => {
     async function loadAuditLogs() {
+      console.log("[Settings General] Loading audit logs", {
+        hasTenantId: !!tenant?.id,
+        tenantId: tenant?.id,
+        timestamp: new Date().toISOString()
+      });
+      
       if (!tenant?.id) return;
 
       setLoadingAuditLogs(true);
       try {
         const logs = await getTenantAuditLogs(tenant.id);
+        console.log("[Settings General] Audit logs loaded", {
+          count: logs.length,
+          timestamp: new Date().toISOString()
+        });
         setAuditLogs(logs);
       } catch (error) {
-        console.error('Failed to load audit logs:', error);
+        console.error('[Settings General] Failed to load audit logs:', error);
       } finally {
         setLoadingAuditLogs(false);
       }
