@@ -81,7 +81,16 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   }, [loading]);
 
   async function loadTenantData() {
+    console.log("[TenantContext] loadTenantData called", {
+      isUserLoaded,
+      hasUser: !!user,
+      userId: user?.id,
+      currentLoading: loading,
+      timestamp: new Date().toISOString()
+    });
+
     try {
+      console.log("[TenantContext] Setting loading to TRUE");
       setLoading(true);
       setError(null);
 
@@ -154,6 +163,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
 
       setBusinessProfile(data?.businessProfile || null);
 
+      console.log("[TenantContext] Setting loading to FALSE (success path)");
       console.log("[TenantContext] Loading state CLEARED (loading=false)", {
         userId: user.id,
         timestamp: new Date().toISOString()
@@ -165,6 +175,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       setError('Failed to load tenant information');
       setTenant(null);
       setBusinessProfile(null);
+      console.log("[TenantContext] Setting loading to FALSE (error path)");
       setLoading(false);
     } finally {
       console.log("[TenantContext] loadTenantData FINALLY - ensuring loading=false", {
@@ -176,12 +187,28 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
+    console.log("[TenantContext] useEffect triggered", {
+      isUserLoaded,
+      hasUser: !!user,
+      userId: user?.id,
+      timestamp: new Date().toISOString()
+    });
     loadTenantData();
   }, [isUserLoaded, user]);
 
   async function refreshTenant() {
     await loadTenantData();
   }
+
+  console.log("[TenantContext] Provider render", {
+    hasTenant: !!tenant,
+    tenantId: tenant?.id,
+    hasBusinessProfile: !!businessProfile,
+    loading,
+    loadingTimeout,
+    hasError: !!error,
+    timestamp: new Date().toISOString()
+  });
 
   return (
     <TenantContext.Provider value={{ tenant, businessProfile, loading, loadingTimeout, error, refreshTenant }}>
@@ -192,6 +219,17 @@ export function TenantProvider({ children }: { children: ReactNode }) {
 
 export function useTenant() {
   const context = useContext(TenantContext);
+
+  console.log("[useTenant] Hook called", {
+    hasTenant: !!context?.tenant,
+    tenantId: context?.tenant?.id,
+    hasBusinessProfile: !!context?.businessProfile,
+    loading: context?.loading,
+    loadingTimeout: context?.loadingTimeout,
+    hasError: !!context?.error,
+    timestamp: new Date().toISOString()
+  });
+
   if (context === undefined) {
     throw new Error('useTenant must be used within a TenantProvider');
   }

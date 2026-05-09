@@ -13,7 +13,18 @@ type CmsType = 'wordpress' | 'custom_php' | 'shopify' | 'wix' | 'squarespace' | 
 export default function GeneralSettingsPage() {
   try {
     const { tenant, businessProfile, loading, loadingTimeout, refreshTenant } = useTenant();
-    
+
+    console.log("[Settings General] useTenant hook returned", {
+      loading,
+      loadingTimeout,
+      hasTenant: !!tenant,
+      tenantId: tenant?.id,
+      tenantName: tenant?.name,
+      hasBusinessProfile: !!businessProfile,
+      businessName: businessProfile?.business_name,
+      timestamp: new Date().toISOString()
+    });
+
     console.log("[Settings General] Component render START", {
       loading,
       hasTenant: !!tenant,
@@ -45,13 +56,20 @@ export default function GeneralSettingsPage() {
   const [loadingAuditLogs, setLoadingAuditLogs] = useState(false);
 
   useEffect(() => {
+    console.log("[Settings General] businessProfile useEffect TRIGGERED", {
+      hasBusinessProfile: !!businessProfile,
+      businessName: businessProfile?.business_name,
+      loading,
+      timestamp: new Date().toISOString()
+    });
+
     try {
       console.log("[Settings General] businessProfile useEffect START", {
         hasBusinessProfile: !!businessProfile,
         businessName: businessProfile?.business_name,
         timestamp: new Date().toISOString()
       });
-      
+
       if (businessProfile) {
         setFormData({
           business_name: businessProfile.business_name || '',
