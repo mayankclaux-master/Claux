@@ -14,7 +14,7 @@ export async function logAuditEntry(params: {
   new_values?: Record<string, unknown> | null;
   metadata?: Record<string, unknown> | null;
 }) {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   const {
     data: { user }
   } = await supabase.auth.getUser();

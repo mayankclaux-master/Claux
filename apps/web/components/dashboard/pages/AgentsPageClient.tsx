@@ -9,7 +9,7 @@ import { useTenant } from '@/contexts/TenantContext';
 import { getAgentAuditLogs } from '@/actions/audit-log';
 
 
-type AgentName = 'ARIA' | 'SCRIBE' | 'VISUAL' | 'FORGE' | 'CORE' | 'LINX' | 'LOCL' | 'REPUTE' | 'AMPLI';
+type AgentName = 'ARIA' | 'SCRIBE' | 'LOCL' | 'LINX' | 'CORE' | 'REPUTE' | 'AMPLI' | 'PRISM' | 'PULSE';
 
 type ViewerProfile = {
   tenantId: string;
@@ -147,7 +147,7 @@ const agents: Agent[] = [
   }
 ];
 
-const AGENT_NAMES: AgentName[] = ['ARIA', 'SCRIBE', 'VISUAL', 'FORGE', 'CORE', 'LINX', 'LOCL', 'REPUTE', 'AMPLI'];
+const AGENT_NAMES: AgentName[] = ['ARIA', 'SCRIBE', 'LOCL', 'LINX', 'CORE', 'REPUTE', 'AMPLI', 'PRISM', 'PULSE'];
 
 const agentChipColors: Record<string, string> = {
   ARIA: 'bg-[#7F77DD]/25 text-[#B3AEF3] border border-[#7F77DD]/40',

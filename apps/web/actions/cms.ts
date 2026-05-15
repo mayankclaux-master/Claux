@@ -13,7 +13,7 @@ type SaveCmsCredentialsInput = {
 };
 
 export async function saveCmsCredentials(input: SaveCmsCredentialsInput) {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   const {
     data: { user }
   } = await supabase.auth.getUser();

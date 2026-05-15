@@ -23,9 +23,9 @@ export async function POST(request: Request) {
   const { error } = await adminClient.auth.resend({
     type: "signup",
     email: normalizedEmail,
-    options: {
-      emailRedirectTo
-    }
+    options: emailRedirectTo ? {
+      emailRedirectTo,
+    } : {}
   });
 
   if (error) {

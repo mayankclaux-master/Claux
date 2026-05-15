@@ -6,8 +6,8 @@ function normalizeSupabaseUrl(value: string) {
   return value.replace(/\/rest\/v1\/?$/, "").replace(/\/$/, "");
 }
 
-export function createSupabaseServerClient() {
-  const cookieStore = cookies();
+export async function createSupabaseServerClient() {
+  const cookieStore = await cookies();
 
   return createServerClient(
     normalizeSupabaseUrl(env.NEXT_PUBLIC_SUPABASE_URL),

@@ -41,8 +41,8 @@ ALTER TABLE pulse_rankings ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can view their own pulse rankings"
   ON pulse_rankings FOR SELECT
   USING (
-    tenant_id IN (
-      SELECT tenant_id FROM profiles WHERE id = auth.uid()
+    tenant_id::text IN (
+      SELECT tenant_id FROM profiles WHERE id = auth.jwt() ->> 'sub'
     )
   );
 

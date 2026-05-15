@@ -58,8 +58,8 @@ ALTER TABLE integrations ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can view their own integrations"
   ON integrations FOR SELECT
   USING (
-    tenant_id IN (
-      SELECT tenant_id FROM profiles WHERE id = auth.uid()
+    tenant_id::text IN (
+      SELECT tenant_id FROM profiles WHERE id = auth.jwt() ->> 'sub'
     )
   );
 

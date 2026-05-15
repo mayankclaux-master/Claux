@@ -266,19 +266,17 @@ export default function MissionControl({ isWordPress, orgId }: MissionControlPro
   const [keywordRankings, setKeywordRankings] = useState<RankingRow[]>(initialKeywordRankings);
   const [agentStateByName, setAgentStateByName] = useState<Record<AgentName, AgentState>>(() => getInitialAgentStateByName());
   const [dashboardStats, setDashboardStats] = useState<{
-    aria: { totalKeywords: number; topKeywords: Array<{ keyword: string; search_volume: number; intent: string }>; intentBreakdown: { [key: string]: number } } | null;
-    scribe: { draftCount: number; publishedCount: number } | null;
-    publish: { successCount: number; failedCount: number; latestPublishedUrls: Array<{ url: string; published_at: string }> } | null;
-    pulse: { averageRank: number | null; averageVisibilityScore: number | null; topImprovingKeywords: Array<{ keyword: string; rank_change: number }> } | null;
-    locl: { optimizationScore: number | null; completenessScore: number | null; recommendations: string[] } | null;
+    aria: { totalExecutions: number; successfulExecutions: number; failedExecutions: number; totalKeywords: number; avgDurationMs: number; totalCost: number; totalTokens: number } | null;
+    scribe: { totalExecutions: number; successfulExecutions: number; failedExecutions: number; draftCount: number; publishedCount: number; avgDurationMs: number; totalCost: number; totalTokens: number } | null;
+    overall: { totalExecutions: number; runningExecutions: number; totalTasks: number; completedTasks: number; failedTasks: number } | null;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const stats = [
+    { label: 'Total Executions', value: String(dashboardStats?.overall?.totalExecutions ?? '0'), helper: dashboardStats?.overall?.totalExecutions ? 'Run' : 'Awaiting Data' },
     { label: 'Total Keywords', value: String(dashboardStats?.aria?.totalKeywords ?? '0'), helper: dashboardStats?.aria?.totalKeywords ? 'Tracked' : 'Awaiting Data' },
     { label: 'Draft Content', value: String(dashboardStats?.scribe?.draftCount ?? '0'), helper: dashboardStats?.scribe?.draftCount ? 'Generated' : 'Awaiting Data' },
-    { label: 'Published Posts', value: String(dashboardStats?.scribe?.publishedCount ?? '0'), helper: dashboardStats?.scribe?.publishedCount ? 'Live' : 'Awaiting Data' },
-    { label: 'Live Agent Signals', value: String(liveTaskFeed.length), helper: liveTaskFeed.length ? 'Realtime Active' : 'System Initializing' }
+    { label: 'Running Tasks', value: String(dashboardStats?.overall?.runningExecutions ?? '0'), helper: dashboardStats?.overall?.runningExecutions ? 'Active' : 'Idle' }
   ];
 
   useEffect(() => {
@@ -300,7 +298,7 @@ export default function MissionControl({ isWordPress, orgId }: MissionControlPro
 
     async function loadDashboardStats() {
       try {
-        const response = await fetch(`/api/dashboard/stats`);
+        const response = await fetch(`/api/dashboard/runtime-stats`);
         if (!response.ok) {
           setError("Failed to load dashboard stats");
           return;
@@ -314,7 +312,7 @@ export default function MissionControl({ isWordPress, orgId }: MissionControlPro
 
     async function loadActivityFeed() {
       try {
-        const response = await fetch(`/api/dashboard/activity-feed`);
+        const response = await fetch(`/api/dashboard/runtime-activity-feed`);
         if (!response.ok) {
           setError("Failed to load activity feed");
           return;
@@ -326,7 +324,7 @@ export default function MissionControl({ isWordPress, orgId }: MissionControlPro
 
         const nextFeed = activities.map((row: any) => ({
           agent: row.agent as string,
-          task: row.message as string,
+          task: row.task as string,
           status: (row.status as FeedItem['status']) ?? 'completed'
         }));
 
@@ -338,7 +336,7 @@ export default function MissionControl({ isWordPress, orgId }: MissionControlPro
 
     async function loadAgentStates() {
       try {
-        const response = await fetch(`/api/dashboard/agent-status`);
+        const response = await fetch(`/api/dashboard/runtime-agent-status`);
         if (!response.ok) {
           setError("Failed to load agent status");
           return;
@@ -359,7 +357,9 @@ export default function MissionControl({ isWordPress, orgId }: MissionControlPro
             nextState[agentName] = {
               statusLine: normalizeAgentStatus(status.status),
               progress: normalizeAgentProgress(status.status === 'running' ? 50 : status.status === 'completed' ? 100 : 0),
-              lastRunAt: status.lastRun
+              lastRunAt: status.lastExecutionAt,
+              runCount: status.totalExecutions,
+              errorCount: status.failedExecutions
             };
           }
         }
@@ -371,27 +371,18 @@ export default function MissionControl({ isWordPress, orgId }: MissionControlPro
 
     async function loadKeywordRankings() {
       try {
-        const response = await fetch(`/api/dashboard/stats`);
+        // Keyword rankings from seo_keywords table
+        const response = await fetch(`/api/dashboard/runtime-stats`);
         if (!response.ok) {
           return;
         }
         const json = await response.json();
-        const pulseStats = json.pulse;
-
-        if (!pulseStats || !pulseStats.topImprovingKeywords) {
-          setKeywordRankings([]);
-          return;
-        }
-
-        const nextKeywords = pulseStats.topImprovingKeywords.slice(0, 5).map((item: any) => ({
-          keyword: item.keyword,
-          position: 0, // Will be updated when real ranking data is available
-          change: item.rank_change,
-          volume: 0, // Will be updated when real volume data is available
-          agent: 'PULSE'
-        }));
-
-        setKeywordRankings(nextKeywords);
+        
+        // Get top keywords from ARIA stats
+        const ariaStats = json.aria;
+        
+        // For now, clear keyword rankings as this requires ranking pipeline
+        setKeywordRankings([]);
       } catch (err) {
         // Silently fail for keyword rankings
       }
@@ -413,27 +404,32 @@ export default function MissionControl({ isWordPress, orgId }: MissionControlPro
   }, [orgId, isUserLoaded, user]);
 
   const agents = baseAgents.map((agent) => {
-    const runtimeState = agentStateByName[agent.name as AgentName] ?? { statusLine: 'System Initializing', progress: 0 };
+    const runtimeState = agentStateByName[agent.name as AgentName] ?? { statusLine: 'System Initializing', progress: 0, runCount: 0, errorCount: 0, lastRunAt: null };
     const statusLine =
       agent.name === 'CORE' && isWordPress && runtimeState.statusLine === 'System Initializing'
         ? 'WordPress Managed'
         : runtimeState.statusLine;
 
-    const action =
-      statusLine === 'Completed'
-        ? `${agent.name} cycle completed. Awaiting next sync.`
-        : statusLine === 'In Progress'
-          ? 'Execution in progress. Receiving live updates.'
-          : statusLine === 'Failed'
-            ? 'Last run failed. Awaiting orchestrator retry.'
-            : 'System initializing. Waiting for connected assets.';
+    // Show all 9 canonical agents as active
+    const isActiveAgent = agent.name === 'ARIA' || agent.name === 'SCRIBE' || agent.name === 'LOCL' || agent.name === 'LINX' || agent.name === 'CORE' || agent.name === 'REPUTE' || agent.name === 'AMPLI' || agent.name === 'PRISM' || agent.name === 'PULSE';
+    const displayStatusLine = isActiveAgent ? statusLine : 'Not Deployed';
+    const displayProgress = isActiveAgent ? runtimeState.progress : 0;
+    const displayAction = isActiveAgent
+      ? (statusLine === 'Completed'
+          ? `${agent.name} cycle completed. Awaiting next sync.`
+          : statusLine === 'In Progress'
+            ? 'Execution in progress. Receiving live updates.'
+            : statusLine === 'Failed'
+              ? 'Last run failed. Awaiting orchestrator retry.'
+              : 'System initializing. Waiting for connected assets.')
+      : 'Agent not deployed. Coming soon.';
 
     return {
       ...agent,
-      action,
-      progress: runtimeState.progress,
-      statusLine,
-      time: runtimeState.progress > 0 ? 'Live' : 'N/A'
+      action: displayAction,
+      progress: displayProgress,
+      statusLine: displayStatusLine,
+      time: displayProgress > 0 ? 'Live' : 'N/A'
     };
   });
 

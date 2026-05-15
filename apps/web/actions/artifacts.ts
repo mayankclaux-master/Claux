@@ -4,7 +4,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 
 // ARIA - Keywords
 export async function getAriaKeywords(tenantId: string) {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from('aria_keywords')
     .select('*')
@@ -21,7 +21,7 @@ export async function getAriaKeywords(tenantId: string) {
 
 // SCRIBE - Content
 export async function getScribeContent(tenantId: string) {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from('scribe_content')
     .select('*')
@@ -38,7 +38,7 @@ export async function getScribeContent(tenantId: string) {
 
 // PULSE - Rankings
 export async function getPulseRankings(tenantId: string) {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from('pulse_rankings')
     .select('*')
@@ -55,7 +55,7 @@ export async function getPulseRankings(tenantId: string) {
 
 // REPUTE - Reviews
 export async function getReputeReviews(tenantId: string) {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from('repute_reviews')
     .select('*')
@@ -72,7 +72,7 @@ export async function getReputeReviews(tenantId: string) {
 
 // LINX - Backlinks
 export async function getLinxBacklinks(tenantId: string) {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from('linx_backlinks')
     .select('*')
@@ -89,7 +89,7 @@ export async function getLinxBacklinks(tenantId: string) {
 
 // PRISM - Assets
 export async function getPrismAssets(tenantId: string) {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from('prism_assets')
     .select('*')
