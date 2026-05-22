@@ -20,7 +20,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { CallbackIngestion, createCallbackIngestion } from '@/lib/integrations/mesh/callbacks';
-import { WebhookCallback } from '@/lib/integrations/mesh/contracts';
+import { WebhookCallback } from '@/lib/integrations/mesh/callbacks';
 import { RuntimeService } from '@/lib/runtime/services/runtime.service';
 
 const supabase = createClient(

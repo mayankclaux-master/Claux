@@ -9,7 +9,7 @@
  * - tenant permissions
  */
 
-import { IntegrationRequest } from '../contracts';
+import { IntegrationRequest } from '../callbacks';
 import { ProviderConfig } from '../providers';
 import { ProviderRegistry } from '../providers';
 

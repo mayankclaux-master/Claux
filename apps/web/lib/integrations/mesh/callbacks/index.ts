@@ -14,8 +14,33 @@
  * - continue execution safely
  */
 
-import { WebhookCallback, IntegrationContract } from '../contracts';
 import { RuntimeService } from '@/lib/runtime/services/runtime.service';
+
+export interface WebhookCallback {
+  executionId: string;
+  tenantId: string;
+  correlationId: string;
+  provider: string;
+  payload: Record<string, unknown>;
+  timestamp: string;
+  signature?: string;
+  replayToken?: string;
+}
+
+export interface IntegrationContract {
+  provider: string;
+  version: string;
+  contractType: 'webhook' | 'callback' | 'polling';
+}
+
+export interface IntegrationRequest {
+  executionId: string;
+  tenantId: string;
+  provider: string;
+  action: string;
+  payload: Record<string, unknown>;
+  timestamp: string;
+}
 
 export interface CallbackValidationResult {
   valid: boolean;

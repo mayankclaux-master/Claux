@@ -13,7 +13,7 @@
  */
 
 import { RuntimeService } from '@/lib/runtime/services/runtime.service';
-import { WebhookCallback } from '../contracts';
+import { WebhookCallback } from '../callbacks';
 
 export interface TenantCallbackSecurityConfig {
   signatureSecret: string;

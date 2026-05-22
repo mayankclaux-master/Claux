@@ -316,7 +316,7 @@ export default function MissionControl({ isWordPress, orgId }: MissionControlPro
       }
     };
 
-    const displayAction = runtimeState.runCount > 0 ? getActionMessage(runtimeState.statusLine) : 'No executions yet.';
+    const displayAction = (runtimeState.runCount ?? 0) > 0 ? getActionMessage(runtimeState.statusLine) : 'No executions yet.';
     const displayTime = runtimeState.lastRunAt ? new Date(runtimeState.lastRunAt).toLocaleString() : 'N/A';
 
     return {

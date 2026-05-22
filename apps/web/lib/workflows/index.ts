@@ -4,4 +4,3 @@
  */
 
 export * from './inngest-client';
-export * from './base-workflow';

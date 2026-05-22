@@ -3,4 +3,4 @@
  * Execution tracing, diagnostics, and monitoring
  */
 
-export * from './tracer';
+export * from './execution-metrics';

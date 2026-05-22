@@ -10,7 +10,7 @@
  * - observability hooks
  */
 
-import { WebhookCallback } from '../contracts';
+import { WebhookCallback } from '../callbacks';
 
 export interface WebhookConfig {
   allowedTenants: string[];
