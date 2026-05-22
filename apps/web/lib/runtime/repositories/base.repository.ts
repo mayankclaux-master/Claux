@@ -3,6 +3,7 @@
  * 
  * Shared CRUD patterns and query execution abstraction
  * All repositories extend this base class for consistency
+ * CRITICAL: All repository operations are tenant-scoped by default
  */
 
 import type {
@@ -13,6 +14,17 @@ import type {
 } from '../types/common.types';
 import type { QueryConfig } from '../db';
 import { RuntimeDatabaseError, RuntimeDbErrorCode } from '../db';
+
+/**
+ * Repository guardrail error
+ * Thrown when tenant isolation is violated
+ */
+export class RepositoryTenantGuardError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RepositoryTenantGuardError';
+  }
+}
 
 /**
  * Base filter interface
@@ -40,6 +52,45 @@ export abstract class BaseRepository<T, TInsert, TUpdate, TFilter extends BaseFi
    * Must be implemented by concrete repositories
    */
   protected abstract getTenantId(): UUID;
+
+  /**
+   * Validate tenant scope - throws error if tenantId is missing
+   * CRITICAL: Prevents unscoped repository operations
+   */
+  protected validateTenantScope(): void {
+    const tenantId = this.getTenantId();
+    if (!tenantId) {
+      throw new RepositoryTenantGuardError(
+        `Repository operation attempted without tenant context. ` +
+        `All repository operations require tenant scope. ` +
+        `Table: ${this.getTableName()}`
+      );
+    }
+  }
+
+  /**
+   * Assert tenant ownership - validates that a record belongs to the current tenant
+   * CRITICAL: Prevents cross-tenant data access
+   */
+  protected assertTenantOwnership(recordTenantId: UUID): void {
+    const currentTenantId = this.getTenantId();
+    if (recordTenantId !== currentTenantId) {
+      throw new RepositoryTenantGuardError(
+        `Tenant ownership assertion failed. ` +
+        `Record tenant_id: ${recordTenantId}, Current tenant_id: ${currentTenantId}. ` +
+        `Cross-tenant data access is blocked. ` +
+        `Table: ${this.getTableName()}`
+      );
+    }
+  }
+
+  /**
+   * Require tenant context - validates that tenant context is present
+   * CRITICAL: Prevents operations without tenant context
+   */
+  protected requireTenantContext(): void {
+    this.validateTenantScope();
+  }
 
   /**
    * Get query configuration for operations
@@ -100,14 +151,21 @@ export abstract class BaseRepository<T, TInsert, TUpdate, TFilter extends BaseFi
 
   /**
    * Create a new record
+   * CRITICAL: Enforces tenant_id on all inserts to prevent cross-tenant data contamination
    */
   protected async create(data: TInsert): Promise<Result<T, RuntimeDatabaseError>> {
     this.logOperation('create', { data });
 
+    // Enforce tenant_id in insert data
+    const insertData = {
+      ...data,
+      tenant_id: this.getTenantId(),
+    } as TInsert;
+
     const client = this.getAdminClient();
     const query = client
       .from(this.getTableName())
-      .insert(data)
+      .insert(insertData)
       .select()
       .single();
 
@@ -122,14 +180,21 @@ export abstract class BaseRepository<T, TInsert, TUpdate, TFilter extends BaseFi
 
   /**
    * Create multiple records in batch
+   * CRITICAL: Enforces tenant_id on all inserts to prevent cross-tenant data contamination
    */
   protected async createBatch(data: TInsert[]): Promise<Result<T[], RuntimeDatabaseError>> {
     this.logOperation('createBatch', { count: data.length });
 
+    // Enforce tenant_id in all insert data
+    const insertData = data.map(item => ({
+      ...item,
+      tenant_id: this.getTenantId(),
+    })) as TInsert[];
+
     const client = this.getAdminClient();
     const query = client
       .from(this.getTableName())
-      .insert(data)
+      .insert(insertData)
       .select();
 
     const result = await this.executeInsert(() => query);
@@ -143,6 +208,7 @@ export abstract class BaseRepository<T, TInsert, TUpdate, TFilter extends BaseFi
 
   /**
    * Find a record by ID
+   * CRITICAL: Enforces tenant_id filter to prevent cross-tenant data access
    */
   protected async findById(id: UUID): Promise<Result<T, RuntimeDatabaseError>> {
     this.logOperation('findById', { id });
@@ -152,6 +218,7 @@ export abstract class BaseRepository<T, TInsert, TUpdate, TFilter extends BaseFi
       .from(this.getTableName())
       .select()
       .eq('id', id)
+      .eq('tenant_id', this.getTenantId())
       .single();
 
     const result = await this.executeQuery(() => query);
@@ -200,6 +267,7 @@ export abstract class BaseRepository<T, TInsert, TUpdate, TFilter extends BaseFi
 
   /**
    * Update a record by ID
+   * CRITICAL: Enforces tenant_id filter to prevent cross-tenant data updates
    */
   protected async updateById(id: UUID, data: TUpdate): Promise<Result<T, RuntimeDatabaseError>> {
     this.logOperation('updateById', { id, data });
@@ -209,6 +277,7 @@ export abstract class BaseRepository<T, TInsert, TUpdate, TFilter extends BaseFi
       .from(this.getTableName())
       .update(data)
       .eq('id', id)
+      .eq('tenant_id', this.getTenantId())
       .select()
       .single();
 

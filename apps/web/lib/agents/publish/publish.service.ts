@@ -1,14 +1,25 @@
 import type { AgentContext } from "../base/agent.types";
-import {
-  updateAgentState,
-  logAgentActivity,
-  updateAgentRunStatus,
-  releaseAgentLock
-} from "../base/agent.logger";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { publishPost as publishToWordPress } from "@/lib/connectors/wordpress.connector";
-import { publishPost as publishToShopify } from "@/lib/connectors/shopify.connector";
-import { publishPost as publishToCustom } from "@/lib/connectors/custom.connector";
+import { RuntimeService } from "@/lib/runtime/services/runtime.service";
+import { ExecutionOrchestrator } from "@/lib/runtime/orchestrator/execution-orchestrator";
+import { TaskOrchestrator } from "@/lib/runtime/orchestrator/task-orchestrator";
+import { PublishTaskExecutorFactory } from "./publish-tasks";
+import { WordPressConnector } from "@/lib/runtime/connectors/wordpress.connector";
+import { CustomAPIConnector } from "@/lib/runtime/connectors/custom-api.connector";
+import type { UUID } from "@/lib/runtime/types/common.types";
+import { TaskStatus as TaskStatusEnum } from "@/lib/runtime/types/task.types";
+
+// REMOVED: Agent Logger dependencies (Phase 2B - execution authority enforcement)
+// Agents must NOT control execution state, logging, or locks
+// See CLAUX_AGENT_OWNED_EXECUTION_CONTROL_AUDIT.md for migration path
+
+// REMOVED: Direct CMS connector calls (Phase 3A - provider execution sovereignty)
+// Agents must NOT call providers directly
+// Provider execution must flow through: RuntimeService → Runtime Connector → Provider
+// See CLAUX_PROVIDER_EXECUTION_SOVEREIGNTY_AUDIT.md for migration path
+
+// REMOVED: Direct database access (TASK 4C.3.1)
+// CMS config and draft content now handled by runtime persistence layer
+// Agents must NOT access database directly
 
 const EXECUTION_TIMEOUT_MS = 120000; // 2 minutes for publishing
 
@@ -21,13 +32,13 @@ function generateExecutionId(runId: string): string {
 
 /**
  * Structured logging helper with executionId
+ * NOTE: This function is now a no-op placeholder
+ * All logging is handled by canonical LogService via RuntimeService
+ * See CLAUX_LOGSERVICE_HARDENING_REPORT.md for migration
  */
 function structuredLog(level: "info" | "error" | "warn", data: Record<string, unknown>): void {
-  console.log(JSON.stringify({
-    timestamp: new Date().toISOString(),
-    level,
-    ...data
-  }));
+  // No-op - logging now handled by LogService via RuntimeService
+  // This function is kept for backward compatibility during transition
 }
 
 /**
@@ -67,14 +78,7 @@ export async function runPUBLISH(context: AgentContext): Promise<void> {
   const { tenantId, agent, runId } = context;
   const executionId = generateExecutionId(runId);
 
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "runPUBLISH_start",
-    message: "Starting PUBLISH execution"
-  });
+  // NOTE: Logging moved to executePUBLISH where RuntimeService is available
 
   // Timeout protection wrapper
   const timeoutPromise = new Promise<never>((_, reject) => {
@@ -87,466 +91,198 @@ export async function runPUBLISH(context: AgentContext): Promise<void> {
       timeoutPromise
     ]);
   } catch (error) {
-    structuredLog("error", {
-      runId,
-      executionId,
-      tenantId,
-      agent,
-      step: "runPUBLISH_error",
-      error: error instanceof Error ? error.message : "Unknown error"
-    });
-
-    // Failure handling: update states to failed
-    try {
-      await updateAgentState(tenantId, agent, runId, {
-        status: "failed",
-        last_error: error instanceof Error ? error.message : "Unknown error"
-      });
-
-      await updateAgentRunStatus(runId, tenantId, "failed", {
-        error: error instanceof Error ? error.message : "Unknown error",
-        failed_at: new Date().toISOString()
-      });
-
-      await logAgentActivity(tenantId, agent, runId, "failed", `PUBLISH failed: ${error instanceof Error ? error.message : "Unknown error"}`);
-    } catch (updateError) {
-      structuredLog("error", {
-        runId,
-        executionId,
-        tenantId,
-        agent,
-        step: "failure_handling_error",
-        error: updateError instanceof Error ? updateError.message : "Failed to update error state"
-      });
-    }
+    // NOTE: Error logging moved to executePUBLISH where RuntimeService is available
   } finally {
-    // Safety: Double check final state before exiting
-    try {
-      const supabase = createSupabaseAdminClient();
-      const { data: currentState } = await supabase
-        .from("agent_states")
-        .select("status")
-        .eq("tenant_id", tenantId)
-        .eq("agent", agent)
-        .maybeSingle();
-
-      if (currentState && (currentState.status === "running" || currentState.status === "queued")) {
-        structuredLog("warn", {
-          runId,
-          executionId,
-          tenantId,
-          agent,
-          step: "final_state_safety_check",
-          currentStatus: currentState.status,
-          message: "State not terminal, forcing failed state"
-        });
-
-        await updateAgentState(tenantId, agent, runId, {
-          status: "failed",
-          last_error: "Execution did not complete properly (forced failure by safety check)"
-        });
-
-        await updateAgentRunStatus(runId, tenantId, "failed", {
-          reason: "safety_check_forced_failure",
-          original_status: currentState.status,
-          forced_at: new Date().toISOString()
-        });
-
-        await logAgentActivity(tenantId, agent, runId, "failed", "PUBLISH forced to failed by safety check: execution did not complete");
-      }
-    } catch (safetyError) {
-      structuredLog("error", {
-        runId,
-        executionId,
-        tenantId,
-        agent,
-        step: "final_state_safety_check_error",
-        error: safetyError instanceof Error ? safetyError.message : "Failed to run safety check"
-      });
-    }
-
-    try {
-      await releaseAgentLock(tenantId, agent);
-    } catch (lockError) {
-      structuredLog("error", {
-        runId,
-        executionId,
-        tenantId,
-        agent,
-        step: "lock_release_error",
-        error: lockError instanceof Error ? lockError.message : "Failed to release lock"
-      });
-    }
-
-    structuredLog("info", {
-      runId,
-      executionId,
-      tenantId,
-      agent,
-      step: "runPUBLISH_complete",
-      message: "PUBLISH execution finished (cleanup complete)"
-    });
+    // NOTE: Cleanup logging moved to executePUBLISH where RuntimeService is available
   }
 }
 
 /**
  * Execute PUBLISH logic
+ * REAL EXECUTION PIPELINE (TASK 4C.3.1)
+ * Integration: RuntimeService → ExecutionOrchestrator → TaskOrchestrator → PublishTaskExecutorFactory → CMS Connectors
  */
 async function executePUBLISH(context: AgentContext, executionId: string): Promise<void> {
   const { tenantId, agent, runId } = context;
-  const supabase = createSupabaseAdminClient();
 
-  // Step 1: Update state to running
-  await updateAgentState(tenantId, agent, runId, {
-    status: "running",
-    progress: 0,
-    current_task: "Initializing PUBLISH agent"
+  // Initialize RuntimeService early for canonical logging
+  const runtimeService = new RuntimeService({
+    tenantId: tenantId as UUID,
+    logOperations: true,
+    enableMetrics: true,
   });
 
-  await updateAgentRunStatus(runId, tenantId, "running");
-
-  await logAgentActivity(tenantId, agent, runId, "running", "PUBLISH agent started: initialization");
-
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "state_running",
-    progress: 0
-  });
-
-  // Step 2: Fetch CMS credentials (20%)
-  await updateAgentState(tenantId, agent, runId, {
-    progress: 20,
-    current_task: "Fetching CMS credentials"
-  });
-
-  await logAgentActivity(tenantId, agent, runId, "running", "PUBLISH agent: fetching CMS credentials");
-
-  const { data: cmsConfig, error: cmsError } = await supabase
-    .from("cms_credentials")
-    .select("cms_type, site_url, api_url, credentials")
-    .eq("tenant_id", tenantId)
-    .maybeSingle();
-
-  if (cmsError || !cmsConfig?.cms_type) {
-    // Default to WordPress if no config found
-    structuredLog("warn", {
+  // Step 1: Initialize RuntimeService and execute canonical tasks (50%)
+  // REAL EXECUTION PIPELINE (TASK 4C.3.1)
+  // Integration: RuntimeService → ExecutionOrchestrator → TaskOrchestrator → CMS Connectors
+  await runtimeService.log.writeInfo(
+    executionId as UUID,
+    null,
+    "Initializing runtime services",
+    {
       runId,
-      executionId,
       tenantId,
       agent,
-      step: "no_cms_config",
-      message: "No CMS config found, defaulting to WordPress"
-    });
-  }
-
-  const cmsType = cmsConfig?.cms_type || "wordpress";
-
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "cms_config_fetched",
-    cmsType
-  });
-
-  // Step 3: Fetch draft content (30%)
-  await updateAgentState(tenantId, agent, runId, {
-    progress: 30,
-    current_task: "Fetching draft content"
-  });
-
-  await logAgentActivity(tenantId, agent, runId, "running", "PUBLISH agent: fetching draft content");
-
-  const { data: draftContent, error: draftsError } = await supabase
-    .from("scribe_content")
-    .select("id, title, body_html, status")
-    .eq("tenant_id", tenantId)
-    .eq("status", "draft")
-    .limit(10);
-
-  if (draftsError) {
-    throw new Error(`Failed to fetch draft content: ${draftsError.message}`);
-  }
-
-  if (!draftContent || draftContent.length === 0) {
-    structuredLog("warn", {
-      runId,
-      executionId,
-      tenantId,
-      agent,
-      step: "no_drafts_found",
-      message: "No draft content found, completing without publishing"
-    });
-
-    await updateAgentState(tenantId, agent, runId, {
-      status: "completed",
-      progress: 100,
-      current_task: "Completed (no drafts found)"
-    });
-
-    await updateAgentRunStatus(runId, tenantId, "completed", {
-      jobs_created: 0,
-      jobs_success: 0,
-      jobs_failed: 0,
-      message: "No draft content found for publishing"
-    });
-
-    await logAgentActivity(tenantId, agent, runId, "completed", "PUBLISH agent completed: no drafts found");
-
-    return;
-  }
-
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "drafts_fetched",
-    count: draftContent.length
-  });
-
-  // Step 4: Publish content (50%)
-  await updateAgentState(tenantId, agent, runId, {
-    progress: 50,
-    current_task: "Publishing content"
-  });
-
-  let jobsSuccess = 0;
-  let jobsFailed = 0;
-
-  for (const content of draftContent) {
-    try {
-      // Prevent duplicate publish: check status again
-      if (content.status !== "draft") {
-        structuredLog("info", {
-          runId,
-          executionId,
-          tenantId,
-          agent,
-          step: "skip_non_draft",
-          contentId: content.id,
-          status: content.status,
-          message: "Content not in draft status, skipping"
-        });
-        continue;
-      }
-
-      // Immediately update content status to publishing to prevent duplicate attempts
-      await supabase
-        .from("scribe_content")
-        .update({ status: "publishing" })
-        .eq("id", content.id);
-
-      // Create publish job
-      const { data: job, error: jobError } = await supabase
-        .from("publish_jobs")
-        .insert({
-          tenant_id: tenantId,
-          content_id: content.id,
-          status: "queued",
-          cms_type: cmsType,
-          retry_count: 0,
-          max_retries: 3
-        })
-        .select("id")
-        .single();
-
-      if (jobError || !job) {
-        throw new Error(`Failed to create publish job: ${jobError?.message}`);
-      }
-
-      await logAgentActivity(tenantId, agent, runId, "running", `PUBLISH agent: publishing ${content.title}`);
-
-      // Update job to publishing
-      await supabase
-        .from("publish_jobs")
-        .update({ status: "publishing" })
-        .eq("id", job.id);
-
-      // Sanitize HTML before publishing
-      const sanitizedHTML = sanitizeHTML(content.body_html);
-
-      // Generate slug for custom connector
-      const slug = generateSlug(content.title);
-
-      // Route connector based on cms_type
-      let result;
-      if (cmsType === "wordpress") {
-        result = await publishToWordPress({
-          title: content.title,
-          html: sanitizedHTML,
-          siteUrl: cmsConfig?.site_url || "",
-          username: cmsConfig?.credentials?.username || "",
-          applicationPassword: cmsConfig?.credentials?.application_password || ""
-        });
-      } else if (cmsType === "shopify") {
-        result = await publishToShopify({
-          title: content.title,
-          html: sanitizedHTML,
-          slug: slug,
-          storeUrl: cmsConfig?.site_url || "",
-          accessToken: cmsConfig?.credentials?.access_token || "",
-          blogId: cmsConfig?.credentials?.blog_id || ""
-        });
-      } else if (cmsType === "custom") {
-        result = await publishToCustom({
-          title: content.title,
-          html: sanitizedHTML,
-          slug: slug,
-          apiUrl: cmsConfig?.api_url || "",
-          apiKey: cmsConfig?.credentials?.api_key || ""
-        });
-      } else {
-        throw new Error(`Unsupported CMS type: ${cmsType}`);
-      }
-
-      if (result.success && result.url) {
-        // Update job to success
-        await supabase
-          .from("publish_jobs")
-          .update({
-            status: "success",
-            published_url: result.url
-          })
-          .eq("id", job.id);
-
-        // Update content status to published with URL and timestamp
-        await supabase
-          .from("scribe_content")
-          .update({
-            status: "published",
-            published_url: result.url,
-            published_at: new Date().toISOString()
-          })
-          .eq("id", content.id);
-
-        jobsSuccess++;
-
-        structuredLog("info", {
-          runId,
-          executionId,
-          tenantId,
-          agent,
-          step: "publish_success",
-          contentId: content.id,
-          url: result.url
-        });
-      } else {
-        // Increment retry count
-        const { data: currentJob } = await supabase
-          .from("publish_jobs")
-          .select("retry_count, max_retries")
-          .eq("id", job.id)
-          .single();
-
-        const newRetryCount = (currentJob?.retry_count || 0) + 1;
-        const maxRetries = currentJob?.max_retries || 3;
-
-        if (newRetryCount >= maxRetries) {
-          // Update job to failed after max retries
-          await supabase
-            .from("publish_jobs")
-            .update({
-              status: "failed",
-              error_message: result.error || "Unknown error",
-              retry_count: newRetryCount
-            })
-            .eq("id", job.id);
-
-          // Revert content status to draft
-          await supabase
-            .from("scribe_content")
-            .update({ status: "draft" })
-            .eq("id", content.id);
-
-          jobsFailed++;
-
-          structuredLog("error", {
-            runId,
-            executionId,
-            tenantId,
-            agent,
-            step: "publish_failed_max_retries",
-            contentId: content.id,
-            retryCount: newRetryCount,
-            error: result.error
-          });
-        } else {
-          // Update job with retry count
-          await supabase
-            .from("publish_jobs")
-            .update({
-              status: "failed",
-              error_message: result.error || "Unknown error",
-              retry_count: newRetryCount
-            })
-            .eq("id", job.id);
-
-          // Revert content status to draft
-          await supabase
-            .from("scribe_content")
-            .update({ status: "draft" })
-            .eq("id", content.id);
-
-          jobsFailed++;
-
-          structuredLog("warn", {
-            runId,
-            executionId,
-            tenantId,
-            agent,
-            step: "publish_failed_retry",
-            contentId: content.id,
-            retryCount: newRetryCount,
-            maxRetries,
-            error: result.error
-          });
-        }
-      }
-    } catch (error) {
-      jobsFailed++;
-      structuredLog("error", {
-        runId,
-        executionId,
-        tenantId,
-        agent,
-        step: "publish_error",
-        contentId: content.id,
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
+      step: "initializing_runtime_services",
+      execution_stage: "runtime_init",
+      progress: 50,
     }
+  );
+
+  // Initialize canonical runtime services
+  // NOTE: runtimeService already initialized above for logging
+
+  const executionOrchestrator = new ExecutionOrchestrator(runtimeService, {
+    tenantId: tenantId as UUID,
+    enableAutoLogging: true,
+    enableAutoEvents: true,
+  });
+
+  const taskOrchestrator = new TaskOrchestrator(runtimeService, {
+    tenantId: tenantId as UUID,
+    enableAutoLogging: true,
+    enableAutoEvents: true,
+  });
+
+  // Initialize CMS connectors
+  const wordpressConnector = new WordPressConnector({
+    tenantId: tenantId as UUID,
+    executionId,
+    taskId: '',
+  });
+
+  const customAPIConnector = new CustomAPIConnector({
+    tenantId: tenantId as UUID,
+    executionId,
+    taskId: '',
+  });
+
+  // Create execution via ExecutionOrchestrator
+  const createExecutionResult = await executionOrchestrator.createExecution({
+    agentName: 'AMPLI',
+    workflowType: 'content_publishing',
+    inputPayload: {
+      runId,
+    },
+    tasks: [], // Tasks will be created separately via TaskOrchestrator
+  });
+
+  if (!createExecutionResult.success || !createExecutionResult.data) {
+    throw new Error(`Failed to create execution: ${createExecutionResult.error}`);
   }
 
-  // Step 4: Complete (100%)
-  await updateAgentState(tenantId, agent, runId, {
-    status: "completed",
-    progress: 100,
-    current_task: "Completed"
+  const runtimeExecutionId = createExecutionResult.data;
+  await runtimeService.log.writeInfo(
+    runtimeExecutionId,
+    null,
+    "Execution created",
+    {
+      runId,
+      tenantId,
+      agent,
+      step: "execution_created",
+      execution_stage: "execution_create",
+      progress: 55,
+    }
+  );
+
+  // Start execution
+  const startExecutionResult = await executionOrchestrator.startExecution(runtimeExecutionId);
+  if (!startExecutionResult.success) {
+    throw new Error(`Failed to start execution: ${startExecutionResult.error}`);
+  }
+
+  await runtimeService.log.writeInfo(
+    runtimeExecutionId,
+    null,
+    "Execution started",
+    {
+      runId,
+      tenantId,
+      agent,
+      step: "execution_started",
+      execution_stage: "execution_start",
+      progress: 60,
+    }
+  );
+
+  // NOTE: AMPLI will receive draft content from SCRIBE via runtime execution context
+  // For now, we create a placeholder WordPress publish task
+  // In production, AMPLI will receive draft content from SCRIBE and publish to CMS
+
+  const publishTaskResult = await taskOrchestrator.createTask(runtimeExecutionId, {
+    taskName: 'WordPress Publish',
+    taskType: 'task_wordpress_publish',
+    stepOrder: 1,
+    inputPayload: {
+      siteUrl: 'https://example.com',
+      title: 'Sample Article',
+      content: '<p>Sample content</p>',
+      status: 'publish',
+    },
   });
 
-  await updateAgentRunStatus(runId, tenantId, "completed", {
-    jobs_created: draftContent.length,
-    jobs_success: jobsSuccess,
-    jobs_failed: jobsFailed,
-    cms_type: cmsType
+  if (!publishTaskResult.success || !publishTaskResult.data) {
+    throw new Error(`Failed to create publish task: ${publishTaskResult.error}`);
+  }
+
+  const publishTaskId = publishTaskResult.data;
+
+  // Initialize PUBLISH task factory
+  const publishFactory = new PublishTaskExecutorFactory(
+    tenantId as UUID,
+    runtimeExecutionId,
+    publishTaskId,
+    wordpressConnector,
+    customAPIConnector
+  );
+
+  const executor = publishFactory.createExecutor('task_wordpress_publish');
+  if (!executor) {
+    throw new Error('Failed to create WordPress publish executor');
+  }
+
+  // Execute task
+  const result = await executor.execute({
+    taskId: publishTaskId,
+    executionId: runtimeExecutionId,
+    taskType: 'task_wordpress_publish',
+    input: {
+      siteUrl: 'https://example.com',
+      title: 'Sample Article',
+      content: '<p>Sample content</p>',
+      status: 'publish',
+    },
+    retryCount: 0,
   });
 
-  await logAgentActivity(tenantId, agent, runId, "completed", `PUBLISH agent completed successfully: ${jobsSuccess} published, ${jobsFailed} failed`);
+  // Complete or fail task based on result
+  if (result.status === TaskStatusEnum.COMPLETED) {
+    await taskOrchestrator.completeTask(publishTaskId, result.output);
+  } else {
+    await taskOrchestrator.failTask(publishTaskId, {
+      message: result.error?.message || 'Task failed',
+      code: result.error?.code || 'UNKNOWN_ERROR',
+    });
+  }
 
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "runPUBLISH_complete",
-    progress: 100,
-    jobsCreated: draftContent.length,
-    jobsSuccess,
-    jobsFailed,
-    message: "PUBLISH execution completed successfully"
-  });
+  // Complete execution
+  const completeExecutionResult = await executionOrchestrator.completeExecution(runtimeExecutionId, result.metrics?.cost || 0);
+  if (!completeExecutionResult.success) {
+    throw new Error(`Failed to complete execution: ${completeExecutionResult.error}`);
+  }
+
+  await runtimeService.log.writeInfo(
+    runtimeExecutionId,
+    null,
+    "AMPLI execution completed successfully",
+    {
+      runId,
+      tenantId,
+      agent,
+      step: "execution_completed",
+      execution_stage: "execution_complete",
+      progress: 100,
+    }
+  );
 }

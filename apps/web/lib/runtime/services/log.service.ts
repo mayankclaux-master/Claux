@@ -171,6 +171,117 @@ export class LogService {
   }
 
   /**
+   * Write an info log entry
+   */
+  async writeInfo(
+    executionId: UUID,
+    taskId: UUID | null,
+    message: string,
+    context?: Record<string, unknown>
+  ): Promise<Result<Log, RuntimeDatabaseError>> {
+    const contextObj: ServiceContext = {
+      tenantId: this.config.tenantId,
+      service: 'LogService',
+      operation: 'writeInfo',
+      timestamp: new Date().toISOString() as ISODateTime,
+    };
+
+    logServiceOperation(contextObj, { executionId, taskId, message });
+
+    const insertData: LogInsert = {
+      execution_id: executionId,
+      task_id: taskId,
+      log_level: LogLevel.INFO,
+      message,
+      context: context as any,
+    };
+
+    const result = await this.repository.create(insertData);
+
+    if (!result.success) {
+      logServiceError(contextObj, result.error, { executionId, taskId, message });
+      return { success: false, error: wrapRepositoryError(result.error, 'LogService', 'writeInfo') };
+    }
+
+    logServiceOperation(contextObj, { logId: result.data.id });
+    return result;
+  }
+
+  /**
+   * Write a warning log entry
+   */
+  async writeWarning(
+    executionId: UUID,
+    taskId: UUID | null,
+    message: string,
+    context?: Record<string, unknown>
+  ): Promise<Result<Log, RuntimeDatabaseError>> {
+    const contextObj: ServiceContext = {
+      tenantId: this.config.tenantId,
+      service: 'LogService',
+      operation: 'writeWarning',
+      timestamp: new Date().toISOString() as ISODateTime,
+    };
+
+    logServiceOperation(contextObj, { executionId, taskId, message });
+
+    const insertData: LogInsert = {
+      execution_id: executionId,
+      task_id: taskId,
+      log_level: LogLevel.WARN,
+      message,
+      context: context as any,
+    };
+
+    const result = await this.repository.create(insertData);
+
+    if (!result.success) {
+      logServiceError(contextObj, result.error, { executionId, taskId, message });
+      return { success: false, error: wrapRepositoryError(result.error, 'LogService', 'writeWarning') };
+    }
+
+    logServiceOperation(contextObj, { logId: result.data.id });
+    return result;
+  }
+
+  /**
+   * Write a critical log entry
+   */
+  async writeCritical(
+    executionId: UUID,
+    taskId: UUID | null,
+    message: string,
+    context?: Record<string, unknown>
+  ): Promise<Result<Log, RuntimeDatabaseError>> {
+    const contextObj: ServiceContext = {
+      tenantId: this.config.tenantId,
+      service: 'LogService',
+      operation: 'writeCritical',
+      timestamp: new Date().toISOString() as ISODateTime,
+    };
+
+    logServiceOperation(contextObj, { executionId, taskId, message });
+
+    const insertData: LogInsert = {
+      execution_id: executionId,
+      task_id: taskId,
+      log_level: LogLevel.FATAL,
+      message,
+      context: context as any,
+    };
+
+    const result = await this.repository.create(insertData);
+
+    if (!result.success) {
+      logServiceError(contextObj, result.error, { executionId, taskId, message });
+      return { success: false, error: wrapRepositoryError(result.error, 'LogService', 'writeCritical') };
+    }
+
+    logServiceOperation(contextObj, { logId: result.data.id });
+    return result;
+  }
+
+  /**
    * Get logs for an execution
    */
   async getExecutionLogs(

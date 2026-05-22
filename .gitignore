@@ -16,3 +16,6 @@
 **/*.tsbuildinfo
 .vercel
 .env*.local
+
+# Backups
+backups/

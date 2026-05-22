@@ -208,6 +208,7 @@ export class ExecutionRepository extends BaseRepository<
 
   /**
    * Increment retry count
+   * CRITICAL: Enforces tenant_id filter to prevent cross-tenant data updates
    */
   async incrementRetryCount(id: UUID): Promise<Result<Execution, RuntimeDatabaseError>> {
     this.logOperation('incrementRetryCount', { id });
@@ -217,6 +218,7 @@ export class ExecutionRepository extends BaseRepository<
       .from(this.getTableName())
       .update({ retry_count: (client as any).rpc('increment_retry_count', { row_id: id }) } as any)
       .eq('id', id)
+      .eq('tenant_id', this.tenantId)
       .select()
       .single();
 
@@ -231,6 +233,7 @@ export class ExecutionRepository extends BaseRepository<
 
   /**
    * Update cost tracking
+   * CRITICAL: Enforces tenant_id filter to prevent cross-tenant data updates
    */
   async updateCost(
     id: UUID,
@@ -247,6 +250,7 @@ export class ExecutionRepository extends BaseRepository<
         total_tokens: tokens,
       } as ExecutionUpdate)
       .eq('id', id)
+      .eq('tenant_id', this.tenantId)
       .select()
       .single();
 

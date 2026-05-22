@@ -252,14 +252,17 @@ export async function POST(request: Request) {
     timestamp: new Date().toISOString(),
   });
 
-  // Verify agent initialization
+  // REMOVED: Verify agent initialization from agent_states (Phase 2B)
+  // Using canonical agent_executions table instead
+  // NOTE: Agent initialization is deprecated in canonical architecture
+  // Agents should be executed on-demand via RuntimeService/ExecutionOrchestrator
   const { count: agentCount, error: countError } = await supabase
-    .from("agent_states")
-    .select("*", { count: "exact", head: true })
+    .from("agent_executions")
+    .select("agent_name", { count: "exact", head: true })
     .eq("tenant_id", profile.tenant_id);
 
   if (countError) {
-    console.error("[Profile Complete] Agent states count error", {
+    console.error("[Profile Complete] Agent executions count error", {
       userId,
       tenant_id: profile.tenant_id,
       error: countError.message,
@@ -275,86 +278,10 @@ export async function POST(request: Request) {
     }, { status: 500 });
   }
 
-  if (agentCount === null || agentCount < 9) {
-    console.error("[Profile Complete] Agent initialization failed - insufficient agents", {
-      userId,
-      tenant_id: profile.tenant_id,
-      agentCount,
-      expectedCount: 9,
-    });
-
-    // Retry agent initialization
-    const { error: retryError } = await supabase.rpc("initialize_agent_states", {
-      p_tenant_id: profile.tenant_id,
-    });
-
-    if (retryError) {
-      console.error("[Profile Complete] Agent initialization retry failed", {
-        userId,
-        tenant_id: profile.tenant_id,
-        error: retryError.message,
-        details: retryError.details,
-        hint: retryError.hint,
-        code: retryError.code,
-        raw: retryError,
-      });
-      return NextResponse.json({
-        error: retryError.message,
-        details: retryError.details,
-        code: retryError.code
-      }, { status: 500 });
-    }
-
-    // Verify retry
-    const { count: retryCount, error: retryCountError } = await supabase
-      .from("agent_states")
-      .select("*", { count: "exact", head: true })
-      .eq("tenant_id", profile.tenant_id);
-
-    if (retryCountError || retryCount === null || retryCount < 9) {
-      console.error("[Profile Complete] Agent initialization retry verification failed", {
-        userId,
-        tenant_id: profile.tenant_id,
-        retryCount,
-        retryCountError: retryCountError?.message,
-        retryCountDetails: retryCountError?.details,
-        retryCountHint: retryCountError?.hint,
-        retryCountCode: retryCountError?.code,
-        retryCountRaw: retryCountError,
-      });
-      return NextResponse.json({
-        error: "Agent initialization failed after retry",
-        details: "Could not initialize all 9 agents",
-        code: retryCountError?.code
-      }, { status: 500 });
-    }
-
-    console.log("[Profile Complete] Agent initialization succeeded after retry", {
-      userId,
-      tenant_id: profile.tenant_id,
-      agentCount: retryCount,
-    });
-
-    console.log("[Observability] Agents initialized for tenant_id", {
-      userId,
-      tenant_id: profile.tenant_id,
-      agentCount: retryCount,
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  console.log("[Profile Complete] All verifications passed - agents initialized", {
-    userId,
-    tenant_id: profile.tenant_id,
-    agentCount,
-  });
-
-  console.log("[Observability] Agents initialized for tenant_id", {
-    userId,
-    tenant_id: profile.tenant_id,
-    agentCount,
-    timestamp: new Date().toISOString(),
-  });
+  // REMOVED: Agent initialization check (Phase 2B)
+  // In canonical architecture, agents are executed on-demand
+  // No need to verify 9 pre-initialized agent states
+  // Skipping initialization retry logic
 
   return NextResponse.json({ success: true });
 }

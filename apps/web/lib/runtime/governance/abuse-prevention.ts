@@ -16,7 +16,8 @@ export class AbusePrevention {
   }
 
   async preventCallbackFlooding(tenantId: string): Promise<boolean> {
-    const { count } = await this.supabase.from('agent_events').select('*', { count: 'exact', head: true }).eq('event_name', 'integration_callback').gte('created_at', new Date(Date.now() - 60000).toISOString());
+    // ENFORCED: Added tenant_id filter for tenant isolation (Phase 2B)
+    const { count } = await this.supabase.from('agent_events').select('*', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('event_name', 'integration_callback').gte('created_at', new Date(Date.now() - 60000).toISOString());
     return (count || 0) < 50;
   }
 

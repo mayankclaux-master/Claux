@@ -261,23 +261,35 @@ export async function getLOCLStats(tenantId: string): Promise<LOCLStats | null> 
 
 /**
  * Get agent status for all agents
+ * MIGRATED: Now uses canonical agent_executions table (Phase 2B)
  */
 export async function getAgentStatus(tenantId: string): Promise<AgentStatus[]> {
   try {
     const supabase = createSupabaseBrowserClient();
 
-    const { data: agentStates } = await supabase
-      .from("agent_states")
-      .select("agent, status, updated_at")
-      .eq("tenant_id", tenantId);
+    // REMOVED: Query from deprecated agent_states table
+    // Using canonical agent_executions table instead
+    const { data: executions } = await supabase
+      .from("agent_executions")
+      .select("agent_name, status, updated_at")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false });
 
-    if (!agentStates) return [];
+    if (!executions) return [];
 
-    return agentStates.map((state: { agent: string; status: string; updated_at: string }) => ({
-      agent: state.agent,
-      status: state.status,
-      lastRun: state.updated_at
-    }));
+    // Group by agent and get latest status per agent
+    const agentStatusMap = new Map<string, AgentStatus>();
+    executions.forEach((exec: { agent_name: string; status: string; updated_at: string }) => {
+      if (!agentStatusMap.has(exec.agent_name)) {
+        agentStatusMap.set(exec.agent_name, {
+          agent: exec.agent_name,
+          status: exec.status,
+          lastRun: exec.updated_at
+        });
+      }
+    });
+
+    return Array.from(agentStatusMap.values());
   } catch (error) {
     console.error("Error fetching agent status:", error);
     return [];
@@ -286,25 +298,28 @@ export async function getAgentStatus(tenantId: string): Promise<AgentStatus[]> {
 
 /**
  * Get activity feed (latest 20 events)
+ * MIGRATED: Now uses canonical agent_events table (Phase 2B)
  */
 export async function getActivityFeed(tenantId: string): Promise<ActivityFeedItem[]> {
   try {
     const supabase = createSupabaseBrowserClient();
 
-    const { data: activities } = await supabase
-      .from("agent_activities")
-      .select("agent, status, message, created_at")
+    // REMOVED: Query from deprecated agent_activities table
+    // Using canonical agent_events table instead
+    const { data: events } = await supabase
+      .from("agent_events")
+      .select("event_name, event_source, payload, created_at")
       .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false })
       .limit(20);
 
-    if (!activities) return [];
+    if (!events) return [];
 
-    return activities.map((activity: { agent: string; status: string; message: string; created_at: string }) => ({
-      agent: activity.agent,
-      status: activity.status,
-      message: activity.message,
-      timestamp: activity.created_at
+    return events.map((event: { event_name: string; event_source: string; payload: Record<string, unknown>; created_at: string }) => ({
+      agent: event.event_source,
+      status: "event",
+      message: event.event_name,
+      timestamp: event.created_at
     }));
   } catch (error) {
     console.error("Error fetching activity feed:", error);

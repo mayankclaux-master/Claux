@@ -52,107 +52,9 @@ type AgentState = {
 
 const AGENT_NAMES: AgentName[] = ['ARIA', 'SCRIBE', 'LOCL', 'LINX', 'CORE', 'REPUTE', 'AMPLI', 'PRISM', 'PULSE'];
 
-const baseAgents = [
-  {
-    name: 'ARIA',
-    role: 'Keyword Intelligence',
-    action: 'System initializing. Waiting for connected assets.',
-    progress: 0,
-    time: 'N/A',
-    statusLine: 'System Initializing',
-    runCount: 0,
-    errorCount: 0,
-    lastRunAt: null
-  },
-  {
-    name: 'SCRIBE',
-    role: 'Content Agent',
-    action: 'System initializing. Waiting for connected assets.',
-    progress: 0,
-    time: 'N/A',
-    statusLine: 'System Initializing',
-    runCount: 0,
-    errorCount: 0,
-    lastRunAt: null
-  },
-  {
-    name: 'LOCL',
-    role: 'GBP Agent',
-    action: 'System initializing. Waiting for connected assets.',
-    progress: 0,
-    time: 'N/A',
-    statusLine: 'System Initializing',
-    runCount: 0,
-    errorCount: 0,
-    lastRunAt: null
-  },
-  {
-    name: 'LINX',
-    role: 'Backlink Agent',
-    action: 'System initializing. Waiting for connected assets.',
-    progress: 0,
-    time: 'N/A',
-    statusLine: 'System Initializing',
-    runCount: 0,
-    errorCount: 0,
-    lastRunAt: null
-  },
-  {
-    name: 'CORE',
-    role: 'Technical SEO',
-    action: 'System initializing. Waiting for connected assets.',
-    progress: 0,
-    time: 'N/A',
-    statusLine: 'System Initializing',
-    runCount: 0,
-    errorCount: 0,
-    lastRunAt: null
-  },
-  {
-    name: 'REPUTE',
-    role: 'Reputation Mgmt',
-    action: 'System initializing. Waiting for connected assets.',
-    progress: 0,
-    time: 'N/A',
-    statusLine: 'System Initializing',
-    runCount: 0,
-    errorCount: 0,
-    lastRunAt: null
-  },
-  {
-    name: 'AMPLI',
-    role: 'Distribution',
-    action: 'System initializing. Waiting for connected assets.',
-    progress: 0,
-    time: 'N/A',
-    statusLine: 'System Initializing',
-    runCount: 0,
-    errorCount: 0,
-    lastRunAt: null
-  },
-  {
-    name: 'PRISM',
-    role: 'Analytics Agent',
-    action: 'System initializing. Waiting for connected assets.',
-    progress: 0,
-    time: 'N/A',
-    statusLine: 'System Initializing',
-    runCount: 0,
-    errorCount: 0,
-    lastRunAt: null
-  },
-  {
-    name: 'PULSE',
-    role: 'Monitoring Agent',
-    action: 'System initializing. Waiting for connected assets.',
-    progress: 0,
-    time: 'N/A',
-    statusLine: 'System Initializing',
-    runCount: 0,
-    errorCount: 0,
-    lastRunAt: null
-  }
-] as const;
+// REMOVED: Hardcoded agent array with fake execution states (Phase 2C)
+// Dashboard now uses canonical runtime data from RuntimeService via API routes
+// Agents are pure visualization layer over canonical runtime authority
 
 const initialKeywordRankings: RankingRow[] = [];
 
@@ -166,41 +68,9 @@ function statusIcon(status?: FeedItem['status']) {
   return '✅';
 }
 
-function normalizeAgentStatus(value: string | number | null | undefined) {
-  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
-
-  if (normalized === 'completed') {
-    return 'Completed';
-  }
-
-  if (normalized === 'pending' || normalized === 'in_progress' || normalized === 'running') {
-    return 'In Progress';
-  }
-
-  if (normalized === 'failed' || normalized === 'error') {
-    return 'Failed';
-  }
-
-  return 'System Initializing';
-}
-
-function normalizeAgentProgress(value: string | number | null | undefined) {
-  const numeric = Number(value ?? 0);
-
-  if (!Number.isFinite(numeric)) {
-    return 0;
-  }
-
-  return Math.max(0, Math.min(100, Math.round(numeric)));
-}
-
-function getInitialAgentStateByName(): Record<AgentName, AgentState> {
-  const state: Record<AgentName, AgentState> = {} as Record<AgentName, AgentState>;
-  for (const name of AGENT_NAMES) {
-    state[name] = { statusLine: 'System Initializing', progress: 0, runCount: 0, errorCount: 0, lastRunAt: null };
-  }
-  return state;
-}
+// REMOVED: Hardcoded status normalization and initial agent state (Phase 2C)
+// Dashboard now uses canonical execution statuses from RuntimeService
+// Status mapping: PENDING -> 'Pending', RUNNING -> 'Running', COMPLETED -> 'Completed', FAILED -> 'Failed', CANCELLED -> 'Cancelled', RETRYING -> 'Retrying'
 
 function StatCard({ label, value, helper, delay = 0 }: StatCardProps) {
   return (
@@ -264,7 +134,7 @@ export default function MissionControl({ isWordPress, orgId }: MissionControlPro
   const { user, isLoaded: isUserLoaded } = useUser();
   const [liveTaskFeed, setLiveTaskFeed] = useState<FeedItem[]>(initialLiveTaskFeed);
   const [keywordRankings, setKeywordRankings] = useState<RankingRow[]>(initialKeywordRankings);
-  const [agentStateByName, setAgentStateByName] = useState<Record<AgentName, AgentState>>(() => getInitialAgentStateByName());
+  const [agentStateByName, setAgentStateByName] = useState<Record<AgentName, AgentState>>({} as Record<AgentName, AgentState>);
   const [dashboardStats, setDashboardStats] = useState<{
     aria: { totalExecutions: number; successfulExecutions: number; failedExecutions: number; totalKeywords: number; avgDurationMs: number; totalCost: number; totalTokens: number } | null;
     scribe: { totalExecutions: number; successfulExecutions: number; failedExecutions: number; draftCount: number; publishedCount: number; avgDurationMs: number; totalCost: number; totalTokens: number } | null;
@@ -283,7 +153,7 @@ export default function MissionControl({ isWordPress, orgId }: MissionControlPro
     if (!isUserLoaded || !user) {
       setLiveTaskFeed([]);
       setKeywordRankings([]);
-      setAgentStateByName(getInitialAgentStateByName());
+      setAgentStateByName({} as Record<AgentName, AgentState>);
       setDashboardStats(null);
       return;
     }
@@ -291,7 +161,7 @@ export default function MissionControl({ isWordPress, orgId }: MissionControlPro
     if (!orgId) {
       setLiveTaskFeed([]);
       setKeywordRankings([]);
-      setAgentStateByName(getInitialAgentStateByName());
+      setAgentStateByName({} as Record<AgentName, AgentState>);
       setDashboardStats(null);
       return;
     }
@@ -345,18 +215,23 @@ export default function MissionControl({ isWordPress, orgId }: MissionControlPro
         const agentStatusData = json.data;
 
         if (!agentStatusData || agentStatusData.length === 0) {
-          setAgentStateByName(getInitialAgentStateByName());
+          setAgentStateByName({} as Record<AgentName, AgentState>);
           return;
         }
 
-        // Map agent status data to UI state
-        const nextState = getInitialAgentStateByName();
+        // Map canonical runtime agent status to UI state
+        // Dashboard is pure visualization layer over canonical runtime authority
+        const nextState: Record<AgentName, AgentState> = {} as Record<AgentName, AgentState>;
         for (const status of agentStatusData) {
           const agentName = status.agent as AgentName;
           if (AGENT_NAMES.includes(agentName)) {
+            // Use canonical execution status directly from RuntimeService
+            // Progress derived from status: RUNNING=50, COMPLETED=100, others=0
+            const progress = status.status === 'running' ? 50 : status.status === 'completed' ? 100 : 0;
+            
             nextState[agentName] = {
-              statusLine: normalizeAgentStatus(status.status),
-              progress: normalizeAgentProgress(status.status === 'running' ? 50 : status.status === 'completed' ? 100 : 0),
+              statusLine: status.status.charAt(0).toUpperCase() + status.status.slice(1), // Capitalize first letter
+              progress,
               lastRunAt: status.lastExecutionAt,
               runCount: status.totalExecutions,
               errorCount: status.failedExecutions
@@ -403,33 +278,54 @@ export default function MissionControl({ isWordPress, orgId }: MissionControlPro
     };
   }, [orgId, isUserLoaded, user]);
 
-  const agents = baseAgents.map((agent) => {
-    const runtimeState = agentStateByName[agent.name as AgentName] ?? { statusLine: 'System Initializing', progress: 0, runCount: 0, errorCount: 0, lastRunAt: null };
-    const statusLine =
-      agent.name === 'CORE' && isWordPress && runtimeState.statusLine === 'System Initializing'
-        ? 'WordPress Managed'
-        : runtimeState.statusLine;
+  // REMOVED: Hardcoded baseAgents array (Phase 2C)
+  // Dashboard now constructs agent cards from canonical runtime data
+  const agents = AGENT_NAMES.map((agentName) => {
+    const runtimeState = agentStateByName[agentName] ?? { statusLine: 'Not Executed', progress: 0, runCount: 0, errorCount: 0, lastRunAt: null };
+    
+    // Agent roles for display
+    const agentRoles: Record<AgentName, string> = {
+      ARIA: 'Keyword Intelligence',
+      SCRIBE: 'Content Agent',
+      LOCL: 'GBP Agent',
+      LINX: 'Backlink Agent',
+      CORE: 'Technical SEO',
+      REPUTE: 'Reputation Mgmt',
+      AMPLI: 'Distribution',
+      PRISM: 'Analytics Agent',
+      PULSE: 'Monitoring Agent'
+    };
 
-    // Show all 9 canonical agents as active
-    const isActiveAgent = agent.name === 'ARIA' || agent.name === 'SCRIBE' || agent.name === 'LOCL' || agent.name === 'LINX' || agent.name === 'CORE' || agent.name === 'REPUTE' || agent.name === 'AMPLI' || agent.name === 'PRISM' || agent.name === 'PULSE';
-    const displayStatusLine = isActiveAgent ? statusLine : 'Not Deployed';
-    const displayProgress = isActiveAgent ? runtimeState.progress : 0;
-    const displayAction = isActiveAgent
-      ? (statusLine === 'Completed'
-          ? `${agent.name} cycle completed. Awaiting next sync.`
-          : statusLine === 'In Progress'
-            ? 'Execution in progress. Receiving live updates.'
-            : statusLine === 'Failed'
-              ? 'Last run failed. Awaiting orchestrator retry.'
-              : 'System initializing. Waiting for connected assets.')
-      : 'Agent not deployed. Coming soon.';
+    // Action message based on canonical runtime state
+    const getActionMessage = (status: string) => {
+      switch (status) {
+        case 'Completed':
+          return `${agentName} cycle completed. Awaiting next sync.`;
+        case 'Running':
+          return 'Execution in progress. Receiving live updates.';
+        case 'Failed':
+          return 'Last run failed. Awaiting orchestrator retry.';
+        case 'Pending':
+          return 'Execution queued. Awaiting start.';
+        case 'Cancelled':
+          return 'Execution cancelled.';
+        case 'Retrying':
+          return 'Execution retrying.';
+        default:
+          return 'No executions yet.';
+      }
+    };
+
+    const displayAction = runtimeState.runCount > 0 ? getActionMessage(runtimeState.statusLine) : 'No executions yet.';
+    const displayTime = runtimeState.lastRunAt ? new Date(runtimeState.lastRunAt).toLocaleString() : 'N/A';
 
     return {
-      ...agent,
+      name: agentName,
+      role: agentRoles[agentName],
       action: displayAction,
-      progress: displayProgress,
-      statusLine: displayStatusLine,
-      time: displayProgress > 0 ? 'Live' : 'N/A'
+      progress: runtimeState.progress,
+      time: displayTime,
+      statusLine: runtimeState.statusLine
     };
   });
 

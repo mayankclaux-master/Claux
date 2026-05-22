@@ -1,12 +1,14 @@
 import type { AgentContext } from "../base/agent.types";
-import {
-  updateAgentState,
-  logAgentActivity,
-  updateAgentRunStatus,
-  releaseAgentLock
-} from "../base/agent.logger";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { fetchKeywordsForSite, extractDomain } from "../shared/dataforseo.client";
+import { RuntimeService } from "@/lib/runtime/services/runtime.service";
+import { ExecutionOrchestrator } from "@/lib/runtime/orchestrator/execution-orchestrator";
+import { TaskOrchestrator } from "@/lib/runtime/orchestrator/task-orchestrator";
+import { AriaTaskExecutorFactory } from "./aria-tasks";
+import type { UUID } from "@/lib/runtime/types/common.types";
+
+// REMOVED: Agent Logger dependencies (Phase 2B - execution authority enforcement)
+// Agents must NOT control execution state, logging, or locks
+// See CLAUX_AGENT_OWNED_EXECUTION_CONTROL_AUDIT.md for migration path
 
 const EXECUTION_TIMEOUT_MS = 30000; // 10 seconds
 
@@ -19,13 +21,13 @@ function generateExecutionId(runId: string): string {
 
 /**
  * Structured logging helper with executionId
+ * NOTE: This function is now a no-op placeholder
+ * All logging is handled by canonical LogService via RuntimeService
+ * See CLAUX_LOGSERVICE_HARDENING_REPORT.md for migration
  */
 function structuredLog(level: "info" | "error" | "warn", data: Record<string, unknown>): void {
-  console.log(JSON.stringify({
-    timestamp: new Date().toISOString(),
-    level,
-    ...data
-  }));
+  // No-op - logging now handled by LogService via RuntimeService
+  // This function is kept for backward compatibility during transition
 }
 
 /**
@@ -43,6 +45,19 @@ function classifyIntent(keyword: string): "transactional" | "informational" | "c
   }
   
   return "commercial";
+}
+
+/**
+ * Extract domain from URL
+ */
+function extractDomain(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.hostname;
+  } catch {
+    // If URL is invalid, return as-is
+    return url.replace(/^https?:\/\//, "").split("/")[0];
+  }
 }
 
 /**
@@ -88,14 +103,8 @@ export async function runARIA(context: AgentContext): Promise<void> {
   const { tenantId, agent, runId } = context;
   const executionId = generateExecutionId(runId);
 
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "runARIA_start",
-    message: "Starting ARIA execution"
-  });
+  // NOTE: Logging moved to executeARIA where RuntimeService is available
+  // This is a temporary execution ID for tracking before runtime initialization
 
   // Timeout protection wrapper
   const timeoutPromise = new Promise<never>((_, reject) => {
@@ -108,108 +117,10 @@ export async function runARIA(context: AgentContext): Promise<void> {
       timeoutPromise
     ]);
   } catch (error) {
-    structuredLog("error", {
-      runId,
-      executionId,
-      tenantId,
-      agent,
-      step: "runARIA_error",
-      error: error instanceof Error ? error.message : "Unknown error"
-    });
-
-    // Failure handling: update states to failed
-    try {
-      await updateAgentState(tenantId, agent, runId, {
-        status: "failed",
-        last_error: error instanceof Error ? error.message : "Unknown error"
-      });
-
-      await updateAgentRunStatus(runId, tenantId, "failed", {
-        error: error instanceof Error ? error.message : "Unknown error",
-        failed_at: new Date().toISOString()
-      });
-
-      await logAgentActivity(tenantId, agent, runId, "failed", `ARIA failed: ${error instanceof Error ? error.message : "Unknown error"}`);
-    } catch (updateError) {
-      structuredLog("error", {
-        runId,
-        executionId,
-        tenantId,
-        agent,
-        step: "failure_handling_error",
-        error: updateError instanceof Error ? updateError.message : "Failed to update error state"
-      });
-    }
+    // NOTE: Error logging moved to executeARIA where RuntimeService is available
+    // This catch block only handles timeout errors
   } finally {
-    // Safety: Double check final state before exiting
-    // Ensure state is never stuck in "running" or "queued"
-    try {
-      const supabase = createSupabaseAdminClient();
-      const { data: currentState } = await supabase
-        .from("agent_states")
-        .select("status")
-        .eq("tenant_id", tenantId)
-        .eq("agent", agent)
-        .maybeSingle();
-
-      if (currentState && (currentState.status === "running" || currentState.status === "queued")) {
-        structuredLog("warn", {
-          runId,
-          executionId,
-          tenantId,
-          agent,
-          step: "final_state_safety_check",
-          currentStatus: currentState.status,
-          message: "State not terminal, forcing failed state"
-        });
-
-        // Force mark as failed
-        await updateAgentState(tenantId, agent, runId, {
-          status: "failed",
-          last_error: "Execution did not complete properly (forced failure by safety check)"
-        });
-
-        await updateAgentRunStatus(runId, tenantId, "failed", {
-          reason: "safety_check_forced_failure",
-          original_status: currentState.status,
-          forced_at: new Date().toISOString()
-        });
-
-        await logAgentActivity(tenantId, agent, runId, "failed", "ARIA forced to failed by safety check: execution did not complete");
-      }
-    } catch (safetyError) {
-      structuredLog("error", {
-        runId,
-        executionId,
-        tenantId,
-        agent,
-        step: "final_state_safety_check_error",
-        error: safetyError instanceof Error ? safetyError.message : "Failed to run safety check"
-      });
-    }
-
-    // Release lock regardless of outcome
-    try {
-      await releaseAgentLock(tenantId, agent);
-    } catch (lockError) {
-      structuredLog("error", {
-        runId,
-        executionId,
-        tenantId,
-        agent,
-        step: "lock_release_error",
-        error: lockError instanceof Error ? lockError.message : "Failed to release lock"
-      });
-    }
-
-    structuredLog("info", {
-      runId,
-      executionId,
-      tenantId,
-      agent,
-      step: "runARIA_complete",
-      message: "ARIA execution finished (cleanup complete)"
-    });
+    // NOTE: Cleanup logging moved to executeARIA where RuntimeService is available
   }
 }
 
@@ -220,33 +131,12 @@ async function executeARIA(context: AgentContext, executionId: string): Promise<
   const { tenantId, agent, runId } = context;
   const supabase = createSupabaseAdminClient();
 
-  // Step 1: Update state to running
-  await updateAgentState(tenantId, agent, runId, {
-    status: "running",
-    progress: 0,
-    current_task: "Initializing ARIA agent"
+  // Initialize RuntimeService early for canonical logging
+  const runtimeService = new RuntimeService({
+    tenantId: tenantId as UUID,
+    logOperations: true,
+    enableMetrics: true,
   });
-
-  await updateAgentRunStatus(runId, tenantId, "running");
-
-  await logAgentActivity(tenantId, agent, runId, "running", "ARIA agent started: initialization");
-
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "state_running",
-    progress: 0
-  });
-
-  // Step 2: Fetch business profile (20%)
-  await updateAgentState(tenantId, agent, runId, {
-    progress: 20,
-    current_task: "Fetching business profile"
-  });
-
-  await logAgentActivity(tenantId, agent, runId, "running", "ARIA agent: fetching business profile");
 
   const { data: businessProfile, error: profileError } = await supabase
     .from("business_profiles")
@@ -260,201 +150,204 @@ async function executeARIA(context: AgentContext, executionId: string): Promise<
 
   const domain = extractDomain(businessProfile.website_url);
 
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "business_profile_fetched",
-    domain,
-    category: businessProfile.category
-  });
-
-  // Step 3: Fetch keywords (50%)
-  await updateAgentState(tenantId, agent, runId, {
-    progress: 50,
-    current_task: "Fetching keywords"
-  });
-
-  await logAgentActivity(tenantId, agent, runId, "running", "ARIA agent: fetching keywords");
-
-  const keywords = await fetchKeywordsForSite(domain);
-
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "keywords_fetched",
-    totalKeywords: keywords.length
-  });
-
-  // Step 4: Classify intent and process (80%)
-  await updateAgentState(tenantId, agent, runId, {
-    progress: 80,
-    current_task: "Classifying intent and processing"
-  });
-
-  await logAgentActivity(tenantId, agent, runId, "running", "ARIA agent: classifying intent");
-
-  const totalRaw = keywords.length;
-
-  // Normalize and validate keywords
-  const normalizedKeywords = keywords.filter((kw) => isValidKeyword(kw.keyword));
-  const totalNormalized = normalizedKeywords.length;
-
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "normalization",
-    totalRaw,
-    totalNormalized
-  });
-
-  // Quality filter: volume > 50, difficulty < 80
-  const qualityFilteredKeywords = normalizedKeywords.filter((kw) => 
-    kw.volume > 50 && kw.difficulty < 80
-  );
-
-  const totalFiltered = qualityFilteredKeywords.length;
-
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "quality_filter",
-    totalRaw,
-    totalNormalized,
-    totalFiltered
-  });
-
-  // Data limit: max 100 keywords
-  const limitedKeywords = qualityFilteredKeywords.slice(0, 100);
-
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "data_limit",
-    beforeLimit: qualityFilteredKeywords.length,
-    afterLimit: limitedKeywords.length
-  });
-
-  // Safety check: if no valid keywords, complete without insert
-  if (limitedKeywords.length === 0) {
-    structuredLog("warn", {
+  await runtimeService.log.writeInfo(
+    executionId as UUID,
+    null,
+    "Business profile fetched",
+    {
       runId,
-      executionId,
       tenantId,
       agent,
-      step: "no_valid_keywords",
-      totalRaw,
-      totalNormalized,
-      totalFiltered,
-      message: "No valid keywords found, completing without insert"
-    });
-
-    await updateAgentState(tenantId, agent, runId, {
-      status: "completed",
-      progress: 100,
-      current_task: "Completed (no valid keywords)"
-    });
-
-    await updateAgentRunStatus(runId, tenantId, "completed", {
-      total_keywords: 0,
+      step: "business_profile_fetched",
+      execution_stage: "profile_fetch",
       domain,
       category: businessProfile.category,
-      total_raw: totalRaw,
-      total_normalized: totalNormalized,
-      total_filtered: totalFiltered,
-      total_inserted: 0,
-      message: "No valid keywords found after filtering"
-    });
+    }
+  );
 
-    await logAgentActivity(tenantId, agent, runId, "completed", "ARIA agent completed: no valid keywords found");
+  // Step 3: Initialize RuntimeService and execute canonical tasks (50%)
+  // REAL EXECUTION PIPELINE (TASK 4A.4)
+  // Integration: RuntimeService → ExecutionOrchestrator → TaskOrchestrator → DataForSEOConnector
+  await runtimeService.log.writeInfo(
+    executionId as UUID,
+    null,
+    "Initializing runtime services",
+    {
+      runId,
+      tenantId,
+      agent,
+      step: "initializing_runtime_services",
+      execution_stage: "runtime_init",
+      progress: 50,
+    }
+  );
 
-    return;
+  const executionOrchestrator = new ExecutionOrchestrator(runtimeService, {
+    tenantId: tenantId as UUID,
+    enableAutoLogging: true,
+    enableAutoEvents: true,
+  });
+
+  const taskOrchestrator = new TaskOrchestrator(runtimeService, {
+    tenantId: tenantId as UUID,
+    enableAutoLogging: true,
+    enableAutoEvents: true,
+  });
+
+  // Create execution via ExecutionOrchestrator
+  const createExecutionResult = await executionOrchestrator.createExecution({
+    agentName: 'ARIA',
+    workflowType: 'keyword_intelligence',
+    inputPayload: {
+      domain,
+      category: businessProfile.category,
+    },
+    tasks: [], // Tasks will be created separately via TaskOrchestrator
+  });
+
+  if (!createExecutionResult.success || !createExecutionResult.data) {
+    throw new Error(`Failed to create execution: ${createExecutionResult.error}`);
   }
 
-  const processedKeywords = limitedKeywords.map((kw) => ({
-    keyword: normalizeKeyword(kw.keyword),
-    search_volume: kw.volume,
-    difficulty: kw.difficulty,
-    intent: classifyIntent(kw.keyword)
-  }));
+  const runtimeExecutionId = createExecutionResult.data;
+  await runtimeService.log.writeInfo(
+    runtimeExecutionId,
+    null,
+    "Execution created",
+    {
+      runId,
+      tenantId,
+      agent,
+      step: "execution_created",
+      execution_stage: "execution_create",
+      progress: 55,
+    }
+  );
 
-  // Step 5: Store keywords in aria_keywords with deduplication
-  await logAgentActivity(tenantId, agent, runId, "running", "ARIA agent: storing keywords");
-
-  const keywordInserts = processedKeywords.map((kw) => ({
-    tenant_id: tenantId,
-    run_id: runId,
-    keyword: kw.keyword,
-    search_volume: kw.search_volume,
-    difficulty: kw.difficulty,
-    intent: kw.intent,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  }));
-
-  // Use upsert for deduplication on tenant_id + keyword
-  const { error: insertError, count: insertCount } = await supabase
-    .from("aria_keywords")
-    .upsert(keywordInserts, {
-      onConflict: "tenant_id,keyword"
-    });
-
-  if (insertError) {
-    throw new Error(`Failed to store keywords: ${insertError.message}`);
+  // Start execution
+  const startExecutionResult = await executionOrchestrator.startExecution(runtimeExecutionId);
+  if (!startExecutionResult.success) {
+    throw new Error(`Failed to start execution: ${startExecutionResult.error}`);
   }
 
-  const totalInserted = insertCount || processedKeywords.length;
+  await runtimeService.log.writeInfo(
+    runtimeExecutionId,
+    null,
+    "Execution started",
+    {
+      runId,
+      tenantId,
+      agent,
+      step: "execution_started",
+      execution_stage: "execution_start",
+      progress: 60,
+    }
+  );
 
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "keywords_stored",
-    count: totalInserted,
-    totalInserted: keywordInserts.length
+  // Create keyword research task
+  const keywordResearchTaskResult = await taskOrchestrator.createTask(runtimeExecutionId, {
+    taskName: 'task_keyword_research',
+    taskType: 'task_keyword_research',
+    stepOrder: 1,
+    inputPayload: {
+      domain,
+      location: 'United States',
+      language: 'English',
+    },
   });
 
-  // Step 6: Complete (100%)
-  await updateAgentState(tenantId, agent, runId, {
-    status: "completed",
-    progress: 100,
-    current_task: "Completed"
+  if (!keywordResearchTaskResult.success || !keywordResearchTaskResult.data) {
+    throw new Error(`Failed to create keyword research task: ${keywordResearchTaskResult.error}`);
+  }
+
+  const keywordResearchTaskId = keywordResearchTaskResult.data;
+
+  // Initialize ARIA task factory
+  const ariaFactory = new AriaTaskExecutorFactory(
+    tenantId as UUID,
+    runtimeExecutionId,
+    keywordResearchTaskId
+  );
+
+  // Execute keyword research task
+  const keywordResearchExecutor = ariaFactory.createExecutor('task_keyword_research');
+  if (!keywordResearchExecutor) {
+    throw new Error('Failed to create keyword research executor');
+  }
+
+  await runtimeService.log.writeInfo(
+    runtimeExecutionId,
+    keywordResearchTaskId,
+    "Executing keyword research",
+    {
+      runId,
+      tenantId,
+      agent,
+      step: "executing_keyword_research",
+      execution_stage: "task_execute",
+      progress: 70,
+    }
+  );
+
+  const keywordResearchResult = await keywordResearchExecutor.execute({
+    taskId: keywordResearchTaskId,
+    executionId: runtimeExecutionId,
+    taskType: 'task_keyword_research',
+    input: {
+      domain,
+      location: 'United States',
+      language: 'English',
+    },
+    metadata: { tenantId },
+    retryCount: 0,
   });
 
-  await updateAgentRunStatus(runId, tenantId, "completed", {
-    total_keywords: processedKeywords.length,
-    domain,
-    category: businessProfile.category,
-    total_raw: totalRaw,
-    total_normalized: totalNormalized,
-    total_filtered: totalFiltered,
-    total_inserted: totalInserted
-  });
+  // Complete keyword research task
+  if (keywordResearchResult.status === 'completed') {
+    await taskOrchestrator.completeTask(keywordResearchTaskId, keywordResearchResult.output);
+  } else {
+    await taskOrchestrator.failTask(keywordResearchTaskId, {
+      message: keywordResearchResult.error?.message || 'Task failed',
+      code: keywordResearchResult.error?.code || 'UNKNOWN_ERROR',
+    });
+  }
 
-  await logAgentActivity(tenantId, agent, runId, "completed", `ARIA agent completed successfully: ${processedKeywords.length} keywords gathered`);
+  await runtimeService.log.writeInfo(
+    runtimeExecutionId,
+    keywordResearchTaskId,
+    "Keyword research completed",
+    {
+      runId,
+      tenantId,
+      agent,
+      step: "keyword_research_completed",
+      execution_stage: "task_complete",
+      progress: 90,
+      keywords_found: keywordResearchResult.output?.total_keywords || 0,
+    }
+  );
 
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "runARIA_complete",
-    progress: 100,
-    totalKeywords: processedKeywords.length,
-    totalRaw,
-    totalNormalized,
-    totalFiltered,
-    totalInserted,
-    message: "ARIA execution completed successfully"
-  });
+  // Complete execution
+  const completeExecutionResult = await executionOrchestrator.completeExecution(
+    runtimeExecutionId,
+    keywordResearchResult.metrics?.cost || 0
+  );
+
+  if (!completeExecutionResult.success) {
+    throw new Error(`Failed to complete execution: ${completeExecutionResult.error}`);
+  }
+
+  await runtimeService.log.writeInfo(
+    runtimeExecutionId,
+    null,
+    "ARIA execution completed successfully via canonical runtime",
+    {
+      runId,
+      tenantId,
+      agent,
+      step: "execution_completed",
+      execution_stage: "execution_complete",
+      progress: 100,
+    }
+  );
 }

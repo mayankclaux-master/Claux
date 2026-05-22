@@ -80,23 +80,7 @@ export class DeploymentGuard {
 
   private async validateFeatureFlags(): Promise<DeploymentValidationResult> {
     try {
-      const flags = [
-        'ENABLE_PRISM_DISPATCH_EXECUTION',
-        'ENABLE_PULSE_DISPATCH_EXECUTION',
-        'ENABLE_REPUTE_DISPATCH_EXECUTION',
-        'ENABLE_ARIA_DISPATCH_EXECUTION',
-        'ENABLE_LINX_DISPATCH_EXECUTION',
-        'ENABLE_LOCL_DISPATCH_EXECUTION',
-        'ENABLE_SCRIBE_DISPATCH_EXECUTION',
-        'ENABLE_AMPLI_DISPATCH_EXECUTION',
-      ];
-      
-      for (const flag of flags) {
-        if (process.env[flag] === undefined) {
-          return { component: 'feature_flags', valid: false, error: `Flag ${flag} not set` };
-        }
-      }
-      
+      // Integration mesh dispatch flags removed in Phase 1A - no longer required
       return { component: 'feature_flags', valid: true };
     } catch (error) {
       return { component: 'feature_flags', valid: false, error: error instanceof Error ? error.message : 'Unknown error' };

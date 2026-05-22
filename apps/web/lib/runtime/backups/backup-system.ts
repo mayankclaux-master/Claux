@@ -28,8 +28,9 @@ export class BackupSystem {
     return data;
   }
 
-  async restoreBackup(backupId: string): Promise<void> {
-    await this.supabase.from('backups').select('*').eq('id', backupId).single();
+  async restoreBackup(backupId: string, tenantId: string): Promise<void> {
+    // ENFORCED: Added tenant_id filter for tenant isolation (Phase 2B)
+    await this.supabase.from('backups').select('*').eq('id', backupId).eq('tenant_id', tenantId).single();
   }
 
   private encrypt(data: string): string {

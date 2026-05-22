@@ -41,22 +41,25 @@ export async function verifyTriggerAutomation(userId: string): Promise<Verificat
 
     const tenantId = profile.tenant_id;
 
-    // Check agent_states count
-    const { data: agentStates, error: agentStatesError } = await adminClient
-      .from('agent_states')
-      .select('id')
+    // REMOVED: Check agent_states count (Phase 2B)
+    // Using canonical agent_executions table instead
+    const { data: executions, error: executionsError } = await adminClient
+      .from('agent_executions')
+      .select('agent_name')
       .eq('tenant_id', tenantId);
 
-    if (agentStatesError) {
+    if (executionsError) {
       return {
         success: false,
         profileExists: true,
         agentStatesCount: 0,
-        error: `Agent states lookup failed: ${agentStatesError.message}`
+        error: `Agent executions lookup failed: ${executionsError.message}`
       };
     }
 
-    const agentStatesCount = agentStates?.length || 0;
+    // Count unique agents from executions
+    const uniqueAgents = new Set(executions?.map((e: { agent_name: string }) => e.agent_name));
+    const agentStatesCount = uniqueAgents.size;
 
     return {
       success: agentStatesCount === 9,

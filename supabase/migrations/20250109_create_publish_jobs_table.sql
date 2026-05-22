@@ -1,0 +1,3 @@
+-- Baseline migration placeholder.
+-- Production schema already contains 20250109 objects.
+-- This file exists only to reconcile Supabase migration history.

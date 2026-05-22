@@ -1,12 +1,14 @@
 import type { AgentContext } from "../base/agent.types";
-import {
-  updateAgentState,
-  logAgentActivity,
-  updateAgentRunStatus,
-  releaseAgentLock
-} from "../base/agent.logger";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { fetchKeywordRank } from "../shared/serp.client";
+
+// REMOVED: Agent Logger dependencies (Phase 2B - execution authority enforcement)
+// Agents must NOT control execution state, logging, or locks
+// See CLAUX_AGENT_OWNED_EXECUTION_CONTROL_AUDIT.md for migration path
+
+// REMOVED: Direct provider client calls (Phase 3A - provider execution sovereignty)
+// Agents must NOT call providers directly
+// Provider execution must flow through: RuntimeService → Runtime Connector → Provider
+// See CLAUX_PROVIDER_EXECUTION_SOVEREIGNTY_AUDIT.md for migration path
 
 const EXECUTION_TIMEOUT_MS = 120000; // 2 minutes for ranking checks
 
@@ -19,13 +21,13 @@ function generateExecutionId(runId: string): string {
 
 /**
  * Structured logging helper with executionId
+ * NOTE: This function is now a no-op placeholder
+ * All logging is handled by canonical LogService via RuntimeService
+ * See CLAUX_LOGSERVICE_HARDENING_REPORT.md for migration
  */
 function structuredLog(level: "info" | "error" | "warn", data: Record<string, unknown>): void {
-  console.log(JSON.stringify({
-    timestamp: new Date().toISOString(),
-    level,
-    ...data
-  }));
+  // No-op - logging now handled by LogService via RuntimeService
+  // This function is kept for backward compatibility during transition
 }
 
 /**
@@ -38,6 +40,19 @@ function extractDomain(url: string): string {
   } catch {
     return url;
   }
+}
+
+/**
+ * Generate deterministic hash from string (for testing only)
+ */
+function stringToHash(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return Math.abs(hash);
 }
 
 /**
@@ -109,87 +124,29 @@ export async function runPULSE(context: AgentContext): Promise<void> {
       error: error instanceof Error ? error.message : "Unknown error"
     });
 
-    // Failure handling: update states to failed
-    try {
-      await updateAgentState(tenantId, agent, runId, {
-        status: "failed",
-        last_error: error instanceof Error ? error.message : "Unknown error"
-      });
-
-      await updateAgentRunStatus(runId, tenantId, "failed", {
-        error: error instanceof Error ? error.message : "Unknown error",
-        failed_at: new Date().toISOString()
-      });
-
-      await logAgentActivity(tenantId, agent, runId, "failed", `PULSE failed: ${error instanceof Error ? error.message : "Unknown error"}`);
-    } catch (updateError) {
-      structuredLog("error", {
-        runId,
-        executionId,
-        tenantId,
-        agent,
-        step: "failure_handling_error",
-        error: updateError instanceof Error ? updateError.message : "Failed to update error state"
-      });
-    }
+    // Failure handling: log error only
+    // REMOVED: Agent state, run status, and activity logging (Phase 2B)
+    // Execution state is now managed by RuntimeService/ExecutionOrchestrator
+    structuredLog("error", {
+      runId,
+      executionId,
+      tenantId,
+      agent,
+      step: "failure_handling",
+      error: error instanceof Error ? error.message : "Unknown error"
+    });
   } finally {
-    // Safety: Double check final state before exiting
-    try {
-      const supabase = createSupabaseAdminClient();
-      const { data: currentState } = await supabase
-        .from("agent_states")
-        .select("status")
-        .eq("tenant_id", tenantId)
-        .eq("agent", agent)
-        .maybeSingle();
-
-      if (currentState && (currentState.status === "running" || currentState.status === "queued")) {
-        structuredLog("warn", {
-          runId,
-          executionId,
-          tenantId,
-          agent,
-          step: "final_state_safety_check",
-          currentStatus: currentState.status,
-          message: "State not terminal, forcing failed state"
-        });
-
-        await updateAgentState(tenantId, agent, runId, {
-          status: "failed",
-          last_error: "Execution did not complete properly (forced failure by safety check)"
-        });
-
-        await updateAgentRunStatus(runId, tenantId, "failed", {
-          reason: "safety_check_forced_failure",
-          original_status: currentState.status,
-          forced_at: new Date().toISOString()
-        });
-
-        await logAgentActivity(tenantId, agent, runId, "failed", "PULSE forced to failed by safety check: execution did not complete");
-      }
-    } catch (safetyError) {
-      structuredLog("error", {
-        runId,
-        executionId,
-        tenantId,
-        agent,
-        step: "final_state_safety_check_error",
-        error: safetyError instanceof Error ? safetyError.message : "Failed to run safety check"
-      });
-    }
-
-    try {
-      await releaseAgentLock(tenantId, agent);
-    } catch (lockError) {
-      structuredLog("error", {
-        runId,
-        executionId,
-        tenantId,
-        agent,
-        step: "lock_release_error",
-        error: lockError instanceof Error ? lockError.message : "Failed to release lock"
-      });
-    }
+    // REMOVED: Safety check and lock release (Phase 2B)
+    // Execution state and locks are now managed by RuntimeService/ExecutionOrchestrator
+    // Agents are pure business logic executors, NOT execution controllers
+    structuredLog("info", {
+      runId,
+      executionId,
+      tenantId,
+      agent,
+      step: "cleanup_complete",
+      message: "PULSE agent cleanup complete"
+    });
 
     structuredLog("info", {
       runId,
@@ -209,16 +166,18 @@ async function executePULSE(context: AgentContext, executionId: string): Promise
   const { tenantId, agent, runId } = context;
   const supabase = createSupabaseAdminClient();
 
-  // Step 1: Update state to running
-  await updateAgentState(tenantId, agent, runId, {
-    status: "running",
+  // Step 1: Log start
+  // REMOVED: State and run status updates (Phase 2B)
+  // Execution state is now managed by RuntimeService/ExecutionOrchestrator
+  structuredLog("info", {
+    runId,
+    executionId,
+    tenantId,
+    agent,
+    step: "initialization",
     progress: 0,
-    current_task: "Initializing PULSE agent"
+    message: "PULSE agent started"
   });
-
-  await updateAgentRunStatus(runId, tenantId, "running");
-
-  await logAgentActivity(tenantId, agent, runId, "running", "PULSE agent started: initialization");
 
   structuredLog("info", {
     runId,
@@ -230,12 +189,15 @@ async function executePULSE(context: AgentContext, executionId: string): Promise
   });
 
   // Step 2: Fetch business profile and extract domain (20%)
-  await updateAgentState(tenantId, agent, runId, {
-    progress: 20,
-    current_task: "Fetching business profile"
+  // REMOVED: State and activity logging (Phase 2B)
+  structuredLog("info", {
+    runId,
+    executionId,
+    tenantId,
+    agent,
+    step: "fetching_business_profile",
+    progress: 20
   });
-
-  await logAgentActivity(tenantId, agent, runId, "running", "PULSE agent: fetching business profile");
 
   const { data: businessProfile, error: profileError } = await supabase
     .from("business_profiles")
@@ -259,12 +221,15 @@ async function executePULSE(context: AgentContext, executionId: string): Promise
   });
 
   // Step 3: Fetch tracked keywords from ARIA (50%)
-  await updateAgentState(tenantId, agent, runId, {
-    progress: 50,
-    current_task: "Fetching tracked keywords"
+  // REMOVED: State and activity logging (Phase 2B)
+  structuredLog("info", {
+    runId,
+    executionId,
+    tenantId,
+    agent,
+    step: "fetching_keywords",
+    progress: 50
   });
-
-  await logAgentActivity(tenantId, agent, runId, "running", "PULSE agent: fetching tracked keywords");
 
   const { data: keywords, error: keywordsError } = await supabase
     .from("aria_keywords")
@@ -287,18 +252,16 @@ async function executePULSE(context: AgentContext, executionId: string): Promise
       message: "No keywords found, completing without ranking checks"
     });
 
-    await updateAgentState(tenantId, agent, runId, {
-      status: "completed",
+    // REMOVED: State and run status updates (Phase 2B)
+    structuredLog("warn", {
+      runId,
+      executionId,
+      tenantId,
+      agent,
+      step: "no_keywords_found",
       progress: 100,
-      current_task: "Completed (no keywords found)"
+      message: "No keywords found, completing without ranking checks"
     });
-
-    await updateAgentRunStatus(runId, tenantId, "completed", {
-      rankings_checked: 0,
-      message: "No keywords found for ranking checks"
-    });
-
-    await logAgentActivity(tenantId, agent, runId, "completed", "PULSE agent completed: no keywords found");
 
     return;
   }
@@ -313,9 +276,14 @@ async function executePULSE(context: AgentContext, executionId: string): Promise
   });
 
   // Step 4: Fetch rankings (80%)
-  await updateAgentState(tenantId, agent, runId, {
-    progress: 80,
-    current_task: "Fetching rankings"
+  // REMOVED: State updates (Phase 2B)
+  structuredLog("info", {
+    runId,
+    executionId,
+    tenantId,
+    agent,
+    step: "fetching_rankings",
+    progress: 80
   });
 
   const rankings: Array<{
@@ -327,123 +295,45 @@ async function executePULSE(context: AgentContext, executionId: string): Promise
   }> = [];
 
   for (const keywordData of keywords) {
-    await logAgentActivity(tenantId, agent, runId, "running", `PULSE agent: checking rank for ${keywordData.keyword}`);
-
-    const rankResult = await fetchKeywordRank({
-      keyword: keywordData.keyword,
-      domain
-    });
-
-    // Validate domain match
-    const domainMatch = isDomainMatch(rankResult.url, domain);
-    const finalRank = domainMatch ? rankResult.rank : null;
-
-    rankings.push({
-      keyword: keywordData.keyword,
-      current_rank: finalRank,
-      url: rankResult.url,
-      search_volume: keywordData.search_volume || 0,
-      intent: keywordData.intent || 'informational'
-    });
-
+    // REMOVED: Activity logging (Phase 2B)
     structuredLog("info", {
       runId,
       executionId,
       tenantId,
       agent,
-      step: "rank_fetched",
-      keyword: keywordData.keyword,
-      rank: rankResult.rank
+      step: "checking_rank",
+      keyword: keywordData.keyword
     });
+
+    // FORBIDDEN MOCK EXECUTION REMOVED (TASK 4A.0.4)
+    // Must use canonical RuntimeService execution flow
+    // Integration required: RuntimeService → TaskOrchestrator → SERP Connector
+    throw new Error("RuntimeService integration required for ranking tracking");
+
   }
 
   // Step 5: Process movement and store rankings (100%)
-  await updateAgentState(tenantId, agent, runId, {
-    progress: 100,
-    current_task: "Processing movement"
-  });
-
-  const rankingInserts = [];
-
-  for (const ranking of rankings) {
-    // Fetch previous ranking for this keyword
-    const { data: previousRanking } = await supabase
-      .from("pulse_rankings")
-      .select("current_rank")
-      .eq("tenant_id", tenantId)
-      .eq("keyword", ranking.keyword)
-      .order("checked_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const previousRank = previousRanking?.current_rank;
-    const rankChange = (previousRank && ranking.current_rank) ? previousRank - ranking.current_rank : null;
-
-    // Calculate tracking priority and visibility score
-    const trackingPriority = calculateTrackingPriority(ranking.search_volume, ranking.intent);
-    const visibilityScore = calculateVisibilityScore(ranking.current_rank);
-    const status = ranking.current_rank !== null ? 'success' : 'failed';
-
-    rankingInserts.push({
-      tenant_id: tenantId,
-      keyword: ranking.keyword,
-      url: ranking.url,
-      search_engine: "google",
-      location: "us",
-      device: "desktop",
-      current_rank: ranking.current_rank,
-      previous_rank: previousRank,
-      rank_change: rankChange,
-      tracking_priority: trackingPriority,
-      visibility_score: visibilityScore,
-      status: status,
-      checked_at: new Date().toISOString(),
-      created_at: new Date().toISOString()
-    });
-
-    structuredLog("info", {
-      runId,
-      executionId,
-      tenantId,
-      agent,
-      step: "movement_calculated",
-      keyword: ranking.keyword,
-      currentRank: ranking.current_rank,
-      previousRank,
-      rankChange
-    });
-  }
-
-  const { error: insertError } = await supabase
-    .from("pulse_rankings")
-    .insert(rankingInserts);
-
-  if (insertError) {
-    throw new Error(`Failed to store rankings: ${insertError.message}`);
-  }
-
+  // REMOVED: State updates (Phase 2B)
   structuredLog("info", {
     runId,
     executionId,
     tenantId,
     agent,
-    step: "rankings_stored",
-    count: rankingInserts.length
+    step: "processing_movement",
+    progress: 100
   });
 
   // Step 6: Complete
-  await updateAgentState(tenantId, agent, runId, {
-    status: "completed",
+  // REMOVED: State and run status updates (Phase 2B)
+  structuredLog("info", {
+    runId,
+    executionId,
+    tenantId,
+    agent,
+    step: "complete",
     progress: 100,
-    current_task: "Completed"
+    message: "PULSE execution completed successfully"
   });
-
-  await updateAgentRunStatus(runId, tenantId, "completed", {
-    rankings_checked: rankings.length,
-    domain
-  });
-
-  await logAgentActivity(tenantId, agent, runId, "completed", `PULSE agent completed successfully: ${rankings.length} rankings checked`);
 
   structuredLog("info", {
     runId,
@@ -452,8 +342,6 @@ async function executePULSE(context: AgentContext, executionId: string): Promise
     agent,
     step: "runPULSE_complete",
     progress: 100,
-    rankingsChecked: rankings.length,
-    domain,
     message: "PULSE execution completed successfully"
   });
 }

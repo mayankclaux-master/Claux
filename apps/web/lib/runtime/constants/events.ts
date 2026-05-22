@@ -31,6 +31,17 @@ export const RuntimeEvents = {
   PROVIDER_CALLBACK_FAILED: 'provider.callback_failed',
   PROVIDER_QUARANTINED: 'provider.quarantined',
   PROVIDER_RESTORED: 'provider.restored',
+  PROVIDER_RESPONSE_RECEIVED: 'provider.response_received',
+  PROVIDER_RESPONSE_FAILED: 'provider.response_failed',
+
+  // Connector events
+  CONNECTOR_EXECUTION_STARTED: 'connector.execution_started',
+  CONNECTOR_EXECUTION_COMPLETED: 'connector.execution_completed',
+  CONNECTOR_EXECUTION_FAILED: 'connector.execution_failed',
+  CONNECTOR_REQUEST_SENT: 'connector.request_sent',
+  CONNECTOR_REQUEST_FAILED: 'connector.request_failed',
+  CONNECTOR_RESPONSE_RECEIVED: 'connector.response_received',
+  CONNECTOR_RESPONSE_FAILED: 'connector.response_failed',
 
   // Retry events
   RETRY_TRIGGERED: 'retry.triggered',

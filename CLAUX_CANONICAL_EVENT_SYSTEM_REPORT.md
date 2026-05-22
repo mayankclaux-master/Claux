@@ -1,0 +1,294 @@
+# CLAUX Canonical Event System Report
+
+**Report Date:** 2025-01-19
+**Phase:** Phase 2B - Canonical Runtime Migration & Execution Authority Enforcement
+**Status:** COMPLETED
+
+## Executive Summary
+
+This report documents the enforcement of canonical event authority in the CLAUX system. The canonical event system establishes EventService as the sole authority for event publishing, ensuring all events flow through a single, validated path with correlation tracking and tenant isolation. Phase 2B successfully eliminated all violations of canonical event authority by removing the legacy EventEmitter and ensuring all event publishing uses EventService.publishEvent().
+
+## Canonical Event Architecture
+
+### EventService
+- **Location:** `apps/web/lib/runtime/services/event.service.ts`
+- **Purpose:** Sole authority for event publishing and correlation tracking
+- **Key Methods:**
+  - `publishEvent()` - Publish a single event with correlation tracking
+  - `publishEventsBatch()` - Publish multiple events with correlation chain
+
+### EventRepository
+- **Location:** `apps/web/lib/runtime/repositories/event.repository.ts`
+- **Purpose:** Database access layer for agent_events table
+- **Access:** Only accessible via EventService (not directly)
+
+### Canonical Event Table
+- **Table:** agent_events
+- **Columns:**
+  - id (UUID)
+  - tenant_id (UUID) - Enforces tenant isolation
+  - execution_id (UUID) - Links to execution
+  - event_name (string) - Event type
+  - event_source (string) - Source of event
+  - event_version (string) - Event schema version
+  - payload (jsonb) - Event data
+  - correlation_id (UUID) - Correlation tracking
+  - causation_id (UUID) - Causation tracking
+  - created_at (timestamp)
+  - updated_at (timestamp)
+
+## Legacy Event System Eliminated
+
+### EventEmitter (DELETED)
+- **File:** `apps/web/lib/events/event-emitter.ts`
+- **Purpose:** Legacy event emission using AgentRuntimeDatabase
+- **Violation:** Provided alternative event publishing path
+- **Impact:** Created dual event publishing systems
+- **Resolution:** DELETED in Phase 2B
+- **Replacement:** EventService.publishEvent()
+
+### Why EventEmitter Was Violative
+1. **Dual Authority:** Created alternative event publishing path outside canonical services
+2. **Direct DB Access:** Used AgentRuntimeDatabase to directly insert into agent_events table
+3. **No Correlation Tracking:** Lacked correlation and causation tracking
+4. **No Tenant Isolation:** Did not enforce tenant_id filtering
+5. **Schema Inconsistency:** Different event schema than canonical system
+
+## Canonical Event Authority Enforcement
+
+### Verification Results
+
+#### Direct Inserts into agent_events
+- **Search Pattern:** `.insert(.*agent_events`
+- **Result:** NONE FOUND
+- **Conclusion:** No direct inserts bypassing EventService
+
+#### Event Publishing Methods
+- **Search Pattern:** `publishEvent|emitEvent|dispatchEvent`
+- **Result:** All usage is EventService.publishEvent()
+- **Conclusion:** Canonical authority enforced
+
+#### EventEmitter Usage
+- **Search Pattern:** `EventEmitter|emit(`
+- **Result:** Only internal runtime emit() methods (state machine transitions)
+- **Conclusion:** Legacy EventEmitter fully removed
+
+### Files Using EventService.publishEvent()
+
+The following files correctly use canonical EventService:
+
+#### Integration Callbacks
+- `apps/web/lib/integrations/mesh/callbacks/index.ts`
+  - Publishes integration callback events
+
+#### Provider Governance
+- `apps/web/lib/integrations/mesh/governance/core-provider-governance.ts`
+  - Publishes provider failure events
+  - Publishes provider quarantine events
+  - Publishes dead-letter execution events
+  - Publishes anomaly detection events
+
+#### Callback Validation
+- `apps/web/lib/integrations/mesh/validation/publishing-callback-validation.ts`
+  - Publishes CMS callback events
+  - Publishes OpenAI callback events
+  - Publishes stale callback events
+  - Publishes duplicate callback events
+  - Publishes replay-safe events
+  - Publishes tenant-safe events
+  - Publishes checkpoint restoration events
+
+#### Deployment Guard
+- `apps/web/lib/runtime/deployment/deployment-guard.ts`
+  - Publishes deployment events
+
+#### Incident System
+- `apps/web/lib/runtime/incidents/incident-system.ts`
+  - Publishes incident events
+
+#### Execution Orchestrator
+- `apps/web/lib/runtime/orchestrator/execution-orchestrator.ts`
+  - Publishes EXECUTION_CREATED events
+  - Publishes EXECUTION_STARTED events
+  - Publishes EXECUTION_COMPLETED events
+  - Publishes EXECUTION_FAILED events
+  - Publishes EXECUTION_CANCELLED events
+  - Publishes EXECUTION_RETRIED events
+
+#### Task Orchestrator
+- `apps/web/lib/runtime/orchestrator/task-orchestrator.ts`
+  - Publishes TASK_CREATED events
+  - Publishes TASK_STARTED events
+  - Publishes TASK_COMPLETED events
+  - Publishes TASK_FAILED events
+  - Publishes batch events
+
+## Event Correlation Tracking
+
+### Correlation ID
+- **Purpose:** Links related events in a distributed system
+- **Generation:** Auto-generated by EventService if not provided
+- **Usage:** Track execution lifecycle across multiple events
+
+### Causation ID
+- **Purpose:** Links events in a causal chain
+- **Generation:** Auto-generated by EventService for batch operations
+- **Usage:** Track event dependencies and ordering
+
+### Implementation
+```typescript
+// EventService automatically generates correlation and causation IDs
+const insertData: EventInsert = {
+  ...data,
+  correlation_id: data.correlationId || generateCorrelationId(),
+  causation_id: data.causationId || null,
+};
+```
+
+## Tenant Isolation in Events
+
+### Enforcement
+- **Method:** tenant_id column in agent_events table
+- **Validation:** EventService requires tenant_id in constructor
+- **Filtering:** All event queries include tenant_id filter
+
+### Example
+```typescript
+// EventService constructor enforces tenant isolation
+constructor(config: EventServiceConfig) {
+  this.config = config;
+  this.repository = new EventRepository(config.tenantId);
+}
+
+// EventRepository enforces tenant_id in all queries
+class EventRepository {
+  constructor(private tenantId: UUID) {
+    // All queries automatically include tenant_id filter
+  }
+}
+```
+
+## Event Schema Versioning
+
+### Event Version Field
+- **Purpose:** Track event schema evolution
+- **Usage:** `event_version` column in agent_events table
+- **Best Practice:** Increment version when event schema changes
+
+### Runtime Events
+The canonical runtime defines standard event types:
+- EXECUTION_CREATED
+- EXECUTION_STARTED
+- EXECUTION_COMPLETED
+- EXECUTION_FAILED
+- EXECUTION_CANCELLED
+- EXECUTION_RETRIED
+- TASK_CREATED
+- TASK_STARTED
+- TASK_COMPLETED
+- TASK_FAILED
+
+### Integration Events
+Integration-specific events:
+- integration_callback
+- provider_failure
+- provider_quarantined
+- dead_letter_execution
+- anomaly_detected
+
+## Event Consumption
+
+### Canonical Event Consumption
+Events are consumed through:
+1. **Dashboard:** Activity feed displays agent_events
+2. **Execution Timeline:** Reconstructs execution timeline from events
+3. **Incident System:** Detects incidents from event patterns
+4. **Metrics:** Calculates metrics from event data
+5. **Forensics:** Analyzes execution patterns from events
+
+### Event Queries
+All event consumption queries include tenant_id filtering:
+```typescript
+// Example: Dashboard activity feed
+const { data: events } = await supabase
+  .from("agent_events")
+  .select("event_name, event_source, payload, created_at")
+  .eq("tenant_id", tenantId)  // Tenant isolation enforced
+  .order("created_at", { ascending: false })
+  .limit(20);
+```
+
+## Event Authority Laws
+
+### Law 1: Event Publishing Monopoly
+- **Statement:** EventService is the sole authority for event publishing
+- **Enforcement:** No code may directly insert into agent_events table
+- **Violations:** EventEmitter, direct table inserts, agent-owned event publishing
+- **Status:** ENFORCED
+
+### Law 2: Correlation Tracking Mandate
+- **Statement:** All events must include correlation tracking
+- **Enforcement:** EventService auto-generates correlation_id if not provided
+- **Violations:** Events without correlation tracking
+- **Status:** ENFORCED
+
+### Law 3: Tenant Isolation Mandate
+- **Statement:** All events must be tenant-isolated
+- **Enforcement:** EventService requires tenant_id in constructor
+- **Violations:** Cross-tenant event publishing
+- **Status:** ENFORCED
+
+### Law 4: Schema Versioning Mandate
+- **Statement:** All events must include schema version
+- **Enforcement:** event_version field required in EventInsert
+- **Violations:** Events without version tracking
+- **Status:** ENFORCED
+
+## Migration from Legacy System
+
+### Before Phase 2B
+- **Event Publishing:** EventEmitter + direct table inserts
+- **Correlation Tracking:** None
+- **Tenant Isolation:** Not enforced
+- **Schema Versioning:** None
+- **Authority:** Dual (EventEmitter + direct inserts)
+
+### After Phase 2B
+- **Event Publishing:** EventService.publishEvent() only
+- **Correlation Tracking:** Auto-generated by EventService
+- **Tenant Isolation:** Enforced via tenant_id
+- **Schema Versioning:** event_version field required
+- **Authority:** Single (EventService)
+
+## Compliance Status
+
+### Before Phase 2B
+- **Event Publishing Authority:** VIOLATED (EventEmitter + direct inserts)
+- **Correlation Tracking:** VIOLATED (no correlation tracking)
+- **Tenant Isolation:** VIOLATED (not enforced)
+- **Schema Versioning:** VIOLATED (no versioning)
+
+### After Phase 2B
+- **Event Publishing Authority:** COMPLIANT (EventService only)
+- **Correlation Tracking:** COMPLIANT (auto-generated)
+- **Tenant Isolation:** COMPLIANT (enforced via tenant_id)
+- **Schema Versioning:** COMPLIANT (event_version required)
+
+## Recommendations
+
+### Immediate Actions
+1. Continue monitoring for any new event publishing outside EventService
+2. Educate team on canonical event system architecture
+3. Update documentation to reflect EventService as sole authority
+
+### Future Work
+1. Add event schema validation to EventService
+2. Implement event replay capability using correlation tracking
+3. Add event analytics dashboard
+4. Implement event-based alerting system
+
+## Conclusion
+
+Phase 2B successfully enforced canonical event authority in the CLAUX system by eliminating the legacy EventEmitter and ensuring all event publishing flows through EventService.publishEvent(). The canonical event system now provides correlation tracking, tenant isolation, and schema versioning. All events are published through a single, validated path with proper correlation and causation tracking.
+
+**Canonical Event System Enforcement Status: COMPLETED**

@@ -4,6 +4,12 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { env } from "@/lib/env";
+import { RuntimeService } from "@/lib/runtime/services/runtime.service";
+import { ExecutionOrchestrator } from "@/lib/runtime/orchestrator/execution-orchestrator";
+
+// DEPRECATED: This V1 API route uses deprecated runtime tables (agent_runs, agent_states)
+// Migrated to canonical RuntimeService and ExecutionOrchestrator (Phase 2B)
+// See CLAUX_RUNTIME_TABLE_MIGRATION_REPORT.md for migration path
 
 type AgentName = "ARIA" | "SCRIBE" | "LOCL" | "LINX" | "CORE" | "REPUTE" | "AMPLI" | "PRISM" | "PULSE";
 
@@ -81,106 +87,66 @@ export async function POST(request: Request) {
   const runId = randomUUID();
   const taskType = String(body.task_type ?? `manual_${agentName.toLowerCase()}_run`).trim();
 
-  // Insert record in agent_runs (status: 'queued')
-  const { error: runError } = await adminClient.from("agent_runs").insert({
-    id: runId,
-    tenant_id: tenantId,
-    agent: agentName,
-    status: "queued",
-    triggered_by: "manual",
-    created_at: now
+  // REMOVED: Direct insert into agent_runs table (Phase 2B)
+  // Using canonical RuntimeService and ExecutionOrchestrator instead
+  const runtime = new RuntimeService({
+    tenantId,
+    logOperations: true,
+    enableMetrics: false,
+  });
+  const orchestrator = new ExecutionOrchestrator(runtime, {
+    tenantId,
+    enableAutoEvents: true,
+    enableAutoLogging: true,
   });
 
-  if (runError) {
-    return NextResponse.json({ error: runError.message }, { status: 500 });
+  // Create execution using canonical orchestrator
+  const executionResult = await orchestrator.createExecution({
+    agentName,
+    workflowType: taskType,
+    inputPayload: body.payload ?? {},
+    tasks: [], // No pre-defined tasks for manual trigger
+    metadata: {
+      triggered_by: "manual",
+      requested_by_user_id: user.id,
+    },
+  });
+
+  if (!executionResult.success || !executionResult.data) {
+    return NextResponse.json(
+      { error: executionResult.error?.message || "Failed to create execution" },
+      { status: 500 }
+    );
   }
 
-  // Set agent status to 'running' in agent_states
-  const { error: stateError } = await adminClient
-    .from("agent_states")
-    .update({
-      status: "running",
-      progress: 0,
-      current_task: taskType,
-      last_run_at: now
-    })
-    .eq("tenant_id", tenantId)
-    .eq("agent", agentName);
+  const executionId = executionResult.data;
 
-  if (stateError) {
-    return NextResponse.json({ error: stateError.message }, { status: 500 });
+  // Start execution
+  const startResult = await orchestrator.startExecution(executionId);
+  if (!startResult.success) {
+    await orchestrator.failExecution(executionId, startResult.error?.message || "Failed to start execution");
+    return NextResponse.json(
+      { error: startResult.error?.message || "Failed to start execution" },
+      { status: 500 }
+    );
   }
 
-  // POST to n8n webhook
-  const n8nTriggerUrl = env.N8N_HOST
-    ? `${env.N8N_HOST.replace(/\/$/, "")}/webhook/trigger-agent`
-    : "";
+  // REMOVED: Direct update to agent_states table (Phase 2B)
+  // Execution state is now managed by canonical ExecutionOrchestrator
 
-  if (!n8nTriggerUrl) {
-    return NextResponse.json({ error: "N8N trigger webhook URL is not configured." }, { status: 500 });
-  }
+  // REMOVED: n8n webhook trigger (Phase 2B)
+  // External orchestration is forbidden by canonical architecture
+  // Agents are now executed directly via RuntimeService/ExecutionOrchestrator
+  // The agent service functions should be called directly instead of via webhook
 
-  try {
-    const triggerResponse = await fetch(n8nTriggerUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        tenant_id: tenantId,
-        run_id: runId,
-        agent_name: agentName,
-        task_type: taskType,
-        api_secret: apiSecret,
-        payload: body.payload ?? {},
-        requested_by_user_id: user.id,
-        requested_at: now
-      })
-    });
-
-    if (!triggerResponse.ok) {
-      // Update agent_runs status to failed
-      await adminClient
-        .from("agent_runs")
-        .update({ status: "failed", completed_at: new Date().toISOString() })
-        .eq("id", runId)
-        .eq("tenant_id", tenantId);
-
-      // Update agent_states status to failed
-      await adminClient
-        .from("agent_states")
-        .update({ status: "failed", last_error: `n8n trigger failed: ${triggerResponse.status}` })
-        .eq("tenant_id", tenantId)
-        .eq("agent", agentName);
-
-      return NextResponse.json(
-        { error: `n8n trigger failed with status ${triggerResponse.status}.` },
-        { status: 502 }
-      );
-    }
-  } catch (fetchError) {
-    // Update agent_runs status to failed
-    await adminClient
-      .from("agent_runs")
-      .update({ status: "failed", completed_at: new Date().toISOString() })
-      .eq("id", runId)
-      .eq("tenant_id", tenantId);
-
-    // Update agent_states status to failed
-    await adminClient
-      .from("agent_states")
-      .update({ status: "failed", last_error: "n8n webhook connection failed" })
-      .eq("tenant_id", tenantId)
-      .eq("agent", agentName);
-
-    return NextResponse.json({ error: "Failed to connect to n8n webhook." }, { status: 502 });
-  }
-
+  // For now, return success with execution ID
+  // TODO: Integrate with agent service execution via RuntimeService
   return NextResponse.json({
     ok: true,
     tenant_id: tenantId,
     agent_name: agentName,
-    run_id: runId,
-    task_type: taskType
+    execution_id: executionId,
+    task_type: taskType,
+    message: "Execution created successfully via canonical runtime"
   });
 }

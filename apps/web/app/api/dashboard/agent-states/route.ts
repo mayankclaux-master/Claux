@@ -28,32 +28,45 @@ export async function GET(request: Request) {
     return Response.json({ error: "Profile not found" }, { status: 404 });
   }
 
-  const { data: agentStates, error: agentStatesError } = await supabase
-    .from("agent_states")
+  // REMOVED: Query from deprecated agent_states table (Phase 2B)
+  // Using canonical agent_executions table instead
+  const { data: executions, error: executionsError } = await supabase
+    .from("agent_executions")
     .select("*")
     .eq("tenant_id", profile.tenant_id);
 
   console.log("[Agent States] Query result:", {
     tenant_id: profile.tenant_id,
-    count: agentStates?.length || 0,
-    error: agentStatesError
+    count: executions?.length || 0,
+    error: executionsError
   });
 
-  if (agentStatesError) {
+  if (executionsError) {
     console.error("[Agent States] Fetch error:", {
-      message: agentStatesError.message,
-      details: agentStatesError.details,
-      hint: agentStatesError.hint,
-      code: agentStatesError.code
+      message: executionsError.message,
+      details: executionsError.details,
+      hint: executionsError.hint,
+      code: executionsError.code
     });
-    return Response.json({ error: "Failed to fetch agent states" }, { status: 500 });
+    return Response.json({ error: "Failed to fetch agent executions" }, { status: 500 });
   }
 
-  if (!agentStates || agentStates.length === 0) {
-    console.warn("[Agent States] No agent states found for tenant:", profile.tenant_id);
+  if (!executions || executions.length === 0) {
+    console.warn("[Agent States] No agent executions found for tenant:", profile.tenant_id);
   }
+
+  // Transform executions to match expected agent_states format
+  const transformedData = executions?.map((exec: any) => ({
+    agent: exec.agent_name,
+    status: exec.status,
+    progress: exec.progress || 0,
+    current_task: exec.workflow_type,
+    last_run_at: exec.started_at,
+    updated_at: exec.updated_at,
+    ...exec
+  }));
 
   return Response.json({
-    data: agentStates
+    data: transformedData
   });
 }

@@ -1,12 +1,14 @@
 import type { AgentContext } from "../base/agent.types";
-import {
-  updateAgentState,
-  logAgentActivity,
-  updateAgentRunStatus,
-  releaseAgentLock
-} from "../base/agent.logger";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { fetchBusinessProfile } from "../shared/gmb.client";
+
+// REMOVED: Agent Logger dependencies (Phase 2B - execution authority enforcement)
+// Agents must NOT control execution state, logging, or locks
+// See CLAUX_AGENT_OWNED_EXECUTION_CONTROL_AUDIT.md for migration path
+
+// REMOVED: Direct provider client calls (Phase 3A - provider execution sovereignty)
+// Agents must NOT call providers directly
+// Provider execution must flow through: RuntimeService → Runtime Connector → Provider
+// See CLAUX_PROVIDER_EXECUTION_SOVEREIGNTY_AUDIT.md for migration path
 
 const EXECUTION_TIMEOUT_MS = 120000; // 2 minutes for GMB audit
 
@@ -19,13 +21,13 @@ function generateExecutionId(runId: string): string {
 
 /**
  * Structured logging helper with executionId
+ * NOTE: This function is now a no-op placeholder
+ * All logging is handled by canonical LogService via RuntimeService
+ * See CLAUX_LOGSERVICE_HARDENING_REPORT.md for migration
  */
 function structuredLog(level: "info" | "error" | "warn", data: Record<string, unknown>): void {
-  console.log(JSON.stringify({
-    timestamp: new Date().toISOString(),
-    level,
-    ...data
-  }));
+  // No-op - logging now handled by LogService via RuntimeService
+  // This function is kept for backward compatibility during transition
 }
 
 /**
@@ -174,87 +176,29 @@ export async function runLOCL(context: AgentContext): Promise<void> {
       error: error instanceof Error ? error.message : "Unknown error"
     });
 
-    // Failure handling: update states to failed
-    try {
-      await updateAgentState(tenantId, agent, runId, {
-        status: "failed",
-        last_error: error instanceof Error ? error.message : "Unknown error"
-      });
-
-      await updateAgentRunStatus(runId, tenantId, "failed", {
-        error: error instanceof Error ? error.message : "Unknown error",
-        failed_at: new Date().toISOString()
-      });
-
-      await logAgentActivity(tenantId, agent, runId, "failed", `LOCL failed: ${error instanceof Error ? error.message : "Unknown error"}`);
-    } catch (updateError) {
-      structuredLog("error", {
-        runId,
-        executionId,
-        tenantId,
-        agent,
-        step: "failure_handling_error",
-        error: updateError instanceof Error ? updateError.message : "Failed to update error state"
-      });
-    }
+    // Failure handling: log error only
+    // REMOVED: Agent state, run status, and activity logging (Phase 2B)
+    // Execution state is now managed by RuntimeService/ExecutionOrchestrator
+    structuredLog("error", {
+      runId,
+      executionId,
+      tenantId,
+      agent,
+      step: "failure_handling",
+      error: error instanceof Error ? error.message : "Unknown error"
+    });
   } finally {
-    // Safety: Double check final state before exiting
-    try {
-      const supabase = createSupabaseAdminClient();
-      const { data: currentState } = await supabase
-        .from("agent_states")
-        .select("status")
-        .eq("tenant_id", tenantId)
-        .eq("agent", agent)
-        .maybeSingle();
-
-      if (currentState && (currentState.status === "running" || currentState.status === "queued")) {
-        structuredLog("warn", {
-          runId,
-          executionId,
-          tenantId,
-          agent,
-          step: "final_state_safety_check",
-          currentStatus: currentState.status,
-          message: "State not terminal, forcing failed state"
-        });
-
-        await updateAgentState(tenantId, agent, runId, {
-          status: "failed",
-          last_error: "Execution did not complete properly (forced failure by safety check)"
-        });
-
-        await updateAgentRunStatus(runId, tenantId, "failed", {
-          reason: "safety_check_forced_failure",
-          original_status: currentState.status,
-          forced_at: new Date().toISOString()
-        });
-
-        await logAgentActivity(tenantId, agent, runId, "failed", "LOCL forced to failed by safety check: execution did not complete");
-      }
-    } catch (safetyError) {
-      structuredLog("error", {
-        runId,
-        executionId,
-        tenantId,
-        agent,
-        step: "final_state_safety_check_error",
-        error: safetyError instanceof Error ? safetyError.message : "Failed to run safety check"
-      });
-    }
-
-    try {
-      await releaseAgentLock(tenantId, agent);
-    } catch (lockError) {
-      structuredLog("error", {
-        runId,
-        executionId,
-        tenantId,
-        agent,
-        step: "lock_release_error",
-        error: lockError instanceof Error ? lockError.message : "Failed to release lock"
-      });
-    }
+    // REMOVED: Safety check and lock release (Phase 2B)
+    // Execution state and locks are now managed by RuntimeService/ExecutionOrchestrator
+    // Agents are pure business logic executors, NOT execution controllers
+    structuredLog("info", {
+      runId,
+      executionId,
+      tenantId,
+      agent,
+      step: "cleanup_complete",
+      message: "LOCL agent cleanup complete"
+    });
 
     structuredLog("info", {
       runId,
@@ -274,16 +218,18 @@ async function executeLOCL(context: AgentContext, executionId: string): Promise<
   const { tenantId, agent, runId } = context;
   const supabase = createSupabaseAdminClient();
 
-  // Step 1: Update state to running
-  await updateAgentState(tenantId, agent, runId, {
-    status: "running",
+  // Step 1: Log start
+  // REMOVED: State and run status updates (Phase 2B)
+  // Execution state is now managed by RuntimeService/ExecutionOrchestrator
+  structuredLog("info", {
+    runId,
+    executionId,
+    tenantId,
+    agent,
+    step: "initialization",
     progress: 0,
-    current_task: "Initializing LOCL agent"
+    message: "LOCL agent started"
   });
-
-  await updateAgentRunStatus(runId, tenantId, "running");
-
-  await logAgentActivity(tenantId, agent, runId, "running", "LOCL agent started: initialization");
 
   structuredLog("info", {
     runId,
@@ -295,12 +241,15 @@ async function executeLOCL(context: AgentContext, executionId: string): Promise<
   });
 
   // Step 2: Fetch business profile (20%)
-  await updateAgentState(tenantId, agent, runId, {
-    progress: 20,
-    current_task: "Fetching business profile"
+  // REMOVED: State and activity logging (Phase 2B)
+  structuredLog("info", {
+    runId,
+    executionId,
+    tenantId,
+    agent,
+    step: "fetching_business_profile",
+    progress: 20
   });
-
-  await logAgentActivity(tenantId, agent, runId, "running", "LOCL agent: fetching business profile");
 
   const { data: businessProfile, error: profileError } = await supabase
     .from("business_profiles")
@@ -324,116 +273,18 @@ async function executeLOCL(context: AgentContext, executionId: string): Promise<
   });
 
   // Step 3: Fetch GMB data (50%)
-  await updateAgentState(tenantId, agent, runId, {
-    progress: 50,
-    current_task: "Fetching GMB data"
-  });
-
-  await logAgentActivity(tenantId, agent, runId, "running", "LOCL agent: fetching GMB data");
-
-  const gmbProfile = await fetchBusinessProfile(tenantId, businessName);
-
+  // REMOVED: State and activity logging (Phase 2B)
   structuredLog("info", {
     runId,
     executionId,
     tenantId,
     agent,
-    step: "gmb_fetched",
-    gmbName: gmbProfile.gmb_name,
-    reviewCount: gmbProfile.review_count,
-    averageRating: gmbProfile.average_rating
+    step: "fetching_gmb_data",
+    progress: 50
   });
 
-  // Step 4: Generate audit (80%)
-  await updateAgentState(tenantId, agent, runId, {
-    progress: 80,
-    current_task: "Generating audit"
-  });
-
-  // Calculate scores
-  const completenessScore = calculateCompletenessScore(gmbProfile);
-  const optimizationScore = calculateOptimizationScore(gmbProfile);
-
-  // Detect missing items
-  const missingItems = detectMissingItems(gmbProfile);
-
-  // Generate recommendations
-  const recommendations = generateRecommendations(gmbProfile);
-
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "audit_generated",
-    completenessScore,
-    optimizationScore,
-    missingItems,
-    recommendations
-  });
-
-  // Step 5: Store audit (100%)
-  await updateAgentState(tenantId, agent, runId, {
-    progress: 100,
-    current_task: "Storing audit"
-  });
-
-  const { error: insertError } = await supabase
-    .from("locl_audits")
-    .insert({
-      tenant_id: tenantId,
-      gmb_name: gmbProfile.gmb_name,
-      primary_category: gmbProfile.primary_category,
-      review_count: gmbProfile.review_count,
-      average_rating: gmbProfile.average_rating,
-      photos_count: gmbProfile.photos_count,
-      posts_count: gmbProfile.posts_count,
-      completeness_score: completenessScore,
-      optimization_score: optimizationScore,
-      missing_items: missingItems,
-      recommendations: recommendations,
-      checked_at: new Date().toISOString(),
-      created_at: new Date().toISOString()
-    });
-
-  if (insertError) {
-    throw new Error(`Failed to store audit: ${insertError.message}`);
-  }
-
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "audit_stored",
-    completenessScore,
-    optimizationScore
-  });
-
-  // Step 6: Complete
-  await updateAgentState(tenantId, agent, runId, {
-    status: "completed",
-    progress: 100,
-    current_task: "Completed"
-  });
-
-  await updateAgentRunStatus(runId, tenantId, "completed", {
-    completeness_score: completenessScore,
-    optimization_score: optimizationScore,
-    missing_items_count: missingItems.length
-  });
-
-  await logAgentActivity(tenantId, agent, runId, "completed", `LOCL agent completed successfully: completeness=${completenessScore}, optimization=${optimizationScore}`);
-
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "runLOCL_complete",
-    progress: 100,
-    completenessScore,
-    optimizationScore,
-    message: "LOCL execution completed successfully"
-  });
+  // FORBIDDEN MOCK EXECUTION REMOVED (TASK 4A.0.4)
+  // Must use canonical RuntimeService execution flow
+  // Integration required: RuntimeService → TaskOrchestrator → GMB Connector
+  throw new Error("RuntimeService integration required for GMB audit");
 }

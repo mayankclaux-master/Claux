@@ -4,9 +4,10 @@
 
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 
-export async function getExecutionTimeline(executionId: string) {
+export async function getExecutionTimeline(executionId: string, tenantId: string) {
   const supabase = createSupabaseAdminClient();
-  const { data: execution } = await supabase.from('runtime_executions').select('*').eq('id', executionId).single();
+  // ENFORCED: Added tenant_id filter for tenant isolation (Phase 2B)
+  const { data: execution } = await supabase.from('runtime_executions').select('*').eq('id', executionId).eq('tenant_id', tenantId).single();
   const { data: tasks } = await supabase.from('runtime_tasks').select('*').eq('execution_id', executionId).order('step_order');
   return { execution, tasks };
 }

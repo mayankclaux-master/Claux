@@ -36,116 +36,9 @@ type ThinkingEntry = {
   outcome: string;
 };
 
-const agents: Agent[] = [
-  {
-    name: 'ARIA',
-    role: 'Keyword Intelligence',
-    description: 'System initializing. Awaiting asset connections and first crawl cycle.',
-    metric: 'N/A',
-    tasks: ['System Initializing'],
-    taskHistory: [],
-    performance: [],
-    progress: 0,
-    action: 'System Initializing',
-    last_error: null
-  },
-  {
-    name: 'SCRIBE',
-    role: 'Content Agent',
-    description: 'System initializing. Awaiting asset connections and first crawl cycle.',
-    metric: 'N/A',
-    tasks: ['System Initializing'],
-    taskHistory: [],
-    performance: [],
-    progress: 0,
-    action: 'System Initializing',
-    last_error: null
-  },
-  {
-    name: 'LOCL',
-    role: 'GBP Agent',
-    description: 'System initializing. Awaiting asset connections and first crawl cycle.',
-    metric: 'N/A',
-    tasks: ['System Initializing'],
-    taskHistory: [],
-    performance: [],
-    progress: 0,
-    action: 'System Initializing',
-    last_error: null
-  },
-  {
-    name: 'LINX',
-    role: 'Backlink Agent',
-    description: 'System initializing. Awaiting asset connections and first crawl cycle.',
-    metric: 'N/A',
-    tasks: ['System Initializing'],
-    taskHistory: [],
-    performance: [],
-    progress: 0,
-    action: 'System Initializing',
-    last_error: null
-  },
-  {
-    name: 'CORE',
-    role: 'Technical SEO',
-    description: 'System initializing. Awaiting asset connections and first crawl cycle.',
-    metric: 'N/A',
-    tasks: ['System Initializing'],
-    taskHistory: [],
-    performance: [],
-    progress: 0,
-    action: 'System Initializing',
-    last_error: null
-  },
-  {
-    name: 'VISUAL',
-    role: 'Creative Agent',
-    description: 'System initializing. Awaiting asset connections and first crawl cycle.',
-    metric: 'N/A',
-    tasks: ['System Initializing'],
-    taskHistory: [],
-    performance: [],
-    progress: 0,
-    action: 'System Initializing',
-    last_error: null
-  },
-  {
-    name: 'REPUTE',
-    role: 'Reputation Mgmt',
-    description: 'System initializing. Awaiting asset connections and first crawl cycle.',
-    metric: 'N/A',
-    tasks: ['System Initializing'],
-    taskHistory: [],
-    performance: [],
-    progress: 0,
-    action: 'System Initializing',
-    last_error: null
-  },
-  {
-    name: 'FORGE',
-    role: 'Implementation Agent',
-    description: 'System initializing. Awaiting asset connections and first crawl cycle.',
-    metric: 'N/A',
-    tasks: ['System Initializing'],
-    taskHistory: [],
-    performance: [],
-    progress: 0,
-    action: 'System Initializing',
-    last_error: null
-  },
-  {
-    name: 'AMPLI',
-    role: 'Distribution',
-    description: 'System initializing. Awaiting asset connections and first crawl cycle.',
-    metric: 'N/A',
-    tasks: ['System Initializing'],
-    taskHistory: [],
-    performance: [],
-    progress: 0,
-    action: 'System Initializing',
-    last_error: null
-  }
-];
+// REMOVED: Hardcoded agents array with fake execution states (Phase 2C)
+// Dashboard now uses canonical runtime data from RuntimeService via API routes
+// Agents are pure visualization layer over canonical runtime authority
 
 const AGENT_NAMES: AgentName[] = ['ARIA', 'SCRIBE', 'LOCL', 'LINX', 'CORE', 'REPUTE', 'AMPLI', 'PRISM', 'PULSE'];
 
@@ -161,7 +54,8 @@ const agentChipColors: Record<string, string> = {
   AMPLI: 'bg-[#EC4899]/20 text-[#F9A8D4] border border-[#EC4899]/40'
 };
 
-const thinkingLogByAgent: Record<string, ThinkingEntry[]> = {};
+// REMOVED: Hardcoded thinking log (Phase 2C)
+// Dashboard now fetches thinking logs from canonical runtime when available
 
 export default function AgentsPageClient() {
   const { user, isLoaded: isUserLoaded } = useUser();
@@ -181,17 +75,90 @@ export default function AgentsPageClient() {
   const [isTriggeringAll, setIsTriggeringAll] = useState(false);
   const [isRunningSanity, setIsRunningSanity] = useState(false);
   const [developerMessage, setDeveloperMessage] = useState<string | null>(null);
-  const [taskIndexByAgent, setTaskIndexByAgent] = useState<Record<string, number>>(() =>
-    agents.reduce<Record<string, number>>((acc, agent) => {
-      acc[agent.name] = 0;
-      return acc;
-    }, {})
-  );
+  const [taskIndexByAgent, setTaskIndexByAgent] = useState<Record<string, number>>({} as Record<string, number>);
   const [typedReasoning, setTypedReasoning] = useState('');
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [loadingAuditLogs, setLoadingAuditLogs] = useState(false);
-  const isInitializing = true;
+  const [agentRuntimeData, setAgentRuntimeData] = useState<any[]>([]);
+  const [loadingAgentData, setLoadingAgentData] = useState(false);
   const isAdminOrOwner = viewerProfile?.role === 'owner' || viewerProfile?.role === 'admin';
+
+  // Construct agent cards from canonical runtime data
+  const agents = useMemo(() => {
+    if (agentRuntimeData.length === 0) {
+      return [];
+    }
+
+    const agentRoles: Record<AgentName, string> = {
+      ARIA: 'Keyword Intelligence',
+      SCRIBE: 'Content Agent',
+      LOCL: 'GBP Agent',
+      LINX: 'Backlink Agent',
+      CORE: 'Technical SEO',
+      REPUTE: 'Reputation Mgmt',
+      AMPLI: 'Distribution',
+      PRISM: 'Analytics Agent',
+      PULSE: 'Monitoring Agent'
+    };
+
+    const getDescription = (status: string, runCount: number) => {
+      if (runCount === 0) return 'No executions yet. Trigger agent to start.';
+      switch (status) {
+        case 'Completed':
+          return 'Last execution completed successfully.';
+        case 'Running':
+          return 'Execution in progress.';
+        case 'Failed':
+          return 'Last execution failed.';
+        case 'Pending':
+          return 'Execution queued.';
+        case 'Cancelled':
+          return 'Execution cancelled.';
+        case 'Retrying':
+          return 'Execution retrying.';
+        default:
+          return 'No executions yet.';
+      }
+    };
+
+    const getAction = (status: string) => {
+      switch (status) {
+        case 'Completed':
+          return 'Completed';
+        case 'Running':
+          return 'Executing';
+        case 'Failed':
+          return 'Failed';
+        case 'Pending':
+          return 'Queued';
+        case 'Cancelled':
+          return 'Cancelled';
+        case 'Retrying':
+          return 'Retrying';
+        default:
+          return 'Idle';
+      }
+    };
+
+    return agentRuntimeData.map((runtimeAgent: any) => {
+      const agentName = runtimeAgent.agent as AgentName;
+      const status = runtimeAgent.status || 'pending';
+      const progress = status === 'running' ? 50 : status === 'completed' ? 100 : 0;
+      
+      return {
+        name: agentName,
+        role: agentRoles[agentName] || 'Agent',
+        description: getDescription(status, runtimeAgent.totalExecutions || 0),
+        metric: `${runtimeAgent.totalExecutions || 0} runs`,
+        tasks: [getAction(status)],
+        taskHistory: [], // Will be populated from canonical runtime in future
+        performance: [], // Will be populated from canonical runtime in future
+        progress,
+        action: getAction(status),
+        last_error: null
+      };
+    });
+  }, [agentRuntimeData]);
 
   useEffect(() => {
     async function loadViewerProfile() {
@@ -322,46 +289,58 @@ export default function AgentsPageClient() {
   }
 
   useEffect(() => {
+    async function loadAgentRuntimeData() {
+      if (!tenant?.id) {
+        setAgentRuntimeData([]);
+        return;
+      }
+
+      setLoadingAgentData(true);
+      try {
+        const response = await fetch(`/api/dashboard/runtime-agent-status`);
+        if (!response.ok) {
+          setError("Failed to load agent runtime data");
+          setAgentRuntimeData([]);
+          return;
+        }
+        const json = await response.json();
+        setAgentRuntimeData(json.data || []);
+      } catch (err) {
+        setError("Failed to load agent runtime data");
+        setAgentRuntimeData([]);
+      } finally {
+        setLoadingAgentData(false);
+      }
+    }
+
+    loadAgentRuntimeData();
+
     const interval = setInterval(() => {
-      setTaskIndexByAgent((prev) => {
-        const next: Record<string, number> = { ...prev };
-        agents.forEach((agent) => {
-          next[agent.name] = ((prev[agent.name] ?? 0) + 1) % agent.tasks.length;
-        });
-        return next;
-      });
-    }, 3000);
+      loadAgentRuntimeData();
+    }, 5000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [tenant?.id]);
 
   const activeThinkingEntries = useMemo(() => {
     if (!activeAgent) {
       return [];
     }
-    return thinkingLogByAgent[activeAgent.name] ?? [];
+    // REMOVED: Hardcoded thinking log (Phase 2C)
+    // Dashboard now shows placeholder for thinking logs
+    return [];
   }, [activeAgent]);
 
   useEffect(() => {
-    if (!activeAgent || activeTab !== 'thinking' || activeThinkingEntries.length === 0) {
+    if (!activeAgent || activeTab !== 'thinking') {
       setTypedReasoning('');
       return;
     }
 
-    const fullText = activeThinkingEntries[0].reasoning;
-    let idx = 0;
+    // REMOVED: Hardcoded typing effect (Phase 2C)
+    // Dashboard now shows placeholder for thinking logs
     setTypedReasoning('');
-
-    const typer = setInterval(() => {
-      idx += 1;
-      setTypedReasoning(fullText.slice(0, idx));
-      if (idx >= fullText.length) {
-        clearInterval(typer);
-      }
-    }, 18);
-
-    return () => clearInterval(typer);
-  }, [activeAgent, activeTab, activeThinkingEntries]);
+  }, [activeAgent, activeTab]);
 
   useEffect(() => {
     async function loadAuditLogs() {
@@ -401,7 +380,9 @@ export default function AgentsPageClient() {
         >
           {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
           <h1 className="text-3xl font-bold mb-2">AI Agents</h1>
-          <p className="text-[#8892A4] mb-8">System initializing. Live agent actions will appear after asset connections.</p>
+          <p className="text-[#8892A4] mb-8">
+            {loadingAgentData ? 'Loading agent data...' : agentRuntimeData.length === 0 ? 'No agent executions yet. Trigger agents to start.' : `Found ${agentRuntimeData.length} agents with execution data.`}
+          </p>
 
           {isAdminOrOwner ? (
             <div className="mb-8 rounded-xl border border-[#7F77DD]/35 bg-[#12141A] p-5">
@@ -490,14 +471,10 @@ export default function AgentsPageClient() {
                   </div>
                   <div className="flex items-center gap-2 text-xs text-[#8892A4] bg-[#8892A4]/10 px-2 py-1 rounded-full">
                     <span className="relative flex h-2 w-2 items-center justify-center">
-                      <span className="absolute inline-flex h-4 w-4 rounded-full bg-[#1D9E75] opacity-50 animate-ping" />
-                      <span
-                        className="absolute inline-flex h-6 w-6 rounded-full bg-[#1D9E75] opacity-40 animate-ping"
-                        style={{ animationDuration: '2s' }}
-                      />
+                      <span className={`absolute inline-flex h-4 w-4 rounded-full ${agent.progress > 0 ? 'bg-[#1D9E75]' : 'bg-[#8892A4]'} opacity-50 ${agent.progress > 0 ? 'animate-ping' : ''}`} />
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-[#1D9E75]" />
                     </span>
-                    System Initializing
+                    {agent.action}
                   </div>
                 </div>
 
@@ -613,46 +590,11 @@ export default function AgentsPageClient() {
                           className="absolute left-2.5 top-0 w-px bg-[#7F77DD]/70"
                         />
 
-                        {isInitializing ? (
+                        {activeThinkingEntries.length === 0 ? (
                           <div className="relative mb-5 rounded-xl border border-[#1E2130] bg-[#12141A] border-l-[3px] border-l-[#7F77DD] p-4 text-sm text-[#8892A4]">
-                            System Initializing. Thinking logs will appear after first real execution.
+                            No thinking logs available yet. Thinking logs will appear after agent execution.
                           </div>
-                        ) : (
-                          activeThinkingEntries.map((entry, idx) => (
-                            <motion.div
-                              key={`${entry.timestamp}-${idx}`}
-                              initial={{ opacity: 0, x: -16 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              transition={{ delay: idx * 0.12 }}
-                              className="relative mb-5 rounded-xl border border-[#1E2130] bg-[#12141A] border-l-[3px] border-l-[#7F77DD] p-4"
-                            >
-                              <div className="flex items-center justify-between gap-3 mb-3">
-                                <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${agentChipColors[activeAgent.name]}`}>
-                                  {activeAgent.name}
-                                </span>
-                                <span className="text-[11px] italic text-[#8892A4]">{entry.timestamp}</span>
-                              </div>
-
-                              <div className="mb-3">
-                                <div className="text-[10px] uppercase tracking-[0.1em] font-semibold text-[#7F77DD] mb-1.5 flex items-center gap-1.5">
-                                  <span>◈</span>
-                                  <span>REASONING:</span>
-                                </div>
-                                <p className="text-[13px] leading-[1.6] text-white">{idx === 0 ? typedReasoning : entry.reasoning}</p>
-                              </div>
-
-                              <div className="mb-3">
-                                <div className="text-[10px] uppercase tracking-[0.1em] font-semibold text-[#1D9E75] mb-1.5">ACTION TAKEN:</div>
-                                <p className="font-mono text-[13px] leading-[1.6] text-white">{entry.action}</p>
-                              </div>
-
-                              <div>
-                                <div className="text-[10px] uppercase tracking-[0.1em] font-semibold text-[#22c55e] mb-1.5">OUTCOME:</div>
-                                <p className="font-mono text-[13px] leading-[1.6] text-white">{entry.outcome}</p>
-                              </div>
-                            </motion.div>
-                          ))
-                        )}
+                        ) : null}
                       </div>
                     </motion.div>
                   )}
@@ -665,9 +607,9 @@ export default function AgentsPageClient() {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -6 }}
                     >
-                      {isInitializing ? (
+                      {activeAgent.taskHistory.length === 0 ? (
                         <div className="rounded-xl border border-[#1E2130] bg-[#12141A] p-4 text-sm text-[#8892A4]">
-                          System Initializing. Task history will appear after first run.
+                          No task history available yet. Task history will appear after agent execution.
                         </div>
                       ) : (
                         <div className="space-y-3">
@@ -747,9 +689,9 @@ export default function AgentsPageClient() {
                               </div>
                             )}
                           </>
-                        ) : isInitializing ? (
+                        ) : activeAgent.performance.length === 0 ? (
                           <div className="h-[320px] rounded-lg border border-[#1E2130] bg-[#0E1016] flex items-center justify-center text-sm text-[#8892A4]">
-                            N/A — System Initializing
+                            No performance data available yet. Performance data will appear after agent execution.
                           </div>
                         ) : (
                           <ResponsiveContainer width="100%" height={320}>
