@@ -4,6 +4,7 @@ import { createClerkSupabaseClient } from "@/lib/supabase/admin";
 import { ExecutionOrchestrator } from "@/lib/runtime/orchestrator/execution-orchestrator";
 import { RuntimeService } from "@/lib/runtime/services";
 import { SCRIBE_WORKFLOW } from "@/lib/runtime/workflows/scribe.workflow";
+import { runSCRIBE } from "@/lib/agents/scribe/scribe.service";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +57,7 @@ export async function POST(request: Request) {
     const executionResult = await orchestrator.createExecution({
       agentName: 'SCRIBE',
       workflowType: 'content_generation',
-      tasks: SCRIBE_WORKFLOW.tasks.map((task, index) => ({
+      tasks: SCRIBE_WORKFLOW.tasks.map((task: any, index: number) => ({
         task_id: task.task_id,
         taskName: task.task_name,
         taskType: task.task_type,
@@ -104,6 +105,13 @@ export async function POST(request: Request) {
         { status: 500 }
       );
     }
+
+    // Trigger real agent execution
+    await runSCRIBE({
+      tenantId,
+      agent: 'SCRIBE',
+      runId: executionId,
+    });
 
     return NextResponse.json({
       success: true,

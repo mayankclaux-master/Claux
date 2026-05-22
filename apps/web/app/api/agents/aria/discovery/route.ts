@@ -4,6 +4,7 @@ import { createClerkSupabaseClient } from "@/lib/supabase/admin";
 import { ExecutionOrchestrator } from "@/lib/runtime/orchestrator/execution-orchestrator";
 import { RuntimeService } from "@/lib/runtime/services";
 import { ARIA_WORKFLOW } from "@/lib/runtime/workflows/aria.workflow";
+import { runARIA } from "@/lib/agents/aria/aria.service";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +57,7 @@ export async function POST(request: Request) {
     const executionResult = await orchestrator.createExecution({
       agentName: 'ARIA',
       workflowType: 'keyword_discovery',
-      tasks: ARIA_WORKFLOW.tasks.map((task, index) => ({
+      tasks: ARIA_WORKFLOW.tasks.map((task: any, index: number) => ({
         task_id: task.task_id,
         taskName: task.task_name,
         taskType: task.task_type,
@@ -104,6 +105,13 @@ export async function POST(request: Request) {
         { status: 500 }
       );
     }
+
+    // Trigger real agent execution
+    await runARIA({
+      tenantId,
+      agent: 'ARIA',
+      runId: executionId,
+    });
 
     return NextResponse.json({
       success: true,
