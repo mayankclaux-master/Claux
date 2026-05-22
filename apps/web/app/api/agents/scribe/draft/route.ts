@@ -3,7 +3,6 @@ import { auth } from "@clerk/nextjs/server";
 import { createClerkSupabaseClient } from "@/lib/supabase/admin";
 import { ExecutionOrchestrator } from "@/lib/runtime/orchestrator/execution-orchestrator";
 import { RuntimeService } from "@/lib/runtime/services";
-import { SCRIBE_WORKFLOW } from "@/lib/runtime/workflows/scribe.workflow";
 import { runSCRIBE } from "@/lib/agents/scribe/scribe.service";
 
 export const dynamic = "force-dynamic";
@@ -53,23 +52,11 @@ export async function POST(request: Request) {
       stallDetectionTimeoutMs: 3600000,
     });
 
-    // Create execution from SCRIBE workflow
+    // Create execution - agent service will handle task creation
     const executionResult = await orchestrator.createExecution({
       agentName: 'SCRIBE',
       workflowType: 'content_generation',
-      tasks: SCRIBE_WORKFLOW.tasks.map((task: any, index: number) => ({
-        task_id: task.task_id,
-        taskName: task.task_name,
-        taskType: task.task_type,
-        stepOrder: index,
-        dependencies: task.dependencies,
-        retryPolicy: {
-          maxRetries: task.retry_policy.max_attempts,
-          backoffMs: task.retry_policy.backoff_ms,
-          strategy: 'exponential' as const,
-        },
-        timeoutMs: task.timeout_ms,
-      })),
+      tasks: [],
       inputPayload: {
         tenant_id: tenantId,
         workspace_id: workspaceId,
