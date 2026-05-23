@@ -1,44 +1,20 @@
 import type { AgentContext } from "../base/agent.types";
 import { RuntimeService } from "@/lib/runtime/services/runtime.service";
-import { ExecutionOrchestrator } from "@/lib/runtime/orchestrator/execution-orchestrator";
 import { PublishTaskExecutorFactory } from "./publish-tasks";
-// CMS connectors removed in Phase 2A.1 - V1 prohibits CMS automation
-// import { WordPressConnector } from "@/lib/runtime/connectors/wordpress.connector";
-// import { CustomAPIConnector } from "@/lib/runtime/connectors/custom-api.connector";
 import type { UUID } from "@/lib/runtime/types/common.types";
-import { TaskStatus as TaskStatusEnum } from "@/lib/runtime/types/task.types";
+import { ExecutionStatus, ExecutionSource } from "@/lib/runtime/types/execution.types";
+import { TaskStatus } from "@/lib/runtime/types/task.types";
+import { TaskGenerationService } from "@/lib/command-center/task-generation.service";
+import type { TaskType, TaskPriority } from "@/lib/command-center/types";
+import type { PublishOutput } from "../shared/agent-output.types";
 
-// REMOVED: Agent Logger dependencies (Phase 2B - execution authority enforcement)
-// Agents must NOT control execution state, logging, or locks
-// See CLAUX_AGENT_OWNED_EXECUTION_CONTROL_AUDIT.md for migration path
-
-// REMOVED: Direct CMS connector calls (Phase 3A - provider execution sovereignty)
-// Agents must NOT call providers directly
-// Provider execution must flow through: RuntimeService → Runtime Connector → Provider
-// See CLAUX_PROVIDER_EXECUTION_SOVEREIGNTY_AUDIT.md for migration path
-
-// REMOVED: Direct database access (TASK 4C.3.1)
-// CMS config and draft content now handled by runtime persistence layer
-// Agents must NOT access database directly
-
-const EXECUTION_TIMEOUT_MS = 120000; // 2 minutes for publishing
+const EXECUTION_TIMEOUT_MS = 60000; // 60 seconds for publishing package generation
 
 /**
  * Generate execution correlation ID
  */
 function generateExecutionId(runId: string): string {
   return `${runId}:${Date.now()}`;
-}
-
-/**
- * Structured logging helper with executionId
- * NOTE: This function is now a no-op placeholder
- * All logging is handled by canonical LogService via RuntimeService
- * See CLAUX_LOGSERVICE_HARDENING_REPORT.md for migration
- */
-function structuredLog(level: "info" | "error" | "warn", data: Record<string, unknown>): void {
-  // No-op - logging now handled by LogService via RuntimeService
-  // This function is kept for backward compatibility during transition
 }
 
 /**
@@ -54,33 +30,13 @@ function generateSlug(title: string): string {
 }
 
 /**
- * Sanitize HTML for safe publishing
- */
-function sanitizeHTML(html: string): string {
-  // Remove script tags and their content
-  let sanitized = html.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, "");
-  
-  // Remove other potentially dangerous tags
-  sanitized = sanitized.replace(/<iframe\b[^>]*>([\s\S]*?)<\/iframe>/gim, "");
-  sanitized = sanitized.replace(/<object\b[^>]*>([\s\S]*?)<\/object>/gim, "");
-  sanitized = sanitized.replace(/<embed\b[^>]*>/gim, "");
-  
-  // Remove inline event handlers
-  sanitized = sanitized.replace(/\s*on\w+\s*=\s*["'][^"']*["']/gim, "");
-  
-  return sanitized;
-}
-
-/**
- * Run PUBLISH agent - Content Publishing
+ * Run PUBLISH agent - Publishing Package Generation
+ * CLAUX V1: PUBLISH DOES NOT PUBLISH. Only generates publishing packages.
  */
 export async function runPUBLISH(context: AgentContext): Promise<void> {
   const { tenantId, agent, runId } = context;
   const executionId = generateExecutionId(runId);
 
-  // NOTE: Logging moved to executePUBLISH where RuntimeService is available
-
-  // Timeout protection wrapper
   const timeoutPromise = new Promise<never>((_, reject) => {
     setTimeout(() => reject(new Error("Execution timeout exceeded")), EXECUTION_TIMEOUT_MS);
   });
@@ -91,34 +47,28 @@ export async function runPUBLISH(context: AgentContext): Promise<void> {
       timeoutPromise
     ]);
   } catch (error) {
-    // NOTE: Error logging moved to executePUBLISH where RuntimeService is available
-  } finally {
-    // NOTE: Cleanup logging moved to executePUBLISH where RuntimeService is available
+    // Error logging handled in executePUBLISH
   }
 }
 
 /**
  * Execute PUBLISH logic
- * REAL EXECUTION PIPELINE (TASK 4C.3.1)
- * Integration: RuntimeService → ExecutionOrchestrator → TaskOrchestrator → PublishTaskExecutorFactory → CMS Connectors
+ * CLAUX V1: Generate publishing packages only, NO CMS automation
  */
 async function executePUBLISH(context: AgentContext, executionId: string): Promise<void> {
   const { tenantId, agent, runId } = context;
 
-  // Initialize RuntimeService early for canonical logging
+  // Initialize RuntimeService
   const runtimeService = new RuntimeService({
     tenantId: tenantId as UUID,
     logOperations: true,
     enableMetrics: true,
   });
 
-  // Step 1: Initialize RuntimeService and execute canonical tasks (50%)
-  // REAL EXECUTION PIPELINE (TASK 4C.3.1)
-  // Integration: RuntimeService → ExecutionOrchestrator → TaskOrchestrator → CMS Connectors
   await runtimeService.log.writeInfo(
     executionId as UUID,
     null,
-    "Initializing runtime services",
+    "Initializing PUBLISH agent - Publishing Package Generation",
     {
       runId,
       tenantId,
@@ -129,171 +79,197 @@ async function executePUBLISH(context: AgentContext, executionId: string): Promi
     }
   );
 
-  // Initialize canonical runtime services
-  // NOTE: runtimeService already initialized above for logging
+  // Create execution via RuntimeService
+  const createExecutionResult = await runtimeService.execution.createExecution({
+    agent_name: 'PUBLISH',
+    workflow_type: 'publishing_package_generation',
+    metadata: {
+      runId,
+    },
+    execution_source: ExecutionSource.API,
+  });
 
-//   const executionOrchestrator = new ExecutionOrchestrator(runtimeService, {
-//     tenantId: tenantId as UUID,
-//     enableAutoLogging: true,
-//     enableAutoEvents: true,
-//   });
-// 
-//   const taskOrchestrator = new TaskOrchestrator(runtimeService, {
-//     tenantId: tenantId as UUID,
-//     enableAutoLogging: true,
-//     enableAutoEvents: true,
-//   });
-// 
-//   // CMS connectors removed in Phase 2A.1 - V1 prohibits CMS automation
-//   // PUBLISH agent will be rewritten to generate publishing packages only
-//   // const wordpressConnector = new WordPressConnector({
-//   //   tenantId: tenantId as UUID,
-//   //   executionId,
-//   //   taskId: '',
-//   // });
-//   //
-//   // const customAPIConnector = new CustomAPIConnector({
-//   //   tenantId: tenantId as UUID,
-//   //   executionId,
-//   //   taskId: '',
-//   // });
-// 
-//   // Create execution via ExecutionOrchestrator
-//   const createExecutionResult = await executionOrchestrator.createExecution({
-//     agentName: 'AMPLI',
-//     workflowType: 'content_publishing',
-//     inputPayload: {
-//       runId,
-//     },
-//     tasks: [], // Tasks will be created separately via TaskOrchestrator
-//   });
-// 
-//   if (!createExecutionResult.success || !createExecutionResult.data) {
-//     throw new Error(`Failed to create execution: ${createExecutionResult.error}`);
-//   }
-// 
-//   const runtimeExecutionId = createExecutionResult.data;
-//   await runtimeService.log.writeInfo(
-//     runtimeExecutionId,
-//     null,
-//     "Execution created",
-//     {
-//       runId,
-//       tenantId,
-//       agent,
-//       step: "execution_created",
-//       execution_stage: "execution_create",
-//       progress: 55,
-//     }
-//   );
-// 
-//   // Start execution
-//   const startExecutionResult = await executionOrchestrator.startExecution(runtimeExecutionId);
-//   if (!startExecutionResult.success) {
-//     throw new Error(`Failed to start execution: ${startExecutionResult.error}`);
-//   }
-// 
-//   await runtimeService.log.writeInfo(
-//     runtimeExecutionId,
-//     null,
-//     "Execution started",
-//     {
-//       runId,
-//       tenantId,
-//       agent,
-//       step: "execution_started",
-//       execution_stage: "execution_start",
-//       progress: 60,
-//     }
-//   );
-// 
-//   // NOTE: AMPLI will receive draft content from SCRIBE via runtime execution context
-//   // For now, we create a placeholder WordPress publish task
-//   // In production, AMPLI will receive draft content from SCRIBE and publish to CMS
-// 
-//   const publishTaskResult = await taskOrchestrator.createTask(runtimeExecutionId, {
-//     taskName: 'WordPress Publish',
-//     taskType: 'task_wordpress_publish',
-//     stepOrder: 1,
-//     inputPayload: {
-//       siteUrl: 'https://example.com',
-//       title: 'Sample Article',
-//       content: '<p>Sample content</p>',
-//       status: 'publish',
-//     },
-//   });
-// 
-//   if (!publishTaskResult.success || !publishTaskResult.data) {
-//     throw new Error(`Failed to create publish task: ${publishTaskResult.error}`);
-//   }
-// 
-//   const publishTaskId = publishTaskResult.data;
-// 
-//   // CMS connectors removed in Phase 2A.1 - V1 prohibits CMS automation
-//   // PUBLISH agent will be rewritten to generate publishing packages only
-//   // const publishFactory = new PublishTaskExecutorFactory(
-//   //   tenantId as UUID,
-//   //   runtimeExecutionId,
-//   //   publishTaskId,
-//   //   wordpressConnector,
-//   //   customAPIConnector
-//   // );
-// 
-//   // Task execution disabled - PUBLISH agent will be rewritten in later phase
-//   // const executor = publishFactory.createExecutor('task_wordpress_publish');
-//   // if (!executor) {
-//   //   throw new Error('Failed to create WordPress publish executor');
-//   // }
-// 
-//   // Execute task
-//   // const result = await executor.execute({
-//   //   taskId: publishTaskId,
-//   //   executionId: runtimeExecutionId,
-//   //   taskType: 'task_wordpress_publish',
-//   //   input: {
-//   //     siteUrl: 'https://example.com',
-//   //     title: 'Sample Article',
-//   //     content: '<p>Sample content</p>',
-//   //     status: 'publish',
-//   //   },
-//   //   retryCount: 0,
-//   // });
-// 
-//   // Complete or fail task based on result
-//   // if (result.status === TaskStatusEnum.COMPLETED) {
-//   //   await taskOrchestrator.completeTask(publishTaskId, result.output);
-//   // } else {
-//   //   await taskOrchestrator.failTask(publishTaskId, {
-//   //     message: result.error?.message || 'Task failed',
-//   //     code: result.error?.code || 'UNKNOWN_ERROR',
-//   //   });
-//   // }
-// 
-//   // Complete execution
-//   // const completeExecutionResult = await executionOrchestrator.completeExecution(runtimeExecutionId, result.metrics?.cost || 0);
-//   // if (!completeExecutionResult.success) {
-//   //   throw new Error(`Failed to complete execution: ${completeExecutionResult.error}`);
-//   // }
-// 
-//   // PUBLISH agent disabled - will be rewritten in later phase to generate publishing packages only
-//   throw new Error('PUBLISH agent disabled in Phase 2A.1 - will be rewritten to generate publishing packages only');
-// 
-//   await runtimeService.log.writeInfo(
-//     runtimeExecutionId,
-//     null,
-//     "AMPLI execution completed successfully",
-//     {
-//       runId,
-//       tenantId,
-//       agent,
-//       step: "execution_completed",
-//       execution_stage: "execution_complete",
-//       progress: 100,
-//     }
-//   );
-//   */
+  if (!createExecutionResult.success || !createExecutionResult.data) {
+    throw new Error(`Failed to create execution`);
+  }
 
-  // TODO: Refactor to use RuntimeService directly instead of orchestrator
-  // Orchestrator is a V1 minimal stub - agents should use direct execution
-  throw new Error("Orchestrator usage deprecated - use RuntimeService directly");
+  const runtimeExecutionId = createExecutionResult.data.id;
+  await runtimeService.log.writeInfo(
+    runtimeExecutionId,
+    null,
+    "Execution created",
+    {
+      runId,
+      tenantId,
+      agent,
+      step: "execution_created",
+      execution_stage: "execution_create",
+      progress: 55,
+    }
+  );
+
+  // Start execution via RuntimeService
+  const startExecutionResult = await runtimeService.execution.startExecution(runtimeExecutionId);
+  if (!startExecutionResult.success) {
+    throw new Error(`Failed to start execution`);
+  }
+
+  await runtimeService.log.writeInfo(
+    runtimeExecutionId,
+    null,
+    "Execution started",
+    {
+      runId,
+      tenantId,
+      agent,
+      step: "execution_started",
+      execution_stage: "execution_start",
+      progress: 60,
+    }
+  );
+
+  // Create publishing package generation task
+  const packageTaskResult = await runtimeService.task.createTask({
+    execution_id: runtimeExecutionId,
+    task_name: 'Publishing Package Generation',
+    task_type: 'task_generate_publishing_package',
+    step_order: 1,
+    input_payload: {
+      contentId: 'placeholder-content-id',
+      contentType: 'article',
+    },
+  });
+
+  if (!packageTaskResult.success || !packageTaskResult.data) {
+    throw new Error(`Failed to create publishing package task`);
+  }
+
+  const packageTaskId = packageTaskResult.data.id;
+
+  // Initialize PUBLISH task factory
+  const publishFactory = new PublishTaskExecutorFactory(
+    tenantId as UUID,
+    runtimeExecutionId,
+    packageTaskId
+  );
+
+  const executor = publishFactory.createExecutor('task_generate_publishing_package');
+  if (!executor) {
+    throw new Error('Failed to create publishing package executor');
+  }
+
+  // Start task via RuntimeService
+  await runtimeService.task.startTask(packageTaskId);
+
+  // Execute task
+  const result = await executor.execute({
+    taskId: packageTaskId,
+    executionId: runtimeExecutionId,
+    taskType: 'task_generate_publishing_package',
+    input: {
+      contentId: 'placeholder-content-id',
+      contentType: 'article',
+    },
+    retryCount: 0,
+  });
+
+  // Complete or fail task based on result
+  if (result.status === TaskStatus.COMPLETED) {
+    await runtimeService.task.completeTask(packageTaskId, result.output);
+
+    // Generate Command Centre tasks for publishing workflow
+    const taskGenerationService = new TaskGenerationService();
+    const publishPackage = result.output as unknown as PublishOutput;
+
+    if (publishPackage && publishPackage.publishing_package) {
+      const pkg = publishPackage.publishing_package;
+      const commandCenterTasks = [
+        {
+          task_type: 'publishing_package' as TaskType,
+          title: `Upload article: ${pkg.title}`,
+          description: `Upload the article "${pkg.title}" to CMS with slug: ${pkg.slug}`,
+          priority: 'high' as TaskPriority,
+          action_payload: {
+            slug: pkg.slug,
+            title: pkg.title,
+            meta_title: pkg.meta_title,
+          },
+          recommended_action: 'Upload article to CMS and add featured image',
+          client_visible_impact: 'Article ready for publishing',
+        },
+        {
+          task_type: 'internal_linking' as TaskType,
+          title: 'Add internal links',
+          description: `Add ${pkg.internal_links.length} internal links to the article`,
+          priority: 'medium' as TaskPriority,
+          action_payload: {
+            internal_links: pkg.internal_links,
+          },
+          recommended_action: 'Add internal links to improve SEO',
+          client_visible_impact: 'Improved internal linking structure',
+        },
+        {
+          task_type: 'schema_implementation' as TaskType,
+          title: 'Implement schema markup',
+          description: `Add ${pkg.schema_json['@type'] || 'Article'} schema markup to the article`,
+          priority: 'medium' as TaskPriority,
+          action_payload: {
+            schema_type: pkg.schema_json['@type'] || 'Article',
+            schema_json: pkg.schema_json,
+          },
+          recommended_action: 'Add schema markup for rich snippets',
+          client_visible_impact: 'Improved search result appearance',
+        },
+      ];
+
+      await taskGenerationService.bulkCreateTasks({
+        tenant_id: tenantId as string,
+        client_id: tenantId as string,
+        agent_name: 'PUBLISH',
+        source_execution_id: runtimeExecutionId,
+        source_task_id: packageTaskId,
+        tasks: commandCenterTasks,
+      });
+
+      await runtimeService.log.writeInfo(
+        runtimeExecutionId,
+        null,
+        "Command Centre tasks generated",
+        {
+          runId,
+          tenantId,
+          agent,
+          step: "command_centre_tasks_generated",
+          execution_stage: "task_generation",
+          progress: 95,
+          tasks_generated: commandCenterTasks.length,
+        }
+      );
+    }
+  } else {
+    await runtimeService.task.failTask(packageTaskId, {
+      message: result.error?.message || 'Task failed',
+      code: result.error?.code || 'UNKNOWN_ERROR',
+    });
+  }
+
+  // Complete execution via RuntimeService
+  const completeExecutionResult = await runtimeService.execution.completeExecution(runtimeExecutionId, result.metrics?.cost || 0);
+  if (!completeExecutionResult.success) {
+    throw new Error(`Failed to complete execution`);
+  }
+
+  await runtimeService.log.writeInfo(
+    runtimeExecutionId,
+    null,
+    "PUBLISH execution completed successfully - Publishing package generated",
+    {
+      runId,
+      tenantId,
+      agent,
+      step: "execution_completed",
+      execution_stage: "execution_complete",
+      progress: 100,
+    }
+  );
 }
