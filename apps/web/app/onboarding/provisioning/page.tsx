@@ -33,26 +33,9 @@ export default function ProvisioningPage() {
     setError(null);
 
     try {
-      const response = await fetch("/api/onboarding/bootstrap", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessName, fullName })
-      });
-
-      if (!response.ok) {
-        setError("Failed to initialize tenant. Please try again.");
-        setLoading(false);
-        return;
-      }
-
-      const data = await response.json();
-
-      if (data.success) {
-        router.replace("/onboarding");
-      } else {
-        setError("Failed to initialize tenant. Please try again.");
-        setLoading(false);
-      }
+      // Tenant bootstrap is now handled by Clerk webhook and ensure-workspace.ts
+      // Redirect directly to onboarding
+      router.replace("/onboarding");
     } catch (err) {
       setError("An unexpected error occurred. Please try again.");
       setLoading(false);

@@ -299,33 +299,19 @@ export default function OnboardingPage() {
     setSaving(true);
     setError(null);
 
-    const response = await postOnboardingJson("/api/onboarding/complete", {
-      tenantId: state.tenantId,
-      businessIdentity: {
-        businessName: state.businessName.trim(),
-        category: state.category.trim(),
-        businessPhone: normalizedPhone,
-        fullPhysicalAddress: state.fullPhysicalAddress.trim(),
-        gmbUrl: normalizedGmbUrl,
-        primaryLanguage: state.primaryLanguage.trim(),
-        isServiceAreaBusiness: state.isServiceAreaBusiness
-      },
-      digitalAssets: {
-        websiteUrl: normalizedWebsiteUrl,
-        techStack: resolvedTechStack,
-        detectedStackLabel: state.detectedStackLabel,
-        seoHealth: {
-          hasSsl: state.seoHasSsl,
-          hasRobotsTxt: state.seoHasRobotsTxt
-        },
-        hasSearchConsoleAccess: state.hasSearchConsoleAccess,
-        shopifyStoreUrl: state.shopifyStoreUrl.trim() || null
-      },
-      searchStrategy: {
-        targetMarketType: state.targetMarketType,
-        targetCity: state.targetMarketType === "local_city" ? state.targetCity.trim() : null,
-        competitors: competitorCandidates
-      }
+    const response = await postOnboardingJson("/api/profile/complete", {
+      tenant_id: state.tenantId,
+      business_name: state.businessName.trim(),
+      category: state.category.trim(),
+      phone: normalizedPhone,
+      address: state.fullPhysicalAddress.trim(),
+      service_areas: state.isServiceAreaBusiness ? [state.targetCity.trim()] : [],
+      website_url: normalizedWebsiteUrl,
+      tech_stack: resolvedTechStack,
+      cms_type: resolvedTechStack === "shopify" ? "shopify" : "unknown",
+      gbp_location_id: normalizedGmbUrl ? null : null,
+      place_id: normalizedGmbUrl ? null : null,
+      competitor_urls: competitorCandidates
     });
 
     if (!response) {
