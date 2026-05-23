@@ -6,8 +6,8 @@ import { TaskService } from "@/lib/command-center/task.service";
 export const dynamic = "force-dynamic";
 
 /**
- * PATCH /api/command-center/tasks/[id]
- * Update task status, assign user, complete task
+ * PATCH /api/command-center/tasks/[id]/status
+ * Update task status with lifecycle validation
  */
 export async function PATCH(
   request: Request,
@@ -43,20 +43,14 @@ export async function PATCH(
 
   try {
     const body = await request.json();
-    const { status, assigned_to, completed } = body;
+    const { status } = body;
+
+    if (!status) {
+      return NextResponse.json({ error: "Status is required" }, { status: 400 });
+    }
 
     const taskService = new TaskService();
-    let task;
-
-    if (completed) {
-      task = await taskService.completeTask(id, tenantId, userId);
-    } else if (status) {
-      task = await taskService.updateTaskStatus(id, tenantId, status as any, userId);
-    } else if (assigned_to) {
-      task = await taskService.assignTask(id, tenantId, assigned_to, userId);
-    } else {
-      return NextResponse.json({ error: "No valid update provided" }, { status: 400 });
-    }
+    const task = await taskService.updateTaskStatus(id, tenantId, status as any, userId);
 
     return NextResponse.json({
       success: true,
@@ -64,7 +58,7 @@ export async function PATCH(
     });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to update task' },
+      { error: error instanceof Error ? error.message : 'Failed to update task status' },
       { status: 500 }
     );
   }
