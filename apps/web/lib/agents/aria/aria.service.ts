@@ -1,9 +1,12 @@
 import type { AgentContext } from "../base/agent.types";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { RuntimeService } from "@/lib/runtime/services/runtime.service";
-import { ExecutionOrchestrator } from "@/lib/runtime/orchestrator/execution-orchestrator";
 import { AriaTaskExecutorFactory } from "./aria-tasks";
 import type { UUID } from "@/lib/runtime/types/common.types";
+import { ExecutionStatus, ExecutionSource } from "@/lib/runtime/types/execution.types";
+import { TaskStatus } from "@/lib/runtime/types/task.types";
+import { TaskGenerationService } from "@/lib/command-center/task-generation.service";
+import type { TaskType, TaskPriority } from "@/lib/command-center/types";
 
 // REMOVED: Agent Logger dependencies (Phase 2B - execution authority enforcement)
 // Agents must NOT control execution state, logging, or locks
@@ -181,35 +184,22 @@ async function executeARIA(context: AgentContext, executionId: string): Promise<
     }
   );
 
-  // TODO: Refactor to use RuntimeService directly instead of orchestrator
-  // Orchestrator is a V1 minimal stub - agents should use direct execution
-  throw new Error("Orchestrator usage deprecated - use RuntimeService directly");
-
-  /*
-  const executionOrchestrator = new ExecutionOrchestrator(runtimeService, {
-    tenantId: tenantId as UUID,
-  });
-
-  const taskOrchestrator = new TaskOrchestrator(runtimeService, {
-    tenantId: tenantId as UUID,
-  });
-
-  // Create execution via ExecutionOrchestrator
-  const createExecutionResult = await executionOrchestrator.createExecution({
-    agentName: 'ARIA',
-    workflowType: 'keyword_intelligence',
-    inputPayload: {
+  // Create execution via RuntimeService (direct execution, no orchestrator)
+  const createExecutionResult = await runtimeService.execution.createExecution({
+    agent_name: 'ARIA',
+    workflow_type: 'keyword_intelligence',
+    metadata: {
       domain,
       category: businessProfile.category,
     },
-    tasks: [], // Tasks will be created separately via TaskOrchestrator
+    execution_source: ExecutionSource.API,
   });
 
   if (!createExecutionResult.success || !createExecutionResult.data) {
-    throw new Error(`Failed to create execution: ${createExecutionResult.error}`);
+    throw new Error(`Failed to create execution`);
   }
 
-  const runtimeExecutionId = createExecutionResult.data;
+  const runtimeExecutionId = createExecutionResult.data.id;
   await runtimeService.log.writeInfo(
     runtimeExecutionId,
     null,
@@ -224,10 +214,10 @@ async function executeARIA(context: AgentContext, executionId: string): Promise<
     }
   );
 
-  // Start execution
-  const startExecutionResult = await executionOrchestrator.startExecution(runtimeExecutionId);
+  // Start execution via RuntimeService
+  const startExecutionResult = await runtimeService.execution.startExecution(runtimeExecutionId);
   if (!startExecutionResult.success) {
-    throw new Error(`Failed to start execution: ${startExecutionResult.error}`);
+    throw new Error(`Failed to start execution: ${startExecutionResult.error?.message}`);
   }
 
   await runtimeService.log.writeInfo(
@@ -244,12 +234,13 @@ async function executeARIA(context: AgentContext, executionId: string): Promise<
     }
   );
 
-  // Create keyword research task
-  const keywordResearchTaskResult = await taskOrchestrator.createTask(runtimeExecutionId, {
-    taskName: 'task_keyword_research',
-    taskType: 'task_keyword_research',
-    stepOrder: 1,
-    inputPayload: {
+  // Create keyword research task via RuntimeService
+  const keywordResearchTaskResult = await runtimeService.task.createTask({
+    execution_id: runtimeExecutionId,
+    task_name: 'task_keyword_research',
+    task_type: 'task_keyword_research',
+    step_order: 1,
+    input_payload: {
       domain,
       location: 'United States',
       language: 'English',
@@ -257,10 +248,10 @@ async function executeARIA(context: AgentContext, executionId: string): Promise<
   });
 
   if (!keywordResearchTaskResult.success || !keywordResearchTaskResult.data) {
-    throw new Error(`Failed to create keyword research task: ${keywordResearchTaskResult.error}`);
+    throw new Error(`Failed to create keyword research task`);
   }
 
-  const keywordResearchTaskId = keywordResearchTaskResult.data;
+  const keywordResearchTaskId = keywordResearchTaskResult.data.id;
 
   // Initialize ARIA task factory
   const ariaFactory = new AriaTaskExecutorFactory(
@@ -289,6 +280,9 @@ async function executeARIA(context: AgentContext, executionId: string): Promise<
     }
   );
 
+  // Start task via RuntimeService
+  await runtimeService.task.startTask(keywordResearchTaskId);
+
   const keywordResearchResult = await keywordResearchExecutor.execute({
     taskId: keywordResearchTaskId,
     executionId: runtimeExecutionId,
@@ -302,11 +296,11 @@ async function executeARIA(context: AgentContext, executionId: string): Promise<
     retryCount: 0,
   });
 
-  // Complete keyword research task
+  // Complete keyword research task via RuntimeService
   if (keywordResearchResult.status === 'completed') {
-    await taskOrchestrator.completeTask(keywordResearchTaskId, keywordResearchResult.output);
+    await runtimeService.task.completeTask(keywordResearchTaskId, keywordResearchResult.output);
   } else {
-    await taskOrchestrator.failTask(keywordResearchTaskId, {
+    await runtimeService.task.failTask(keywordResearchTaskId, {
       message: keywordResearchResult.error?.message || 'Task failed',
       code: keywordResearchResult.error?.code || 'UNKNOWN_ERROR',
     });
@@ -327,14 +321,57 @@ async function executeARIA(context: AgentContext, executionId: string): Promise<
     }
   );
 
-  // Complete execution
-  const completeExecutionResult = await executionOrchestrator.completeExecution(
+  // Generate Command Centre tasks based on keyword research results
+  const taskGenerationService = new TaskGenerationService();
+  const keywordsFound = (keywordResearchResult.output?.total_keywords as number) || 0;
+  const keywordsArray = (keywordResearchResult.output?.keywords as any[]) || [];
+
+  if (keywordsFound > 0 && Array.isArray(keywordsArray) && keywordsArray.length > 0) {
+    const commandCenterTasks = keywordsArray.slice(0, 5).map((keyword: any) => ({
+      task_type: 'keyword_review' as TaskType,
+      title: `Create landing page for "${keyword.keyword}"`,
+      description: `Optimize content for keyword: ${keyword.keyword} (difficulty: ${keyword.difficulty})`,
+      priority: (keyword.difficulty > 50 ? 'high' : 'medium') as TaskPriority,
+      action_payload: {
+        keyword: keyword.keyword,
+        difficulty: keyword.difficulty,
+        search_volume: keyword.search_volume,
+      },
+    }));
+
+    await taskGenerationService.bulkCreateTasks({
+      tenant_id: tenantId as string,
+      client_id: tenantId as string, // Using tenant_id as client_id for now
+      agent_name: 'ARIA',
+      source_execution_id: runtimeExecutionId,
+      source_task_id: keywordResearchTaskId,
+      tasks: commandCenterTasks,
+    });
+
+    await runtimeService.log.writeInfo(
+      runtimeExecutionId,
+      null,
+      "Command Centre tasks generated",
+      {
+        runId,
+        tenantId,
+        agent,
+        step: "command_centre_tasks_generated",
+        execution_stage: "task_generation",
+        progress: 95,
+        tasks_generated: commandCenterTasks.length,
+      }
+    );
+  }
+
+  // Complete execution via RuntimeService
+  const completeExecutionResult = await runtimeService.execution.completeExecution(
     runtimeExecutionId,
     keywordResearchResult.metrics?.cost || 0
   );
 
   if (!completeExecutionResult.success) {
-    throw new Error(`Failed to complete execution: ${completeExecutionResult.error}`);
+    throw new Error(`Failed to complete execution: ${completeExecutionResult.error?.message}`);
   }
 
   await runtimeService.log.writeInfo(
@@ -350,5 +387,4 @@ async function executeARIA(context: AgentContext, executionId: string): Promise<
       progress: 100,
     }
   );
-  */
 }

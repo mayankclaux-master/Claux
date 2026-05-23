@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClerkSupabaseClient } from "@/lib/supabase/admin";
-import { ExecutionOrchestrator } from "@/lib/runtime/orchestrator/execution-orchestrator";
-import { RuntimeService } from "@/lib/runtime/services";
 import { runARIA } from "@/lib/agents/aria/aria.service";
 
 export const dynamic = "force-dynamic";
@@ -37,83 +35,24 @@ export async function POST(request: Request) {
   const workspaceId = profile.workspace_id;
 
   try {
-    // TODO: Refactor to use RuntimeService directly instead of orchestrator
-    // Orchestrator is a V1 minimal stub - agents should use direct execution
-    return NextResponse.json(
-      { error: "Orchestrator usage deprecated - use RuntimeService directly" },
-      { status: 501 }
-    );
+    // Generate a run ID for this execution
+    const runId = crypto.randomUUID();
 
-    /*
-    // Initialize runtime service
-    const runtime = new RuntimeService({
-      tenantId,
-      logOperations: true,
-      enableMetrics: true,
-    });
-
-    // Initialize orchestrator (V1 minimal stub)
-    const orchestrator = new ExecutionOrchestrator(runtime, {
-      tenantId,
-    });
-
-    // Create execution - agent service will handle task creation
-    const executionResult = await orchestrator.createExecution({
-      agentName: 'ARIA',
-      workflowType: 'keyword_discovery',
-      tasks: [],
-      inputPayload: {
-        tenant_id: tenantId,
-        workspace_id: workspaceId,
-        trigger: 'manual',
-      },
-      metadata: {
-        initiated_by: userId,
-      },
-    });
-
-    if (!executionResult.success) {
-      return NextResponse.json(
-        { error: executionResult.error?.message || 'Failed to create execution' },
-        { status: 500 }
-      );
-    }
-
-    const executionId = executionResult.data;
-
-    if (!executionId) {
-      return NextResponse.json(
-        { error: 'Failed to create execution - no ID returned' },
-        { status: 500 }
-      );
-    }
-
-    // Start execution
-    const startResult = await orchestrator.startExecution(executionId);
-
-    if (!startResult.success) {
-      return NextResponse.json(
-        { error: startResult.error?.message || 'Failed to start execution' },
-        { status: 500 }
-      );
-    }
-
-    // Trigger real agent execution
+    // Trigger real agent execution via RuntimeService
     await runARIA({
       tenantId,
       agent: 'ARIA',
-      runId: executionId,
+      runId,
     });
 
     return NextResponse.json({
       success: true,
-      executionId: executionId || '',
+      runId,
       agent: 'ARIA',
       tenantId,
       workspaceId: workspaceId || '',
       status: 'started',
     });
-    */
   } catch (error) {
     console.error('ARIA discovery error:', error);
     return NextResponse.json(
