@@ -115,6 +115,12 @@ export class CredentialInjectionAuthority {
       case 'custom-api':
         return this.extractCustomAPICredentials(integrations, tenantId, executionId, taskId);
       
+      case 'serpapi':
+        return this.extractSerpAPICredentials(integrations, tenantId, executionId, taskId);
+      
+      case 'screaming-frog':
+        return this.extractScreamingFrogCredentials(integrations, tenantId, executionId, taskId);
+      
       default:
         throw new CredentialInjectionError(
           `Unknown provider: ${provider}`,
@@ -413,6 +419,88 @@ export class CredentialInjectionAuthority {
         taskId,
         'custom-api',
         'extractCustomAPICredentials',
+        { error: error instanceof Error ? error.message : String(error) }
+      );
+    }
+  }
+
+  /**
+   * Extract SerpAPI credentials
+   */
+  private async extractSerpAPICredentials(
+    integrations: Record<string, unknown>,
+    tenantId: UUID,
+    executionId: UUID,
+    taskId: UUID
+  ): Promise<ProviderCredential> {
+    const apiKey = integrations.serpapi_api_key as string | undefined;
+    
+    if (!apiKey) {
+      throw new CredentialInjectionError(
+        'SerpAPI key not found in integrations',
+        tenantId,
+        executionId,
+        taskId,
+        'serpapi',
+        'extractSerpAPICredentials'
+      );
+    }
+
+    try {
+      const decryptedApiKey = decryptSecret(apiKey);
+      
+      return {
+        apiKey: decryptedApiKey,
+      };
+    } catch (error) {
+      throw new CredentialInjectionError(
+        'Failed to decrypt SerpAPI key',
+        tenantId,
+        executionId,
+        taskId,
+        'serpapi',
+        'extractSerpAPICredentials',
+        { error: error instanceof Error ? error.message : String(error) }
+      );
+    }
+  }
+
+  /**
+   * Extract Screaming Frog credentials
+   */
+  private async extractScreamingFrogCredentials(
+    integrations: Record<string, unknown>,
+    tenantId: UUID,
+    executionId: UUID,
+    taskId: UUID
+  ): Promise<ProviderCredential> {
+    const apiKey = integrations.screaming_frog_api_key as string | undefined;
+    
+    if (!apiKey) {
+      throw new CredentialInjectionError(
+        'Screaming Frog API key not found in integrations',
+        tenantId,
+        executionId,
+        taskId,
+        'screaming-frog',
+        'extractScreamingFrogCredentials'
+      );
+    }
+
+    try {
+      const decryptedApiKey = decryptSecret(apiKey);
+      
+      return {
+        apiKey: decryptedApiKey,
+      };
+    } catch (error) {
+      throw new CredentialInjectionError(
+        'Failed to decrypt Screaming Frog API key',
+        tenantId,
+        executionId,
+        taskId,
+        'screaming-frog',
+        'extractScreamingFrogCredentials',
         { error: error instanceof Error ? error.message : String(error) }
       );
     }
