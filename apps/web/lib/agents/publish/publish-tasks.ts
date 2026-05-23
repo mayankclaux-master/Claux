@@ -35,7 +35,9 @@ interface CustomAPIResponseData {
 /**
  * WordPress Publish Task
  * Publishes content to WordPress CMS
+ * REMOVED: WordPressConnector removed in Phase 2A.1 - V1 prohibits CMS automation
  */
+/*
 export class WordPressPublishTask implements RuntimeTaskExecutor {
   private connector: WordPressConnector;
 
@@ -177,11 +179,14 @@ export class WordPressPublishTask implements RuntimeTaskExecutor {
     };
   }
 }
+*/
 
 /**
  * Custom API Publish Task
  * Publishes content to Custom API
+ * REMOVED: CustomAPIConnector removed in Phase 2A.1 - V1 prohibits CMS automation
  */
+/*
 export class CustomAPIPublishTask implements RuntimeTaskExecutor {
   private connector: CustomAPIConnector;
 
@@ -319,6 +324,7 @@ export class CustomAPIPublishTask implements RuntimeTaskExecutor {
     };
   }
 }
+*/
 
 /**
  * Shopify Publish Task
@@ -765,43 +771,48 @@ export class DistributionTrackingTask implements RuntimeTaskExecutor {
 /**
  * Publish Task Executor Factory
  * Creates task executors with proper connector context
+ * REMOVED: CMS connectors removed in Phase 2A.1 - V1 prohibits CMS automation
  */
 export class PublishTaskExecutorFactory {
   private tenantId: UUID;
   private executionId: UUID;
   private taskId: UUID;
-  private wordpressConnector?: WordPressConnector;
-  private customAPIConnector?: CustomAPIConnector;
+  // REMOVED: CMS connectors - V1 prohibits CMS automation
+  // private wordpressConnector?: WordPressConnector;
+  // private customAPIConnector?: CustomAPIConnector;
 
   constructor(
     tenantId: UUID,
     executionId: UUID,
     taskId: UUID,
-    wordpressConnector?: WordPressConnector,
-    customAPIConnector?: CustomAPIConnector
+    // REMOVED: CMS connectors - V1 prohibits CMS automation
+    // wordpressConnector?: WordPressConnector,
+    // customAPIConnector?: CustomAPIConnector
   ) {
     this.tenantId = tenantId;
     this.executionId = executionId;
     this.taskId = taskId;
-    this.wordpressConnector = wordpressConnector;
-    this.customAPIConnector = customAPIConnector;
+    // REMOVED: CMS connectors - V1 prohibits CMS automation
+    // this.wordpressConnector = wordpressConnector;
+    // this.customAPIConnector = customAPIConnector;
   }
 
   createExecutor(taskType: string): RuntimeTaskExecutor | null {
     switch (taskType) {
-      case 'task_wordpress_publish':
-        if (!this.wordpressConnector) {
-          console.error('WordPressConnector not provided');
-          return null;
-        }
-        return new WordPressPublishTask(this.wordpressConnector);
+      // REMOVED: CMS automation tasks - V1 prohibits CMS automation
+      // case 'task_wordpress_publish':
+      //   if (!this.wordpressConnector) {
+      //     console.error('WordPressConnector not provided');
+      //     return null;
+      //   }
+      //   return new WordPressPublishTask(this.wordpressConnector);
 
-      case 'task_custom_api_publish':
-        if (!this.customAPIConnector) {
-          console.error('CustomAPIConnector not provided');
-          return null;
-        }
-        return new CustomAPIPublishTask(this.customAPIConnector);
+      // case 'task_custom_api_publish':
+      //   if (!this.customAPIConnector) {
+      //     console.error('CustomAPIConnector not provided');
+      //     return null;
+      //   }
+      //   return new CustomAPIPublishTask(this.customAPIConnector);
 
       case 'task_shopify_publish':
         return new ShopifyPublishTask();
@@ -829,8 +840,9 @@ export class PublishTaskExecutorFactory {
 
   getSupportedTaskTypes(): string[] {
     return [
-      'task_wordpress_publish',
-      'task_custom_api_publish',
+      // REMOVED: CMS automation tasks - V1 prohibits CMS automation
+      // 'task_wordpress_publish',
+      // 'task_custom_api_publish',
       'task_shopify_publish',
       'task_webflow_publish',
       'task_ghost_publish',

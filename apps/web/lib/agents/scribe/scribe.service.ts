@@ -1,7 +1,6 @@
 import type { AgentContext } from "../base/agent.types";
 import { RuntimeService } from "@/lib/runtime/services/runtime.service";
 import { ExecutionOrchestrator } from "@/lib/runtime/orchestrator/execution-orchestrator";
-import { TaskOrchestrator } from "@/lib/runtime/orchestrator/task-orchestrator";
 import { ScribeTaskExecutorFactory } from "./scribe-tasks";
 import type { UUID } from "@/lib/runtime/types/common.types";
 import { TaskStatus as TaskStatusEnum } from "@/lib/runtime/types/task.types";
@@ -124,142 +123,147 @@ async function executeSCRIBE(context: AgentContext, executionId: string): Promis
   // Initialize canonical runtime services
   // NOTE: runtimeService already initialized above for logging
 
-  const executionOrchestrator = new ExecutionOrchestrator(runtimeService, {
-    tenantId: tenantId as UUID,
-    enableAutoLogging: true,
-    enableAutoEvents: true,
-  });
+//   const executionOrchestrator = new ExecutionOrchestrator(runtimeService, {
+//     tenantId: tenantId as UUID,
+//     enableAutoLogging: true,
+//     enableAutoEvents: true,
+//   });
+// 
+//   const taskOrchestrator = new TaskOrchestrator(runtimeService, {
+//     tenantId: tenantId as UUID,
+//     enableAutoLogging: true,
+//     enableAutoEvents: true,
+//   });
+// 
+//   // Create execution via ExecutionOrchestrator
+//   const createExecutionResult = await executionOrchestrator.createExecution({
+//     agentName: 'SCRIBE',
+//     workflowType: 'content_generation',
+//     inputPayload: {
+//       runId,
+//     },
+//     tasks: [], // Tasks will be created separately via TaskOrchestrator
+//   });
+// 
+//   if (!createExecutionResult.success || !createExecutionResult.data) {
+//     throw new Error(`Failed to create execution: ${createExecutionResult.error}`);
+//   }
+// 
+//   const runtimeExecutionId = createExecutionResult.data;
+//   await runtimeService.log.writeInfo(
+//     runtimeExecutionId,
+//     null,
+//     "Execution created",
+//     {
+//       runId,
+//       tenantId,
+//       agent,
+//       step: "execution_created",
+//       execution_stage: "execution_create",
+//       progress: 55,
+//     }
+//   );
+// 
+//   // Start execution
+//   const startExecutionResult = await executionOrchestrator.startExecution(runtimeExecutionId);
+//   if (!startExecutionResult.success) {
+//     throw new Error(`Failed to start execution: ${startExecutionResult.error}`);
+//   }
+// 
+//   await runtimeService.log.writeInfo(
+//     runtimeExecutionId,
+//     null,
+//     "Execution started",
+//     {
+//       runId,
+//       tenantId,
+//       agent,
+//       step: "execution_started",
+//       execution_stage: "execution_start",
+//       progress: 60,
+//     }
+//   );
+// 
+//   // NOTE: SCRIBE will receive keywords from ARIA via runtime execution context
+//   // For now, we create a placeholder article generation task
+//   // In production, SCRIBE will receive keywords from ARIA and generate content for each
+// 
+//   const articleTaskResult = await taskOrchestrator.createTask(runtimeExecutionId, {
+//     taskName: 'Article Generation',
+//     taskType: 'task_generate_article',
+//     stepOrder: 1,
+//     inputPayload: {
+//       keyword: 'seo services',
+//       businessCategory: 'Marketing',
+//       tone: 'professional',
+//       wordCount: 1000,
+//     },
+//   });
+// 
+//   if (!articleTaskResult.success || !articleTaskResult.data) {
+//     throw new Error(`Failed to create article generation task: ${articleTaskResult.error}`);
+//   }
+// 
+//   const articleTaskId = articleTaskResult.data;
+// 
+//   // Initialize SCRIBE task factory
+//   const scribeFactory = new ScribeTaskExecutorFactory(
+//     tenantId as UUID,
+//     runtimeExecutionId,
+//     articleTaskId
+//   );
+// 
+//   const executor = scribeFactory.createExecutor('task_generate_article');
+//   if (!executor) {
+//     throw new Error('Failed to create article generation executor');
+//   }
+// 
+//   // Execute task
+//   const result = await executor.execute({
+//     taskId: articleTaskId,
+//     executionId: runtimeExecutionId,
+//     taskType: 'task_generate_article',
+//     input: {
+//       keyword: 'seo services',
+//       businessCategory: 'Marketing',
+//       tone: 'professional',
+//       wordCount: 1000,
+//     },
+//     retryCount: 0,
+//   });
+// 
+//   // Complete or fail task based on result
+//   if (result.status === TaskStatusEnum.COMPLETED) {
+//     await taskOrchestrator.completeTask(articleTaskId, result.output);
+//   } else {
+//     await taskOrchestrator.failTask(articleTaskId, {
+//       message: result.error?.message || 'Task failed',
+//       code: result.error?.code || 'UNKNOWN_ERROR',
+//     });
+//   }
+// 
+//   // Complete execution
+//   const completeExecutionResult = await executionOrchestrator.completeExecution(runtimeExecutionId, result.metrics?.cost || 0);
+//   if (!completeExecutionResult.success) {
+//     throw new Error(`Failed to complete execution: ${completeExecutionResult.error}`);
+//   }
+// 
+//   await runtimeService.log.writeInfo(
+//     runtimeExecutionId,
+//     null,
+//     "SCRIBE execution completed successfully",
+//     {
+//       runId,
+//       tenantId,
+//       agent,
+//       step: "execution_completed",
+//       execution_stage: "execution_complete",
+//       progress: 100,
+//     }
+//   );
+//   */
 
-  const taskOrchestrator = new TaskOrchestrator(runtimeService, {
-    tenantId: tenantId as UUID,
-    enableAutoLogging: true,
-    enableAutoEvents: true,
-  });
-
-  // Create execution via ExecutionOrchestrator
-  const createExecutionResult = await executionOrchestrator.createExecution({
-    agentName: 'SCRIBE',
-    workflowType: 'content_generation',
-    inputPayload: {
-      runId,
-    },
-    tasks: [], // Tasks will be created separately via TaskOrchestrator
-  });
-
-  if (!createExecutionResult.success || !createExecutionResult.data) {
-    throw new Error(`Failed to create execution: ${createExecutionResult.error}`);
-  }
-
-  const runtimeExecutionId = createExecutionResult.data;
-  await runtimeService.log.writeInfo(
-    runtimeExecutionId,
-    null,
-    "Execution created",
-    {
-      runId,
-      tenantId,
-      agent,
-      step: "execution_created",
-      execution_stage: "execution_create",
-      progress: 55,
-    }
-  );
-
-  // Start execution
-  const startExecutionResult = await executionOrchestrator.startExecution(runtimeExecutionId);
-  if (!startExecutionResult.success) {
-    throw new Error(`Failed to start execution: ${startExecutionResult.error}`);
-  }
-
-  await runtimeService.log.writeInfo(
-    runtimeExecutionId,
-    null,
-    "Execution started",
-    {
-      runId,
-      tenantId,
-      agent,
-      step: "execution_started",
-      execution_stage: "execution_start",
-      progress: 60,
-    }
-  );
-
-  // NOTE: SCRIBE will receive keywords from ARIA via runtime execution context
-  // For now, we create a placeholder article generation task
-  // In production, SCRIBE will receive keywords from ARIA and generate content for each
-
-  const articleTaskResult = await taskOrchestrator.createTask(runtimeExecutionId, {
-    taskName: 'Article Generation',
-    taskType: 'task_generate_article',
-    stepOrder: 1,
-    inputPayload: {
-      keyword: 'seo services',
-      businessCategory: 'Marketing',
-      tone: 'professional',
-      wordCount: 1000,
-    },
-  });
-
-  if (!articleTaskResult.success || !articleTaskResult.data) {
-    throw new Error(`Failed to create article generation task: ${articleTaskResult.error}`);
-  }
-
-  const articleTaskId = articleTaskResult.data;
-
-  // Initialize SCRIBE task factory
-  const scribeFactory = new ScribeTaskExecutorFactory(
-    tenantId as UUID,
-    runtimeExecutionId,
-    articleTaskId
-  );
-
-  const executor = scribeFactory.createExecutor('task_generate_article');
-  if (!executor) {
-    throw new Error('Failed to create article generation executor');
-  }
-
-  // Execute task
-  const result = await executor.execute({
-    taskId: articleTaskId,
-    executionId: runtimeExecutionId,
-    taskType: 'task_generate_article',
-    input: {
-      keyword: 'seo services',
-      businessCategory: 'Marketing',
-      tone: 'professional',
-      wordCount: 1000,
-    },
-    retryCount: 0,
-  });
-
-  // Complete or fail task based on result
-  if (result.status === TaskStatusEnum.COMPLETED) {
-    await taskOrchestrator.completeTask(articleTaskId, result.output);
-  } else {
-    await taskOrchestrator.failTask(articleTaskId, {
-      message: result.error?.message || 'Task failed',
-      code: result.error?.code || 'UNKNOWN_ERROR',
-    });
-  }
-
-  // Complete execution
-  const completeExecutionResult = await executionOrchestrator.completeExecution(runtimeExecutionId, result.metrics?.cost || 0);
-  if (!completeExecutionResult.success) {
-    throw new Error(`Failed to complete execution: ${completeExecutionResult.error}`);
-  }
-
-  await runtimeService.log.writeInfo(
-    runtimeExecutionId,
-    null,
-    "SCRIBE execution completed successfully",
-    {
-      runId,
-      tenantId,
-      agent,
-      step: "execution_completed",
-      execution_stage: "execution_complete",
-      progress: 100,
-    }
-  );
+  // TODO: Refactor to use RuntimeService directly instead of orchestrator
+  // Orchestrator is a V1 minimal stub - agents should use direct execution
+  throw new Error("Orchestrator usage deprecated - use RuntimeService directly");
 }

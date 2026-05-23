@@ -56,50 +56,55 @@ export async function POST(request: Request) {
 
   // REMOVED: Direct update to agent_states table (Phase 2B)
   // Using canonical RuntimeService and ExecutionOrchestrator instead
-  const runtime = new RuntimeService({
-    tenantId: profile.tenant_id,
-    logOperations: true,
-    enableMetrics: false,
-  });
-  const orchestrator = new ExecutionOrchestrator(runtime, {
-    tenantId: profile.tenant_id,
-    enableAutoEvents: true,
-    enableAutoLogging: true,
-  });
+  // TODO: Refactor to use RuntimeService directly instead of orchestrator
+  // Orchestrator is a V1 minimal stub - agents should use direct execution
+  return NextResponse.json(
+    { error: "Orchestrator usage deprecated - use RuntimeService directly" },
+    { status: 501 }
+  );
 
-  // Create execution
-  const executionResult = await orchestrator.createExecution({
-    agentName,
-    workflowType: "dev_simulation",
-    inputPayload: { simulation: true },
-    tasks: [],
-    metadata: { progress },
-  });
-
-  if (!executionResult.success || !executionResult.data) {
-    return NextResponse.json({ error: "Failed to create execution" }, { status: 500 });
-  }
-
-  const executionId = executionResult.data;
-
-  // Start execution
-  const startResult = await orchestrator.startExecution(executionId);
-  if (!startResult.success) {
-    return NextResponse.json({ error: "Failed to start execution" }, { status: 500 });
-  }
-
-  // REMOVED: Insert into agent_activities table (Phase 2B)
-  // Events are now managed by canonical agent_events table via RuntimeService
-
-  await new Promise((resolve) => setTimeout(resolve, 2000));
-
-  // Complete execution
-  const completeResult = await orchestrator.completeExecution(executionId);
-  if (!completeResult.success) {
-    return NextResponse.json({ error: "Failed to complete execution" }, { status: 500 });
-  }
-
-  // REMOVED: Update agent_states and insert agent_activities (Phase 2B)
+//   const runtime = new RuntimeService({
+//     tenantId: profile.tenant_id,
+//     logOperations: true,
+//     enableMetrics: false,
+//   });
+//   const orchestrator = new ExecutionOrchestrator(runtime, {
+//     tenantId: profile.tenant_id,
+//   });
+// 
+//   // Create execution
+//   const executionResult = await orchestrator.createExecution({
+//     agentName,
+//     workflowType: "dev_simulation",
+//     inputPayload: { simulation: true },
+//     tasks: [],
+//     metadata: { progress },
+//   });
+// 
+//   if (!executionResult.success || !executionResult.data) {
+//     return NextResponse.json({ error: "Failed to create execution" }, { status: 500 });
+//   }
+// 
+//   const executionId = executionResult.data;
+// 
+//   // Start execution
+//   const startResult = await orchestrator.startExecution(executionId);
+//   if (!startResult.success) {
+//     return NextResponse.json({ error: "Failed to start execution" }, { status: 500 });
+//   }
+// 
+//   // REMOVED: Insert into agent_activities table (Phase 2B)
+//   // Events are now managed by canonical agent_events table via RuntimeService
+// 
+//   await new Promise((resolve) => setTimeout(resolve, 2000));
+// 
+//   // Complete execution
+//   const completeResult = await orchestrator.completeExecution(executionId);
+//   if (!completeResult.success) {
+//     return NextResponse.json({ error: "Failed to complete execution" }, { status: 500 });
+//   }
+// 
+//   // REMOVED: Update agent_states and insert agent_activities (Phase 2B)
   // Execution state and events are now managed by canonical RuntimeService
 
   return NextResponse.json({ success: true });

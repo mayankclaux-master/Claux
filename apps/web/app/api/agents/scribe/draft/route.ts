@@ -37,6 +37,14 @@ export async function POST(request: Request) {
   const workspaceId = profile.workspace_id;
 
   try {
+    // TODO: Refactor to use RuntimeService directly instead of orchestrator
+    // Orchestrator is a V1 minimal stub - agents should use direct execution
+    return NextResponse.json(
+      { error: "Orchestrator usage deprecated - use RuntimeService directly" },
+      { status: 501 }
+    );
+
+    /*
     // Initialize runtime service
     const runtime = new RuntimeService({
       tenantId,
@@ -47,9 +55,6 @@ export async function POST(request: Request) {
     // Initialize orchestrator
     const orchestrator = new ExecutionOrchestrator(runtime, {
       tenantId,
-      enableAutoEvents: true,
-      enableAutoLogging: true,
-      stallDetectionTimeoutMs: 3600000,
     });
 
     // Create execution - agent service will handle task creation
@@ -108,6 +113,7 @@ export async function POST(request: Request) {
       workspaceId: workspaceId || '',
       status: 'started',
     });
+    */
   } catch (error) {
     console.error('SCRIBE draft error:', error);
     return NextResponse.json(

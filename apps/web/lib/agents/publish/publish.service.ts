@@ -1,7 +1,6 @@
 import type { AgentContext } from "../base/agent.types";
 import { RuntimeService } from "@/lib/runtime/services/runtime.service";
 import { ExecutionOrchestrator } from "@/lib/runtime/orchestrator/execution-orchestrator";
-import { TaskOrchestrator } from "@/lib/runtime/orchestrator/task-orchestrator";
 import { PublishTaskExecutorFactory } from "./publish-tasks";
 // CMS connectors removed in Phase 2A.1 - V1 prohibits CMS automation
 // import { WordPressConnector } from "@/lib/runtime/connectors/wordpress.connector";
@@ -133,163 +132,168 @@ async function executePUBLISH(context: AgentContext, executionId: string): Promi
   // Initialize canonical runtime services
   // NOTE: runtimeService already initialized above for logging
 
-  const executionOrchestrator = new ExecutionOrchestrator(runtimeService, {
-    tenantId: tenantId as UUID,
-    enableAutoLogging: true,
-    enableAutoEvents: true,
-  });
+//   const executionOrchestrator = new ExecutionOrchestrator(runtimeService, {
+//     tenantId: tenantId as UUID,
+//     enableAutoLogging: true,
+//     enableAutoEvents: true,
+//   });
+// 
+//   const taskOrchestrator = new TaskOrchestrator(runtimeService, {
+//     tenantId: tenantId as UUID,
+//     enableAutoLogging: true,
+//     enableAutoEvents: true,
+//   });
+// 
+//   // CMS connectors removed in Phase 2A.1 - V1 prohibits CMS automation
+//   // PUBLISH agent will be rewritten to generate publishing packages only
+//   // const wordpressConnector = new WordPressConnector({
+//   //   tenantId: tenantId as UUID,
+//   //   executionId,
+//   //   taskId: '',
+//   // });
+//   //
+//   // const customAPIConnector = new CustomAPIConnector({
+//   //   tenantId: tenantId as UUID,
+//   //   executionId,
+//   //   taskId: '',
+//   // });
+// 
+//   // Create execution via ExecutionOrchestrator
+//   const createExecutionResult = await executionOrchestrator.createExecution({
+//     agentName: 'AMPLI',
+//     workflowType: 'content_publishing',
+//     inputPayload: {
+//       runId,
+//     },
+//     tasks: [], // Tasks will be created separately via TaskOrchestrator
+//   });
+// 
+//   if (!createExecutionResult.success || !createExecutionResult.data) {
+//     throw new Error(`Failed to create execution: ${createExecutionResult.error}`);
+//   }
+// 
+//   const runtimeExecutionId = createExecutionResult.data;
+//   await runtimeService.log.writeInfo(
+//     runtimeExecutionId,
+//     null,
+//     "Execution created",
+//     {
+//       runId,
+//       tenantId,
+//       agent,
+//       step: "execution_created",
+//       execution_stage: "execution_create",
+//       progress: 55,
+//     }
+//   );
+// 
+//   // Start execution
+//   const startExecutionResult = await executionOrchestrator.startExecution(runtimeExecutionId);
+//   if (!startExecutionResult.success) {
+//     throw new Error(`Failed to start execution: ${startExecutionResult.error}`);
+//   }
+// 
+//   await runtimeService.log.writeInfo(
+//     runtimeExecutionId,
+//     null,
+//     "Execution started",
+//     {
+//       runId,
+//       tenantId,
+//       agent,
+//       step: "execution_started",
+//       execution_stage: "execution_start",
+//       progress: 60,
+//     }
+//   );
+// 
+//   // NOTE: AMPLI will receive draft content from SCRIBE via runtime execution context
+//   // For now, we create a placeholder WordPress publish task
+//   // In production, AMPLI will receive draft content from SCRIBE and publish to CMS
+// 
+//   const publishTaskResult = await taskOrchestrator.createTask(runtimeExecutionId, {
+//     taskName: 'WordPress Publish',
+//     taskType: 'task_wordpress_publish',
+//     stepOrder: 1,
+//     inputPayload: {
+//       siteUrl: 'https://example.com',
+//       title: 'Sample Article',
+//       content: '<p>Sample content</p>',
+//       status: 'publish',
+//     },
+//   });
+// 
+//   if (!publishTaskResult.success || !publishTaskResult.data) {
+//     throw new Error(`Failed to create publish task: ${publishTaskResult.error}`);
+//   }
+// 
+//   const publishTaskId = publishTaskResult.data;
+// 
+//   // CMS connectors removed in Phase 2A.1 - V1 prohibits CMS automation
+//   // PUBLISH agent will be rewritten to generate publishing packages only
+//   // const publishFactory = new PublishTaskExecutorFactory(
+//   //   tenantId as UUID,
+//   //   runtimeExecutionId,
+//   //   publishTaskId,
+//   //   wordpressConnector,
+//   //   customAPIConnector
+//   // );
+// 
+//   // Task execution disabled - PUBLISH agent will be rewritten in later phase
+//   // const executor = publishFactory.createExecutor('task_wordpress_publish');
+//   // if (!executor) {
+//   //   throw new Error('Failed to create WordPress publish executor');
+//   // }
+// 
+//   // Execute task
+//   // const result = await executor.execute({
+//   //   taskId: publishTaskId,
+//   //   executionId: runtimeExecutionId,
+//   //   taskType: 'task_wordpress_publish',
+//   //   input: {
+//   //     siteUrl: 'https://example.com',
+//   //     title: 'Sample Article',
+//   //     content: '<p>Sample content</p>',
+//   //     status: 'publish',
+//   //   },
+//   //   retryCount: 0,
+//   // });
+// 
+//   // Complete or fail task based on result
+//   // if (result.status === TaskStatusEnum.COMPLETED) {
+//   //   await taskOrchestrator.completeTask(publishTaskId, result.output);
+//   // } else {
+//   //   await taskOrchestrator.failTask(publishTaskId, {
+//   //     message: result.error?.message || 'Task failed',
+//   //     code: result.error?.code || 'UNKNOWN_ERROR',
+//   //   });
+//   // }
+// 
+//   // Complete execution
+//   // const completeExecutionResult = await executionOrchestrator.completeExecution(runtimeExecutionId, result.metrics?.cost || 0);
+//   // if (!completeExecutionResult.success) {
+//   //   throw new Error(`Failed to complete execution: ${completeExecutionResult.error}`);
+//   // }
+// 
+//   // PUBLISH agent disabled - will be rewritten in later phase to generate publishing packages only
+//   throw new Error('PUBLISH agent disabled in Phase 2A.1 - will be rewritten to generate publishing packages only');
+// 
+//   await runtimeService.log.writeInfo(
+//     runtimeExecutionId,
+//     null,
+//     "AMPLI execution completed successfully",
+//     {
+//       runId,
+//       tenantId,
+//       agent,
+//       step: "execution_completed",
+//       execution_stage: "execution_complete",
+//       progress: 100,
+//     }
+//   );
+//   */
 
-  const taskOrchestrator = new TaskOrchestrator(runtimeService, {
-    tenantId: tenantId as UUID,
-    enableAutoLogging: true,
-    enableAutoEvents: true,
-  });
-
-  // CMS connectors removed in Phase 2A.1 - V1 prohibits CMS automation
-  // PUBLISH agent will be rewritten to generate publishing packages only
-  // const wordpressConnector = new WordPressConnector({
-  //   tenantId: tenantId as UUID,
-  //   executionId,
-  //   taskId: '',
-  // });
-  //
-  // const customAPIConnector = new CustomAPIConnector({
-  //   tenantId: tenantId as UUID,
-  //   executionId,
-  //   taskId: '',
-  // });
-
-  // Create execution via ExecutionOrchestrator
-  const createExecutionResult = await executionOrchestrator.createExecution({
-    agentName: 'AMPLI',
-    workflowType: 'content_publishing',
-    inputPayload: {
-      runId,
-    },
-    tasks: [], // Tasks will be created separately via TaskOrchestrator
-  });
-
-  if (!createExecutionResult.success || !createExecutionResult.data) {
-    throw new Error(`Failed to create execution: ${createExecutionResult.error}`);
-  }
-
-  const runtimeExecutionId = createExecutionResult.data;
-  await runtimeService.log.writeInfo(
-    runtimeExecutionId,
-    null,
-    "Execution created",
-    {
-      runId,
-      tenantId,
-      agent,
-      step: "execution_created",
-      execution_stage: "execution_create",
-      progress: 55,
-    }
-  );
-
-  // Start execution
-  const startExecutionResult = await executionOrchestrator.startExecution(runtimeExecutionId);
-  if (!startExecutionResult.success) {
-    throw new Error(`Failed to start execution: ${startExecutionResult.error}`);
-  }
-
-  await runtimeService.log.writeInfo(
-    runtimeExecutionId,
-    null,
-    "Execution started",
-    {
-      runId,
-      tenantId,
-      agent,
-      step: "execution_started",
-      execution_stage: "execution_start",
-      progress: 60,
-    }
-  );
-
-  // NOTE: AMPLI will receive draft content from SCRIBE via runtime execution context
-  // For now, we create a placeholder WordPress publish task
-  // In production, AMPLI will receive draft content from SCRIBE and publish to CMS
-
-  const publishTaskResult = await taskOrchestrator.createTask(runtimeExecutionId, {
-    taskName: 'WordPress Publish',
-    taskType: 'task_wordpress_publish',
-    stepOrder: 1,
-    inputPayload: {
-      siteUrl: 'https://example.com',
-      title: 'Sample Article',
-      content: '<p>Sample content</p>',
-      status: 'publish',
-    },
-  });
-
-  if (!publishTaskResult.success || !publishTaskResult.data) {
-    throw new Error(`Failed to create publish task: ${publishTaskResult.error}`);
-  }
-
-  const publishTaskId = publishTaskResult.data;
-
-  // CMS connectors removed in Phase 2A.1 - V1 prohibits CMS automation
-  // PUBLISH agent will be rewritten to generate publishing packages only
-  // const publishFactory = new PublishTaskExecutorFactory(
-  //   tenantId as UUID,
-  //   runtimeExecutionId,
-  //   publishTaskId,
-  //   wordpressConnector,
-  //   customAPIConnector
-  // );
-
-  // Task execution disabled - PUBLISH agent will be rewritten in later phase
-  // const executor = publishFactory.createExecutor('task_wordpress_publish');
-  // if (!executor) {
-  //   throw new Error('Failed to create WordPress publish executor');
-  // }
-
-  // Execute task
-  // const result = await executor.execute({
-  //   taskId: publishTaskId,
-  //   executionId: runtimeExecutionId,
-  //   taskType: 'task_wordpress_publish',
-  //   input: {
-  //     siteUrl: 'https://example.com',
-  //     title: 'Sample Article',
-  //     content: '<p>Sample content</p>',
-  //     status: 'publish',
-  //   },
-  //   retryCount: 0,
-  // });
-
-  // Complete or fail task based on result
-  // if (result.status === TaskStatusEnum.COMPLETED) {
-  //   await taskOrchestrator.completeTask(publishTaskId, result.output);
-  // } else {
-  //   await taskOrchestrator.failTask(publishTaskId, {
-  //     message: result.error?.message || 'Task failed',
-  //     code: result.error?.code || 'UNKNOWN_ERROR',
-  //   });
-  // }
-
-  // Complete execution
-  // const completeExecutionResult = await executionOrchestrator.completeExecution(runtimeExecutionId, result.metrics?.cost || 0);
-  // if (!completeExecutionResult.success) {
-  //   throw new Error(`Failed to complete execution: ${completeExecutionResult.error}`);
-  // }
-
-  // PUBLISH agent disabled - will be rewritten in later phase to generate publishing packages only
-  throw new Error('PUBLISH agent disabled in Phase 2A.1 - will be rewritten to generate publishing packages only');
-
-  await runtimeService.log.writeInfo(
-    runtimeExecutionId,
-    null,
-    "AMPLI execution completed successfully",
-    {
-      runId,
-      tenantId,
-      agent,
-      step: "execution_completed",
-      execution_stage: "execution_complete",
-      progress: 100,
-    }
-  );
+  // TODO: Refactor to use RuntimeService directly instead of orchestrator
+  // Orchestrator is a V1 minimal stub - agents should use direct execution
+  throw new Error("Orchestrator usage deprecated - use RuntimeService directly");
 }

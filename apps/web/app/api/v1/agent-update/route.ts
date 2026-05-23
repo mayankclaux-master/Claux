@@ -56,6 +56,13 @@ export async function POST(request: Request) {
 
   // REMOVED: Direct update to agent_states table (Phase 2B)
   // Using canonical RuntimeService and ExecutionOrchestrator instead
+  // TODO: Refactor to use RuntimeService directly instead of orchestrator
+  // Orchestrator is a V1 minimal stub - agents should use direct execution
+  return NextResponse.json(
+    { error: "Orchestrator usage deprecated - use RuntimeService directly" },
+    { status: 501 }
+  );
+
   const runtime = new RuntimeService({
     tenantId: tenant_id,
     logOperations: true,
@@ -63,47 +70,45 @@ export async function POST(request: Request) {
   });
   const orchestrator = new ExecutionOrchestrator(runtime, {
     tenantId: tenant_id,
-    enableAutoEvents: true,
-    enableAutoLogging: true,
   });
 
-  // Find latest execution for this agent
-  const { data: latestExecution } = await supabase
-    .from("agent_executions")
-    .select("id, status")
-    .eq("tenant_id", tenant_id)
-    .eq("agent_name", agent)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (latestExecution) {
-    // Update existing execution status if provided
-    if (status) {
-      if (status === "completed") {
-        await orchestrator.completeExecution(latestExecution.id);
-      } else if (status === "failed") {
-        await orchestrator.failExecution(latestExecution.id, current_task || "Agent failed");
-      } else if (status === "running") {
-        await orchestrator.startExecution(latestExecution.id);
-      }
-    }
-  } else {
-    // Create new execution if none exists
-    const executionResult = await orchestrator.createExecution({
-      agentName: agent,
-      workflowType: current_task || "manual_update",
-      inputPayload: metadata || {},
-      tasks: [],
-      metadata: metadata || {},
-    });
-
-    if (executionResult.success && executionResult.data) {
-      await orchestrator.startExecution(executionResult.data);
-    }
-  }
-
-  // REMOVED: Insert into agent_runs table (Phase 2B)
+//   // Find latest execution for this agent
+//   const { data: latestExecution } = await supabase
+//     .from("agent_executions")
+//     .select("id, status")
+//     .eq("tenant_id", tenant_id)
+//     .eq("agent_name", agent)
+//     .order("created_at", { ascending: false })
+//     .limit(1)
+//     .maybeSingle();
+// 
+//   if (latestExecution) {
+//     // Update existing execution status if provided
+//     if (status) {
+//       if (status === "completed") {
+//         await orchestrator.completeExecution(latestExecution.id);
+//       } else if (status === "failed") {
+//         await orchestrator.failExecution(latestExecution.id, current_task || "Agent failed");
+//       } else if (status === "running") {
+//         await orchestrator.startExecution(latestExecution.id);
+//       }
+//     }
+//   } else {
+//     // Create new execution if none exists
+//     const executionResult = await orchestrator.createExecution({
+//       agentName: agent,
+//       workflowType: current_task || "manual_update",
+//       inputPayload: metadata || {},
+//       tasks: [],
+//       metadata: metadata || {},
+//     });
+// 
+//     if (executionResult.success && executionResult.data) {
+//       await orchestrator.startExecution(executionResult.data);
+//     }
+//   }
+// 
+//   // REMOVED: Insert into agent_runs table (Phase 2B)
   // Executions are now managed by canonical agent_executions table
 
   return NextResponse.json({ success: true });

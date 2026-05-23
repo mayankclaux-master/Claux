@@ -58,6 +58,14 @@ export async function POST(
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
+    // TODO: Refactor to use RuntimeService directly instead of orchestrator
+    // Orchestrator is a V1 minimal stub - agents should use direct execution
+    return NextResponse.json(
+      { error: "Orchestrator usage deprecated - use RuntimeService directly" },
+      { status: 501 }
+    );
+
+    /*
     // Initialize runtime service
     const runtime = new RuntimeService({
       tenantId,
@@ -68,9 +76,6 @@ export async function POST(
     // Initialize orchestrator
     const orchestrator = new ExecutionOrchestrator(runtime, {
       tenantId,
-      enableAutoEvents: true,
-      enableAutoLogging: true,
-      stallDetectionTimeoutMs: 3600000,
     });
 
     if (action === 'retry') {
@@ -110,6 +115,7 @@ export async function POST(
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
+    */
   } catch (error) {
     console.error("Error in execution recovery:", error);
     return NextResponse.json(

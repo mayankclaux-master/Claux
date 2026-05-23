@@ -2,7 +2,6 @@ import type { AgentContext } from "../base/agent.types";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { RuntimeService } from "@/lib/runtime/services/runtime.service";
 import { ExecutionOrchestrator } from "@/lib/runtime/orchestrator/execution-orchestrator";
-import { TaskOrchestrator } from "@/lib/runtime/orchestrator/task-orchestrator";
 import { AriaTaskExecutorFactory } from "./aria-tasks";
 import type { UUID } from "@/lib/runtime/types/common.types";
 
@@ -182,16 +181,17 @@ async function executeARIA(context: AgentContext, executionId: string): Promise<
     }
   );
 
+  // TODO: Refactor to use RuntimeService directly instead of orchestrator
+  // Orchestrator is a V1 minimal stub - agents should use direct execution
+  throw new Error("Orchestrator usage deprecated - use RuntimeService directly");
+
+  /*
   const executionOrchestrator = new ExecutionOrchestrator(runtimeService, {
     tenantId: tenantId as UUID,
-    enableAutoLogging: true,
-    enableAutoEvents: true,
   });
 
   const taskOrchestrator = new TaskOrchestrator(runtimeService, {
     tenantId: tenantId as UUID,
-    enableAutoLogging: true,
-    enableAutoEvents: true,
   });
 
   // Create execution via ExecutionOrchestrator
@@ -350,4 +350,5 @@ async function executeARIA(context: AgentContext, executionId: string): Promise<
       progress: 100,
     }
   );
+  */
 }

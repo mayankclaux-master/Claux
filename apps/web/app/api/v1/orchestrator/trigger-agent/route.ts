@@ -89,64 +89,69 @@ export async function POST(request: Request) {
 
   // REMOVED: Direct insert into agent_runs table (Phase 2B)
   // Using canonical RuntimeService and ExecutionOrchestrator instead
-  const runtime = new RuntimeService({
-    tenantId,
-    logOperations: true,
-    enableMetrics: false,
-  });
-  const orchestrator = new ExecutionOrchestrator(runtime, {
-    tenantId,
-    enableAutoEvents: true,
-    enableAutoLogging: true,
-  });
+  // TODO: Refactor to use RuntimeService directly instead of orchestrator
+  // Orchestrator is a V1 minimal stub - agents should use direct execution
+  return NextResponse.json(
+    { error: "Orchestrator usage deprecated - use RuntimeService directly" },
+    { status: 501 }
+  );
 
-  // Create execution using canonical orchestrator
-  const executionResult = await orchestrator.createExecution({
-    agentName,
-    workflowType: taskType,
-    inputPayload: body.payload ?? {},
-    tasks: [], // No pre-defined tasks for manual trigger
-    metadata: {
-      triggered_by: "manual",
-      requested_by_user_id: user.id,
-    },
-  });
-
-  if (!executionResult.success || !executionResult.data) {
-    return NextResponse.json(
-      { error: executionResult.error?.message || "Failed to create execution" },
-      { status: 500 }
-    );
-  }
-
-  const executionId = executionResult.data;
-
-  // Start execution
-  const startResult = await orchestrator.startExecution(executionId);
-  if (!startResult.success) {
-    await orchestrator.failExecution(executionId, startResult.error?.message || "Failed to start execution");
-    return NextResponse.json(
-      { error: startResult.error?.message || "Failed to start execution" },
-      { status: 500 }
-    );
-  }
-
-  // REMOVED: Direct update to agent_states table (Phase 2B)
-  // Execution state is now managed by canonical ExecutionOrchestrator
-
-  // REMOVED: n8n webhook trigger (Phase 2B)
-  // External orchestration is forbidden by canonical architecture
-  // Agents are now executed directly via RuntimeService/ExecutionOrchestrator
-  // The agent service functions should be called directly instead of via webhook
-
-  // For now, return success with execution ID
-  // TODO: Integrate with agent service execution via RuntimeService
-  return NextResponse.json({
-    ok: true,
-    tenant_id: tenantId,
-    agent_name: agentName,
-    execution_id: executionId,
-    task_type: taskType,
-    message: "Execution created successfully via canonical runtime"
-  });
+//   const runtime = new RuntimeService({
+//     tenantId,
+//     logOperations: true,
+//     enableMetrics: false,
+//   });
+//   const orchestrator = new ExecutionOrchestrator(runtime, {
+//     tenantId,
+//   });
+// 
+//   // Create execution using canonical orchestrator
+//   const executionResult = await orchestrator.createExecution({
+//     agentName,
+//     workflowType: taskType,
+//     inputPayload: body.payload ?? {},
+//     tasks: [], // No pre-defined tasks for manual trigger
+//     metadata: {
+//       triggered_by: "manual",
+//       requested_by_user_id: user.id,
+//     },
+//   });
+// 
+//   if (!executionResult.success || !executionResult.data) {
+//     return NextResponse.json(
+//       { error: executionResult.error?.message || "Failed to create execution" },
+//       { status: 500 }
+//     );
+//   }
+// 
+//   const executionId = executionResult.data;
+// 
+//   // Start execution
+//   const startResult = await orchestrator.startExecution(executionId);
+//   if (!startResult.success) {
+//     await orchestrator.failExecution(executionId, startResult.error?.message || "Failed to start execution");
+//     return NextResponse.json(
+//       { error: startResult.error?.message || "Failed to start execution" },
+//       { status: 500 }
+//     );
+//   }
+// 
+//   // REMOVED: Direct update to agent_states table (Phase 2B)
+//   // Execution state is now managed by canonical ExecutionOrchestrator
+// 
+//   // REMOVED: n8n webhook trigger (Phase 2B)
+//   // External orchestration is forbidden by canonical architecture
+//   // Agents are now executed directly via RuntimeService/ExecutionOrchestrator
+//   // The agent service functions should be called directly instead of via webhook
+// 
+//   // For now, return success with execution ID
+//   // TODO: Integrate with agent service execution via RuntimeService
+//   return NextResponse.json({
+//     ok: true,
+//     tenant_id: tenantId,
+//     agent_name: agentName,
+//     execution_id: executionId,
+//     task_type: taskType,
+//     message: "Execution created successfully via canonical runtime"
+//   });
 }
