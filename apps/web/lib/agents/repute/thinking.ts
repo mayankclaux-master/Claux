@@ -13,7 +13,8 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 export async function logReputeSentimentReasoning(executionId: string, tenantId: string, reasoning: string, sentiment: string, confidence: number) {
   const supabase = createSupabaseBrowserClient();
   
-  await supabase.from("runtime_thinking_logs").insert({
+  // Updated to use canonical agent_logs table (Phase 2A.3)
+  await supabase.from("agent_logs").insert({
     execution_id: executionId,
     tenant_id: tenantId,
     agent_name: "REPUTE",
@@ -32,7 +33,8 @@ export async function logReputeSentimentReasoning(executionId: string, tenantId:
 export async function logReputeEscalationRationale(executionId: string, tenantId: string, reasoning: string, escalationLevel: string, riskScore: number) {
   const supabase = createSupabaseBrowserClient();
   
-  await supabase.from("runtime_thinking_logs").insert({
+  // Updated to use canonical agent_logs table (Phase 2A.3)
+  await supabase.from("agent_logs").insert({
     execution_id: executionId,
     tenant_id: tenantId,
     agent_name: "REPUTE",
@@ -52,7 +54,8 @@ export async function logReputeEscalationRationale(executionId: string, tenantId
 export async function logReputeReputationRiskInterpretation(executionId: string, tenantId: string, reasoning: string, riskType: string, impact: string) {
   const supabase = createSupabaseBrowserClient();
   
-  await supabase.from("runtime_thinking_logs").insert({
+  // Updated to use canonical agent_logs table (Phase 2A.3)
+  await supabase.from("agent_logs").insert({
     execution_id: executionId,
     tenant_id: tenantId,
     agent_name: "REPUTE",
@@ -71,7 +74,8 @@ export async function logReputeReputationRiskInterpretation(executionId: string,
 export async function logReputeResponseDraftingRationale(executionId: string, tenantId: string, reasoning: string, responseTone: string) {
   const supabase = createSupabaseBrowserClient();
   
-  await supabase.from("runtime_thinking_logs").insert({
+  // Updated to use canonical agent_logs table (Phase 2A.3)
+  await supabase.from("agent_logs").insert({
     execution_id: executionId,
     tenant_id: tenantId,
     agent_name: "REPUTE",

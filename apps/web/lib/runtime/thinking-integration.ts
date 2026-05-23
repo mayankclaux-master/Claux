@@ -39,11 +39,12 @@ export async function getExecutionThinkingLogs(executionId: string): Promise<Thi
   try {
     const supabase = createSupabaseBrowserClient();
     
+    // Updated to use canonical agent_logs table (Phase 2A.3)
     const { data, error } = await supabase
-      .from("runtime_thinking_logs")
+      .from("agent_logs")
       .select("*")
       .eq("execution_id", executionId)
-      .order("timestamp", { ascending: true });
+      .order("created_at", { ascending: true });
 
     if (error || !data) {
       return [];
@@ -63,11 +64,12 @@ export async function getTaskThinkingLogs(taskId: string): Promise<ThinkingLog[]
   try {
     const supabase = createSupabaseBrowserClient();
     
+    // Updated to use canonical agent_logs table (Phase 2A.3)
     const { data, error } = await supabase
-      .from("runtime_thinking_logs")
+      .from("agent_logs")
       .select("*")
       .eq("task_id", taskId)
-      .order("timestamp", { ascending: true });
+      .order("created_at", { ascending: true });
 
     if (error || !data) {
       return [];

@@ -37,8 +37,9 @@ export async function GET(request: Request) {
   const status = searchParams.get('status');
 
   try {
+    // Updated to use canonical agent_tasks table (Phase 2A.3)
     let query = supabase
-      .from('runtime_tasks')
+      .from('agent_tasks')
       .select('*')
       .eq('tenant_id', tenantId);
 

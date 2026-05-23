@@ -299,7 +299,7 @@ export async function generateExecutionSummaryReport(
 
   try {
     const { data: executions } = await supabase
-      .from('runtime_executions')
+      .from('agent_executions')
       .select('*')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false })

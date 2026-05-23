@@ -3,8 +3,9 @@ import { RuntimeService } from "@/lib/runtime/services/runtime.service";
 import { ExecutionOrchestrator } from "@/lib/runtime/orchestrator/execution-orchestrator";
 import { TaskOrchestrator } from "@/lib/runtime/orchestrator/task-orchestrator";
 import { PublishTaskExecutorFactory } from "./publish-tasks";
-import { WordPressConnector } from "@/lib/runtime/connectors/wordpress.connector";
-import { CustomAPIConnector } from "@/lib/runtime/connectors/custom-api.connector";
+// CMS connectors removed in Phase 2A.1 - V1 prohibits CMS automation
+// import { WordPressConnector } from "@/lib/runtime/connectors/wordpress.connector";
+// import { CustomAPIConnector } from "@/lib/runtime/connectors/custom-api.connector";
 import type { UUID } from "@/lib/runtime/types/common.types";
 import { TaskStatus as TaskStatusEnum } from "@/lib/runtime/types/task.types";
 
@@ -144,18 +145,19 @@ async function executePUBLISH(context: AgentContext, executionId: string): Promi
     enableAutoEvents: true,
   });
 
-  // Initialize CMS connectors
-  const wordpressConnector = new WordPressConnector({
-    tenantId: tenantId as UUID,
-    executionId,
-    taskId: '',
-  });
-
-  const customAPIConnector = new CustomAPIConnector({
-    tenantId: tenantId as UUID,
-    executionId,
-    taskId: '',
-  });
+  // CMS connectors removed in Phase 2A.1 - V1 prohibits CMS automation
+  // PUBLISH agent will be rewritten to generate publishing packages only
+  // const wordpressConnector = new WordPressConnector({
+  //   tenantId: tenantId as UUID,
+  //   executionId,
+  //   taskId: '',
+  // });
+  //
+  // const customAPIConnector = new CustomAPIConnector({
+  //   tenantId: tenantId as UUID,
+  //   executionId,
+  //   taskId: '',
+  // });
 
   // Create execution via ExecutionOrchestrator
   const createExecutionResult = await executionOrchestrator.createExecution({
@@ -228,49 +230,54 @@ async function executePUBLISH(context: AgentContext, executionId: string): Promi
 
   const publishTaskId = publishTaskResult.data;
 
-  // Initialize PUBLISH task factory
-  const publishFactory = new PublishTaskExecutorFactory(
-    tenantId as UUID,
-    runtimeExecutionId,
-    publishTaskId,
-    wordpressConnector,
-    customAPIConnector
-  );
+  // CMS connectors removed in Phase 2A.1 - V1 prohibits CMS automation
+  // PUBLISH agent will be rewritten to generate publishing packages only
+  // const publishFactory = new PublishTaskExecutorFactory(
+  //   tenantId as UUID,
+  //   runtimeExecutionId,
+  //   publishTaskId,
+  //   wordpressConnector,
+  //   customAPIConnector
+  // );
 
-  const executor = publishFactory.createExecutor('task_wordpress_publish');
-  if (!executor) {
-    throw new Error('Failed to create WordPress publish executor');
-  }
+  // Task execution disabled - PUBLISH agent will be rewritten in later phase
+  // const executor = publishFactory.createExecutor('task_wordpress_publish');
+  // if (!executor) {
+  //   throw new Error('Failed to create WordPress publish executor');
+  // }
 
   // Execute task
-  const result = await executor.execute({
-    taskId: publishTaskId,
-    executionId: runtimeExecutionId,
-    taskType: 'task_wordpress_publish',
-    input: {
-      siteUrl: 'https://example.com',
-      title: 'Sample Article',
-      content: '<p>Sample content</p>',
-      status: 'publish',
-    },
-    retryCount: 0,
-  });
+  // const result = await executor.execute({
+  //   taskId: publishTaskId,
+  //   executionId: runtimeExecutionId,
+  //   taskType: 'task_wordpress_publish',
+  //   input: {
+  //     siteUrl: 'https://example.com',
+  //     title: 'Sample Article',
+  //     content: '<p>Sample content</p>',
+  //     status: 'publish',
+  //   },
+  //   retryCount: 0,
+  // });
 
   // Complete or fail task based on result
-  if (result.status === TaskStatusEnum.COMPLETED) {
-    await taskOrchestrator.completeTask(publishTaskId, result.output);
-  } else {
-    await taskOrchestrator.failTask(publishTaskId, {
-      message: result.error?.message || 'Task failed',
-      code: result.error?.code || 'UNKNOWN_ERROR',
-    });
-  }
+  // if (result.status === TaskStatusEnum.COMPLETED) {
+  //   await taskOrchestrator.completeTask(publishTaskId, result.output);
+  // } else {
+  //   await taskOrchestrator.failTask(publishTaskId, {
+  //     message: result.error?.message || 'Task failed',
+  //     code: result.error?.code || 'UNKNOWN_ERROR',
+  //   });
+  // }
 
   // Complete execution
-  const completeExecutionResult = await executionOrchestrator.completeExecution(runtimeExecutionId, result.metrics?.cost || 0);
-  if (!completeExecutionResult.success) {
-    throw new Error(`Failed to complete execution: ${completeExecutionResult.error}`);
-  }
+  // const completeExecutionResult = await executionOrchestrator.completeExecution(runtimeExecutionId, result.metrics?.cost || 0);
+  // if (!completeExecutionResult.success) {
+  //   throw new Error(`Failed to complete execution: ${completeExecutionResult.error}`);
+  // }
+
+  // PUBLISH agent disabled - will be rewritten in later phase to generate publishing packages only
+  throw new Error('PUBLISH agent disabled in Phase 2A.1 - will be rewritten to generate publishing packages only');
 
   await runtimeService.log.writeInfo(
     runtimeExecutionId,

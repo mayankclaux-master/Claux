@@ -37,8 +37,9 @@ export async function GET(
   const tenantId = profile.tenant_id;
 
   try {
+    // Updated to use canonical agent_tasks table (Phase 2A.3)
     const { data, error } = await supabase
-      .from('runtime_tasks')
+      .from('agent_tasks')
       .select('*')
       .eq('id', id)
       .eq('tenant_id', tenantId)

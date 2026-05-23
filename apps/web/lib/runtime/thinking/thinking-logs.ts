@@ -30,7 +30,8 @@ export interface ThinkingLog {
 export async function writeThinkingLog(log: ThinkingLog): Promise<void> {
   const supabase = createSupabaseAdminClient();
   
-  const { error } = await supabase.from('runtime_thinking_logs').insert({
+  // Updated to use canonical agent_logs table (Phase 2A.3)
+  const { error } = await supabase.from('agent_logs').insert({
     execution_id: log.execution_id,
     tenant_id: log.tenant_id,
     agent_name: log.agent_name,
@@ -44,7 +45,7 @@ export async function writeThinkingLog(log: ThinkingLog): Promise<void> {
     artifact_id: log.artifact_id,
     artifact_type: log.artifact_type,
     metadata: log.metadata,
-    timestamp: log.timestamp || new Date().toISOString(),
+    created_at: log.timestamp || new Date().toISOString(),
   });
 
   if (error) {
@@ -59,11 +60,12 @@ export async function writeThinkingLog(log: ThinkingLog): Promise<void> {
 export async function getThinkingLogs(executionId: string): Promise<ThinkingLog[]> {
   const supabase = createSupabaseAdminClient();
   
+  // Updated to use canonical agent_logs table (Phase 2A.3)
   const { data, error } = await supabase
-    .from('runtime_thinking_logs')
+    .from('agent_logs')
     .select('*')
     .eq('execution_id', executionId)
-    .order('timestamp', { ascending: true });
+    .order('created_at', { ascending: true });
 
   if (error) {
     console.error('Failed to get thinking logs:', error);

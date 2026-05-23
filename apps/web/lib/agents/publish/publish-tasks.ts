@@ -7,8 +7,9 @@ import type {
   ValidationResult,
 } from '@/lib/runtime/contracts/task.contract';
 import { TaskStatus } from '@/lib/runtime/contracts/task.contract';
-import { WordPressConnector } from '@/lib/runtime/connectors/wordpress.connector';
-import { CustomAPIConnector } from '@/lib/runtime/connectors/custom-api.connector';
+// CMS connectors removed in Phase 2A.1 - V1 prohibits CMS automation
+// import { WordPressConnector } from '@/lib/runtime/connectors/wordpress.connector';
+// import { CustomAPIConnector } from '@/lib/runtime/connectors/custom-api.connector';
 import type { UUID } from '@/lib/runtime/types/common.types';
 import { ProviderExecutionStatus } from '@/lib/runtime/contracts/provider-response.contract';
 import { ProviderErrorCode } from '@/lib/runtime/contracts/provider-error.contract';

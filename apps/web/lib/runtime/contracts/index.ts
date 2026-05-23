@@ -67,10 +67,11 @@ export type {
   WorkerHealthStatus,
   WorkerPool,
   TaskDispatchOptions,
-  WorkerPoolStatus,
-  WorkerPoolMetrics,
-  WorkerFactory,
-  WorkerPoolConfig,
+  // Worker contract removed in Phase 2A.2 - V1 prohibits distributed workers
+  // WorkerPoolStatus,
+  // WorkerPoolMetrics,
+  // WorkerFactory,
+  // WorkerPoolConfig,
 } from './worker.contract';
 
 // Event contract
