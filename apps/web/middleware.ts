@@ -9,6 +9,11 @@ const publicRoutes = [
   "/api/integrations/google/callback"
 ];
 
+// Internal admin routes - require admin role
+const internalAdminRoutes = [
+  "/internal/admin"
+];
+
 export default clerkMiddleware((auth, req) => {
   const { pathname } = req.nextUrl;
 
@@ -16,6 +21,7 @@ export default clerkMiddleware((auth, req) => {
   console.log("[Middleware] Request:", {
     pathname,
     isPublic: publicRoutes.some(route => pathname.startsWith(route)),
+    isInternalAdmin: internalAdminRoutes.some(route => pathname.startsWith(route)),
     method: req.method
   });
 
@@ -23,8 +29,21 @@ export default clerkMiddleware((auth, req) => {
     pathname.startsWith(route)
   );
 
+  const isInternalAdmin = internalAdminRoutes.some(route =>
+    pathname.startsWith(route)
+  );
+
   if (!isPublic) {
-    auth().protect();
+    if (isInternalAdmin) {
+      // Internal admin routes require authentication and admin role
+      auth().protect();
+      // Additional role check should be done in the page component
+      // This is a placeholder for role-based access control
+      const session = auth();
+      // In production, verify user has admin role before allowing access
+    } else {
+      auth().protect();
+    }
   }
 });
 
