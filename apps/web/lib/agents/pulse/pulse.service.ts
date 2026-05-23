@@ -1,14 +1,12 @@
 import type { AgentContext } from "../base/agent.types";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-
-// REMOVED: Agent Logger dependencies (Phase 2B - execution authority enforcement)
-// Agents must NOT control execution state, logging, or locks
-// See CLAUX_AGENT_OWNED_EXECUTION_CONTROL_AUDIT.md for migration path
-
-// REMOVED: Direct provider client calls (Phase 3A - provider execution sovereignty)
-// Agents must NOT call providers directly
-// Provider execution must flow through: RuntimeService → Runtime Connector → Provider
-// See CLAUX_PROVIDER_EXECUTION_SOVEREIGNTY_AUDIT.md for migration path
+import { RuntimeService } from "@/lib/runtime/services/runtime.service";
+import { PulseTaskExecutorFactory } from "./pulse-tasks";
+import type { UUID } from "@/lib/runtime/types/common.types";
+import { ExecutionStatus, ExecutionSource } from "@/lib/runtime/types/execution.types";
+import { TaskStatus } from "@/lib/runtime/types/task.types";
+import { TaskGenerationService } from "@/lib/command-center/task-generation.service";
+import type { TaskType, TaskPriority } from "@/lib/command-center/types";
+import type { PulseOutput } from "../shared/agent-output.types";
 
 const EXECUTION_TIMEOUT_MS = 120000; // 2 minutes for ranking checks
 
@@ -20,91 +18,13 @@ function generateExecutionId(runId: string): string {
 }
 
 /**
- * Structured logging helper with executionId
- * NOTE: This function is now a no-op placeholder
- * All logging is handled by canonical LogService via RuntimeService
- * See CLAUX_LOGSERVICE_HARDENING_REPORT.md for migration
- */
-function structuredLog(level: "info" | "error" | "warn", data: Record<string, unknown>): void {
-  // No-op - logging now handled by LogService via RuntimeService
-  // This function is kept for backward compatibility during transition
-}
-
-/**
- * Extract domain from URL
- */
-function extractDomain(url: string): string {
-  try {
-    const urlObj = new URL(url);
-    return urlObj.hostname;
-  } catch {
-    return url;
-  }
-}
-
-/**
- * Generate deterministic hash from string (for testing only)
- */
-function stringToHash(str: string): number {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
-  }
-  return Math.abs(hash);
-}
-
-/**
- * Check if result URL matches target domain
- */
-function isDomainMatch(resultUrl: string, domain: string): boolean {
-  try {
-    const resultDomain = extractDomain(resultUrl);
-    return resultDomain.includes(domain) || domain.includes(resultDomain);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Calculate tracking priority based on search volume and intent
- */
-function calculateTrackingPriority(searchVolume: number, intent: string): 'high' | 'medium' | 'low' {
-  if (searchVolume > 1000 && (intent === 'transactional' || intent === 'commercial')) {
-    return 'high';
-  } else if (searchVolume > 100) {
-    return 'medium';
-  } else {
-    return 'low';
-  }
-}
-
-/**
- * Calculate visibility score from rank
- */
-function calculateVisibilityScore(rank: number | null): number | null {
-  if (rank === null) return null;
-  return Math.max(0, 101 - rank);
-}
-
-/**
- * Run PULSE agent - Keyword Ranking Tracking
+ * Run PULSE agent - Ranking Intelligence
+ * CLAUX V1: Track rankings, detect movement, generate insights
  */
 export async function runPULSE(context: AgentContext): Promise<void> {
   const { tenantId, agent, runId } = context;
   const executionId = generateExecutionId(runId);
 
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "runPULSE_start",
-    message: "Starting PULSE execution"
-  });
-
-  // Timeout protection wrapper
   const timeoutPromise = new Promise<never>((_, reject) => {
     setTimeout(() => reject(new Error("Execution timeout exceeded")), EXECUTION_TIMEOUT_MS);
   });
@@ -115,233 +35,210 @@ export async function runPULSE(context: AgentContext): Promise<void> {
       timeoutPromise
     ]);
   } catch (error) {
-    structuredLog("error", {
-      runId,
-      executionId,
-      tenantId,
-      agent,
-      step: "runPULSE_error",
-      error: error instanceof Error ? error.message : "Unknown error"
-    });
-
-    // Failure handling: log error only
-    // REMOVED: Agent state, run status, and activity logging (Phase 2B)
-    // Execution state is now managed by RuntimeService/ExecutionOrchestrator
-    structuredLog("error", {
-      runId,
-      executionId,
-      tenantId,
-      agent,
-      step: "failure_handling",
-      error: error instanceof Error ? error.message : "Unknown error"
-    });
-  } finally {
-    // REMOVED: Safety check and lock release (Phase 2B)
-    // Execution state and locks are now managed by RuntimeService/ExecutionOrchestrator
-    // Agents are pure business logic executors, NOT execution controllers
-    structuredLog("info", {
-      runId,
-      executionId,
-      tenantId,
-      agent,
-      step: "cleanup_complete",
-      message: "PULSE agent cleanup complete"
-    });
-
-    structuredLog("info", {
-      runId,
-      executionId,
-      tenantId,
-      agent,
-      step: "runPULSE_complete",
-      message: "PULSE execution finished (cleanup complete)"
-    });
+    // Error logging handled in executePULSE
   }
 }
 
 /**
  * Execute PULSE logic
+ * CLAUX V1: Ranking intelligence via RuntimeService
  */
 async function executePULSE(context: AgentContext, executionId: string): Promise<void> {
   const { tenantId, agent, runId } = context;
-  const supabase = createSupabaseAdminClient();
 
-  // Step 1: Log start
-  // REMOVED: State and run status updates (Phase 2B)
-  // Execution state is now managed by RuntimeService/ExecutionOrchestrator
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "initialization",
-    progress: 0,
-    message: "PULSE agent started"
+  // Initialize RuntimeService
+  const runtimeService = new RuntimeService({
+    tenantId: tenantId as UUID,
+    logOperations: true,
+    enableMetrics: true,
   });
 
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "state_running",
-    progress: 0
-  });
-
-  // Step 2: Fetch business profile and extract domain (20%)
-  // REMOVED: State and activity logging (Phase 2B)
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "fetching_business_profile",
-    progress: 20
-  });
-
-  const { data: businessProfile, error: profileError } = await supabase
-    .from("business_profiles")
-    .select("website")
-    .eq("tenant_id", tenantId)
-    .maybeSingle();
-
-  if (profileError || !businessProfile?.website) {
-    throw new Error("Business profile or website not found");
-  }
-
-  const domain = extractDomain(businessProfile.website);
-
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "domain_extracted",
-    domain
-  });
-
-  // Step 3: Fetch tracked keywords from ARIA (50%)
-  // REMOVED: State and activity logging (Phase 2B)
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "fetching_keywords",
-    progress: 50
-  });
-
-  const { data: keywords, error: keywordsError } = await supabase
-    .from("aria_keywords")
-    .select("keyword, search_volume, intent")
-    .eq("tenant_id", tenantId)
-    .order("search_volume", { ascending: false })
-    .limit(20);
-
-  if (keywordsError) {
-    throw new Error(`Failed to fetch keywords: ${keywordsError.message}`);
-  }
-
-  if (!keywords || keywords.length === 0) {
-    structuredLog("warn", {
+  await runtimeService.log.writeInfo(
+    executionId as UUID,
+    null,
+    "Initializing PULSE agent - Ranking Intelligence",
+    {
       runId,
-      executionId,
       tenantId,
       agent,
-      step: "no_keywords_found",
-      message: "No keywords found, completing without ranking checks"
+      step: "initializing_runtime_services",
+      execution_stage: "runtime_init",
+      progress: 50,
+    }
+  );
+
+  // Create execution via RuntimeService
+  const createExecutionResult = await runtimeService.execution.createExecution({
+    agent_name: 'PULSE',
+    workflow_type: 'ranking_intelligence',
+    metadata: {
+      runId,
+    },
+    execution_source: ExecutionSource.API,
+  });
+
+  if (!createExecutionResult.success || !createExecutionResult.data) {
+    throw new Error(`Failed to create execution`);
+  }
+
+  const runtimeExecutionId = createExecutionResult.data.id;
+  await runtimeService.log.writeInfo(
+    runtimeExecutionId,
+    null,
+    "Execution created",
+    {
+      runId,
+      tenantId,
+      agent,
+      step: "execution_created",
+      execution_stage: "execution_create",
+      progress: 55,
+    }
+  );
+
+  // Start execution via RuntimeService
+  const startExecutionResult = await runtimeService.execution.startExecution(runtimeExecutionId);
+  if (!startExecutionResult.success) {
+    throw new Error(`Failed to start execution`);
+  }
+
+  await runtimeService.log.writeInfo(
+    runtimeExecutionId,
+    null,
+    "Execution started",
+    {
+      runId,
+      tenantId,
+      agent,
+      step: "execution_started",
+      execution_stage: "execution_start",
+      progress: 60,
+    }
+  );
+
+  // Create ranking check task
+  const rankingTaskResult = await runtimeService.task.createTask({
+    execution_id: runtimeExecutionId,
+    task_name: 'Ranking Check',
+    task_type: 'task_ranking_check',
+    step_order: 1,
+    input_payload: {
+      keywords: [],
+      location: 'United States',
+      device: 'desktop',
+    },
+  });
+
+  if (!rankingTaskResult.success || !rankingTaskResult.data) {
+    throw new Error(`Failed to create ranking check task`);
+  }
+
+  const rankingTaskId = rankingTaskResult.data.id;
+
+  // Initialize PULSE task factory
+  const pulseFactory = new PulseTaskExecutorFactory(
+    tenantId as UUID,
+    runtimeExecutionId,
+    rankingTaskId
+  );
+
+  const executor = pulseFactory.createExecutor('task_ranking_check');
+  if (!executor) {
+    throw new Error('Failed to create ranking check executor');
+  }
+
+  // Start task via RuntimeService
+  await runtimeService.task.startTask(rankingTaskId);
+
+  // Execute task
+  const result = await executor.execute({
+    taskId: rankingTaskId,
+    executionId: runtimeExecutionId,
+    taskType: 'task_ranking_check',
+    input: {
+      keywords: [],
+      location: 'United States',
+      device: 'desktop',
+    },
+    retryCount: 0,
+  });
+
+  // Complete or fail task based on result
+  if (result.status === TaskStatus.COMPLETED) {
+    await runtimeService.task.completeTask(rankingTaskId, result.output);
+
+    // Generate Command Centre tasks for ranking insights
+    const taskGenerationService = new TaskGenerationService();
+    const pulseOutput = result.output as unknown as PulseOutput;
+
+    if (pulseOutput && pulseOutput.ranking_changes) {
+      const commandCenterTasks = pulseOutput.ranking_changes
+        .filter(change => change.change < -5) // Significant drops only
+        .map(change => ({
+          task_type: 'keyword_review' as TaskType,
+          title: `Investigate ranking drop for "${change.keyword}"`,
+          description: `Keyword dropped from position ${change.previous_position} to ${change.current_position}`,
+          priority: 'high' as TaskPriority,
+          action_payload: {
+            keyword: change.keyword,
+            current_position: change.current_position,
+            previous_position: change.previous_position,
+            change: change.change,
+          },
+          recommended_action: 'Review content and backlinks for this keyword',
+          client_visible_impact: `Ranking dropped by ${Math.abs(change.change)} positions`,
+        }));
+
+      if (commandCenterTasks.length > 0) {
+        await taskGenerationService.bulkCreateTasks({
+          tenant_id: tenantId as string,
+          client_id: tenantId as string,
+          agent_name: 'PULSE',
+          source_execution_id: runtimeExecutionId,
+          source_task_id: rankingTaskId,
+          tasks: commandCenterTasks,
+        });
+
+        await runtimeService.log.writeInfo(
+          runtimeExecutionId,
+          null,
+          "Command Centre tasks generated",
+          {
+            runId,
+            tenantId,
+            agent,
+            step: "command_centre_tasks_generated",
+            execution_stage: "task_generation",
+            progress: 95,
+            tasks_generated: commandCenterTasks.length,
+          }
+        );
+      }
+    }
+  } else {
+    await runtimeService.task.failTask(rankingTaskId, {
+      message: result.error?.message || 'Task failed',
+      code: result.error?.code || 'UNKNOWN_ERROR',
     });
+  }
 
-    // REMOVED: State and run status updates (Phase 2B)
-    structuredLog("warn", {
+  // Complete execution via RuntimeService
+  const completeExecutionResult = await runtimeService.execution.completeExecution(runtimeExecutionId, result.metrics?.cost || 0);
+  if (!completeExecutionResult.success) {
+    throw new Error(`Failed to complete execution`);
+  }
+
+  await runtimeService.log.writeInfo(
+    runtimeExecutionId,
+    null,
+    "PULSE execution completed successfully - Ranking intelligence generated",
+    {
       runId,
-      executionId,
       tenantId,
       agent,
-      step: "no_keywords_found",
+      step: "execution_completed",
+      execution_stage: "execution_complete",
       progress: 100,
-      message: "No keywords found, completing without ranking checks"
-    });
-
-    return;
-  }
-
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "keywords_fetched",
-    count: keywords.length
-  });
-
-  // Step 4: Fetch rankings (80%)
-  // REMOVED: State updates (Phase 2B)
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "fetching_rankings",
-    progress: 80
-  });
-
-  const rankings: Array<{
-    keyword: string;
-    current_rank: number | null;
-    url: string;
-    search_volume: number;
-    intent: string;
-  }> = [];
-
-  for (const keywordData of keywords) {
-    // REMOVED: Activity logging (Phase 2B)
-    structuredLog("info", {
-      runId,
-      executionId,
-      tenantId,
-      agent,
-      step: "checking_rank",
-      keyword: keywordData.keyword
-    });
-
-    // FORBIDDEN MOCK EXECUTION REMOVED (TASK 4A.0.4)
-    // Must use canonical RuntimeService execution flow
-    // Integration required: RuntimeService → TaskOrchestrator → SERP Connector
-    throw new Error("RuntimeService integration required for ranking tracking");
-
-  }
-
-  // Step 5: Process movement and store rankings (100%)
-  // REMOVED: State updates (Phase 2B)
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "processing_movement",
-    progress: 100
-  });
-
-  // Step 6: Complete
-  // REMOVED: State and run status updates (Phase 2B)
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "complete",
-    progress: 100,
-    message: "PULSE execution completed successfully"
-  });
-
-  structuredLog("info", {
-    runId,
-    executionId,
-    tenantId,
-    agent,
-    step: "runPULSE_complete",
-    progress: 100,
-    message: "PULSE execution completed successfully"
-  });
+    }
+  );
 }

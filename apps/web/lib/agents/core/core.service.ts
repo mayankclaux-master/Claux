@@ -1,14 +1,14 @@
 import type { AgentContext } from "../base/agent.types";
 import { RuntimeService } from "@/lib/runtime/services/runtime.service";
-import { LoclTaskExecutorFactory } from "./locl-tasks";
+import { CoreTaskExecutorFactory } from "./core-tasks";
 import type { UUID } from "@/lib/runtime/types/common.types";
 import { ExecutionStatus, ExecutionSource } from "@/lib/runtime/types/execution.types";
 import { TaskStatus } from "@/lib/runtime/types/task.types";
 import { TaskGenerationService } from "@/lib/command-center/task-generation.service";
 import type { TaskType, TaskPriority } from "@/lib/command-center/types";
-import type { LoclOutput } from "../shared/agent-output.types";
+import type { CoreOutput } from "../shared/agent-output.types";
 
-const EXECUTION_TIMEOUT_MS = 120000; // 2 minutes for GMB audit
+const EXECUTION_TIMEOUT_MS = 120000; // 2 minutes for technical audit
 
 /**
  * Generate execution correlation ID
@@ -18,10 +18,10 @@ function generateExecutionId(runId: string): string {
 }
 
 /**
- * Run LOCL agent - Local SEO Intelligence
- * CLAUX V1: GMB optimization recommendations, citation intelligence
+ * Run CORE agent - Technical SEO Intelligence
+ * CLAUX V1: Technical audit, CWV recommendations, schema validation
  */
-export async function runLOCL(context: AgentContext): Promise<void> {
+export async function runCORE(context: AgentContext): Promise<void> {
   const { tenantId, agent, runId } = context;
   const executionId = generateExecutionId(runId);
 
@@ -31,19 +31,19 @@ export async function runLOCL(context: AgentContext): Promise<void> {
 
   try {
     await Promise.race([
-      executeLOCL(context, executionId),
+      executeCORE(context, executionId),
       timeoutPromise
     ]);
   } catch (error) {
-    // Error logging handled in executeLOCL
+    // Error logging handled in executeCORE
   }
 }
 
 /**
- * Execute LOCL logic
- * CLAUX V1: Local SEO intelligence via RuntimeService
+ * Execute CORE logic
+ * CLAUX V1: Technical SEO intelligence via RuntimeService
  */
-async function executeLOCL(context: AgentContext, executionId: string): Promise<void> {
+async function executeCORE(context: AgentContext, executionId: string): Promise<void> {
   const { tenantId, agent, runId } = context;
 
   // Initialize RuntimeService
@@ -56,7 +56,7 @@ async function executeLOCL(context: AgentContext, executionId: string): Promise<
   await runtimeService.log.writeInfo(
     executionId as UUID,
     null,
-    "Initializing LOCL agent - Local SEO Intelligence",
+    "Initializing CORE agent - Technical SEO Intelligence",
     {
       runId,
       tenantId,
@@ -69,8 +69,8 @@ async function executeLOCL(context: AgentContext, executionId: string): Promise<
 
   // Create execution via RuntimeService
   const createExecutionResult = await runtimeService.execution.createExecution({
-    agent_name: 'LOCL',
-    workflow_type: 'local_seo_intelligence',
+    agent_name: 'CORE',
+    workflow_type: 'technical_seo_intelligence',
     metadata: {
       runId,
     },
@@ -116,81 +116,83 @@ async function executeLOCL(context: AgentContext, executionId: string): Promise<
     }
   );
 
-  // Create GMB audit task
-  const gmbAuditTaskResult = await runtimeService.task.createTask({
+  // Create technical audit task
+  const technicalAuditTaskResult = await runtimeService.task.createTask({
     execution_id: runtimeExecutionId,
-    task_name: 'GMB Audit',
-    task_type: 'task_gmb_audit',
+    task_name: 'Technical Audit',
+    task_type: 'task_technical_audit',
     step_order: 1,
     input_payload: {
-      business_name: '',
-      location: '',
+      domain: '',
+      crawl_depth: 'medium',
     },
   });
 
-  if (!gmbAuditTaskResult.success || !gmbAuditTaskResult.data) {
-    throw new Error(`Failed to create GMB audit task`);
+  if (!technicalAuditTaskResult.success || !technicalAuditTaskResult.data) {
+    throw new Error(`Failed to create technical audit task`);
   }
 
-  const gmbAuditTaskId = gmbAuditTaskResult.data.id;
+  const technicalAuditTaskId = technicalAuditTaskResult.data.id;
 
-  // Initialize LOCL task factory
-  const loclFactory = new LoclTaskExecutorFactory(
+  // Initialize CORE task factory
+  const coreFactory = new CoreTaskExecutorFactory(
     tenantId as UUID,
     runtimeExecutionId,
-    gmbAuditTaskId
+    technicalAuditTaskId
   );
 
-  const executor = loclFactory.createExecutor('task_gmb_audit');
+  const executor = coreFactory.createExecutor('task_technical_audit');
   if (!executor) {
-    throw new Error('Failed to create GMB audit executor');
+    throw new Error('Failed to create technical audit executor');
   }
 
   // Start task via RuntimeService
-  await runtimeService.task.startTask(gmbAuditTaskId);
+  await runtimeService.task.startTask(technicalAuditTaskId);
 
   // Execute task
   const result = await executor.execute({
-    taskId: gmbAuditTaskId,
+    taskId: technicalAuditTaskId,
     executionId: runtimeExecutionId,
-    taskType: 'task_gmb_audit',
+    taskType: 'task_technical_audit',
     input: {
-      business_name: '',
-      location: '',
+      domain: '',
+      crawl_depth: 'medium',
     },
     retryCount: 0,
   });
 
   // Complete or fail task based on result
   if (result.status === TaskStatus.COMPLETED) {
-    await runtimeService.task.completeTask(gmbAuditTaskId, result.output);
+    await runtimeService.task.completeTask(technicalAuditTaskId, result.output);
 
-    // Generate Command Centre tasks for local SEO insights
+    // Generate Command Centre tasks for technical SEO insights
     const taskGenerationService = new TaskGenerationService();
-    const loclOutput = result.output as unknown as LoclOutput;
+    const coreOutput = result.output as unknown as CoreOutput;
 
-    if (loclOutput && loclOutput.gmb_recommendations) {
-      const commandCenterTasks = loclOutput.gmb_recommendations
-        .filter(rec => rec.priority === 'high')
-        .map(rec => ({
-          task_type: 'gmb_optimization' as TaskType,
-          title: rec.title,
-          description: rec.description,
+    if (coreOutput && coreOutput.schema_issues) {
+      const commandCenterTasks = coreOutput.schema_issues
+        .filter((issue: any) => issue.severity === 'critical')
+        .map((issue: any) => ({
+          task_type: 'schema_fix' as TaskType,
+          title: `Fix schema issue on ${issue.url}`,
+          description: issue.issue_type,
           priority: 'high' as TaskPriority,
           action_payload: {
-            recommendation: rec,
+            url: issue.url,
+            issue_type: issue.issue_type,
+            recommended_fix: issue.recommended_fix,
           },
-          recommended_action: rec.action,
-          client_visible_impact: rec.impact,
+          recommended_action: 'Implement schema fix as recommended',
+          client_visible_impact: 'Critical schema issue affecting rich snippets',
         }));
 
       if (commandCenterTasks.length > 0) {
         await taskGenerationService.bulkCreateTasks({
           tenant_id: tenantId as string,
           client_id: tenantId as string,
-          agent_name: 'LOCL',
+          agent_name: 'CORE',
           source_execution_id: runtimeExecutionId,
-          source_task_id: gmbAuditTaskId,
+          source_task_id: technicalAuditTaskId,
           tasks: commandCenterTasks,
         });
 
@@ -211,7 +213,7 @@ async function executeLOCL(context: AgentContext, executionId: string): Promise<
       }
     }
   } else {
-    await runtimeService.task.failTask(gmbAuditTaskId, {
+    await runtimeService.task.failTask(technicalAuditTaskId, {
       message: result.error?.message || 'Task failed',
       code: result.error?.code || 'UNKNOWN_ERROR',
     });
@@ -226,7 +228,7 @@ async function executeLOCL(context: AgentContext, executionId: string): Promise<
   await runtimeService.log.writeInfo(
     runtimeExecutionId,
     null,
-    "LOCL execution completed successfully - Local SEO intelligence generated",
+    "CORE execution completed successfully - Technical SEO intelligence generated",
     {
       runId,
       tenantId,

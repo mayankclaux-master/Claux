@@ -74,27 +74,49 @@ export interface PulseOutput {
  * LOCL Output
  */
 export interface LoclOutput {
-  gmb_optimization_score: number;
+  gmb_profile: {
+    business_name: string;
+    location: string;
+    review_count: number;
+    average_rating: number;
+    photos_count: number;
+    posts_count: number;
+    categories: string[];
+  };
+  gmb_recommendations: Array<{
+    title: string;
+    description: string;
+    priority: 'high' | 'medium' | 'low';
+    action: string;
+    impact: string;
+  }>;
   citation_opportunities: Array<{
     source: string;
     url: string;
-    priority: string;
+    status: 'missing' | 'inconsistent' | 'verified';
   }>;
-  local_ranking: number;
+  local_visibility_score: number;
+  total_locations: number;
 }
 
 /**
  * REPUTE Output
  */
 export interface ReputeOutput {
-  reviews_pending_reply: number;
-  sentiment_trends: {
-    positive: number;
-    neutral: number;
-    negative: number;
-  };
+  new_reviews: Array<{
+    id: string;
+    author: string;
+    rating: number;
+    text: string;
+    date: string;
+    sentiment: string;
+    suggested_reply: string;
+  }>;
+  sentiment_score: number;
   average_rating: number;
+  review_velocity: number;
   total_reviews: number;
+  platform: string;
 }
 
 /**
@@ -119,15 +141,30 @@ export interface LinxOutput {
  */
 export interface PrismOutput {
   traffic_analytics: {
-    sessions: number;
-    users: number;
-    page_views: number;
-  };
-  conversion_summaries: {
+    total_sessions: number;
+    organic_traffic: number;
+    direct_traffic: number;
+    referral_traffic: number;
+    social_traffic: number;
+    bounce_rate: number;
+    avg_session_duration: number;
     conversion_rate: number;
-    total_conversions: number;
   };
-  bounce_rate: number;
+  traffic_anomalies: Array<{
+    page: string;
+    type: string;
+    change_percentage: number;
+    severity: string;
+    description: string;
+  }>;
+  top_pages: Array<{
+    page: string;
+    sessions: number;
+    bounce_rate: number;
+    avg_position: number;
+  }>;
+  property_id: string;
+  date_range: string;
 }
 
 /**

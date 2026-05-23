@@ -1,14 +1,14 @@
 import type { AgentContext } from "../base/agent.types";
 import { RuntimeService } from "@/lib/runtime/services/runtime.service";
-import { LoclTaskExecutorFactory } from "./locl-tasks";
+import { PrismTaskExecutorFactory } from "./prism-tasks";
 import type { UUID } from "@/lib/runtime/types/common.types";
 import { ExecutionStatus, ExecutionSource } from "@/lib/runtime/types/execution.types";
 import { TaskStatus } from "@/lib/runtime/types/task.types";
 import { TaskGenerationService } from "@/lib/command-center/task-generation.service";
 import type { TaskType, TaskPriority } from "@/lib/command-center/types";
-import type { LoclOutput } from "../shared/agent-output.types";
+import type { PrismOutput } from "../shared/agent-output.types";
 
-const EXECUTION_TIMEOUT_MS = 120000; // 2 minutes for GMB audit
+const EXECUTION_TIMEOUT_MS = 120000; // 2 minutes for analytics review
 
 /**
  * Generate execution correlation ID
@@ -18,10 +18,10 @@ function generateExecutionId(runId: string): string {
 }
 
 /**
- * Run LOCL agent - Local SEO Intelligence
- * CLAUX V1: GMB optimization recommendations, citation intelligence
+ * Run PRISM agent - Analytics Intelligence
+ * CLAUX V1: GA4 interpretation, Search Console analysis, traffic trend analysis
  */
-export async function runLOCL(context: AgentContext): Promise<void> {
+export async function runPRISM(context: AgentContext): Promise<void> {
   const { tenantId, agent, runId } = context;
   const executionId = generateExecutionId(runId);
 
@@ -31,19 +31,19 @@ export async function runLOCL(context: AgentContext): Promise<void> {
 
   try {
     await Promise.race([
-      executeLOCL(context, executionId),
+      executePRISM(context, executionId),
       timeoutPromise
     ]);
   } catch (error) {
-    // Error logging handled in executeLOCL
+    // Error logging handled in executePRISM
   }
 }
 
 /**
- * Execute LOCL logic
- * CLAUX V1: Local SEO intelligence via RuntimeService
+ * Execute PRISM logic
+ * CLAUX V1: Analytics intelligence via RuntimeService
  */
-async function executeLOCL(context: AgentContext, executionId: string): Promise<void> {
+async function executePRISM(context: AgentContext, executionId: string): Promise<void> {
   const { tenantId, agent, runId } = context;
 
   // Initialize RuntimeService
@@ -56,7 +56,7 @@ async function executeLOCL(context: AgentContext, executionId: string): Promise<
   await runtimeService.log.writeInfo(
     executionId as UUID,
     null,
-    "Initializing LOCL agent - Local SEO Intelligence",
+    "Initializing PRISM agent - Analytics Intelligence",
     {
       runId,
       tenantId,
@@ -69,8 +69,8 @@ async function executeLOCL(context: AgentContext, executionId: string): Promise<
 
   // Create execution via RuntimeService
   const createExecutionResult = await runtimeService.execution.createExecution({
-    agent_name: 'LOCL',
-    workflow_type: 'local_seo_intelligence',
+    agent_name: 'PRISM',
+    workflow_type: 'analytics_intelligence',
     metadata: {
       runId,
     },
@@ -116,81 +116,83 @@ async function executeLOCL(context: AgentContext, executionId: string): Promise<
     }
   );
 
-  // Create GMB audit task
-  const gmbAuditTaskResult = await runtimeService.task.createTask({
+  // Create analytics review task
+  const analyticsReviewTaskResult = await runtimeService.task.createTask({
     execution_id: runtimeExecutionId,
-    task_name: 'GMB Audit',
-    task_type: 'task_gmb_audit',
+    task_name: 'Analytics Review',
+    task_type: 'task_analytics_review',
     step_order: 1,
     input_payload: {
-      business_name: '',
-      location: '',
+      property_id: '',
+      date_range: '30d',
     },
   });
 
-  if (!gmbAuditTaskResult.success || !gmbAuditTaskResult.data) {
-    throw new Error(`Failed to create GMB audit task`);
+  if (!analyticsReviewTaskResult.success || !analyticsReviewTaskResult.data) {
+    throw new Error(`Failed to create analytics review task`);
   }
 
-  const gmbAuditTaskId = gmbAuditTaskResult.data.id;
+  const analyticsReviewTaskId = analyticsReviewTaskResult.data.id;
 
-  // Initialize LOCL task factory
-  const loclFactory = new LoclTaskExecutorFactory(
+  // Initialize PRISM task factory
+  const prismFactory = new PrismTaskExecutorFactory(
     tenantId as UUID,
     runtimeExecutionId,
-    gmbAuditTaskId
+    analyticsReviewTaskId
   );
 
-  const executor = loclFactory.createExecutor('task_gmb_audit');
+  const executor = prismFactory.createExecutor('task_analytics_review');
   if (!executor) {
-    throw new Error('Failed to create GMB audit executor');
+    throw new Error('Failed to create analytics review executor');
   }
 
   // Start task via RuntimeService
-  await runtimeService.task.startTask(gmbAuditTaskId);
+  await runtimeService.task.startTask(analyticsReviewTaskId);
 
   // Execute task
   const result = await executor.execute({
-    taskId: gmbAuditTaskId,
+    taskId: analyticsReviewTaskId,
     executionId: runtimeExecutionId,
-    taskType: 'task_gmb_audit',
+    taskType: 'task_analytics_review',
     input: {
-      business_name: '',
-      location: '',
+      property_id: '',
+      date_range: '30d',
     },
     retryCount: 0,
   });
 
   // Complete or fail task based on result
   if (result.status === TaskStatus.COMPLETED) {
-    await runtimeService.task.completeTask(gmbAuditTaskId, result.output);
+    await runtimeService.task.completeTask(analyticsReviewTaskId, result.output);
 
-    // Generate Command Centre tasks for local SEO insights
+    // Generate Command Centre tasks for analytics insights
     const taskGenerationService = new TaskGenerationService();
-    const loclOutput = result.output as unknown as LoclOutput;
+    const prismOutput = result.output as unknown as PrismOutput;
 
-    if (loclOutput && loclOutput.gmb_recommendations) {
-      const commandCenterTasks = loclOutput.gmb_recommendations
-        .filter(rec => rec.priority === 'high')
-        .map(rec => ({
-          task_type: 'gmb_optimization' as TaskType,
-          title: rec.title,
-          description: rec.description,
+    if (prismOutput && prismOutput.traffic_anomalies) {
+      const commandCenterTasks = prismOutput.traffic_anomalies
+        .filter((anomaly: any) => anomaly.severity === 'high')
+        .map((anomaly: any) => ({
+          task_type: 'content_audit' as TaskType,
+          title: `Investigate traffic ${anomaly.type} for ${anomaly.page}`,
+          description: anomaly.description,
           priority: 'high' as TaskPriority,
           action_payload: {
-            recommendation: rec,
+            page: anomaly.page,
+            anomaly_type: anomaly.type,
+            change_percentage: anomaly.change_percentage,
           },
-          recommended_action: rec.action,
-          client_visible_impact: rec.impact,
+          recommended_action: 'Review page performance and content',
+          client_visible_impact: `Traffic ${anomaly.type} by ${anomaly.change_percentage}%`,
         }));
 
       if (commandCenterTasks.length > 0) {
         await taskGenerationService.bulkCreateTasks({
           tenant_id: tenantId as string,
           client_id: tenantId as string,
-          agent_name: 'LOCL',
+          agent_name: 'PRISM',
           source_execution_id: runtimeExecutionId,
-          source_task_id: gmbAuditTaskId,
+          source_task_id: analyticsReviewTaskId,
           tasks: commandCenterTasks,
         });
 
@@ -211,7 +213,7 @@ async function executeLOCL(context: AgentContext, executionId: string): Promise<
       }
     }
   } else {
-    await runtimeService.task.failTask(gmbAuditTaskId, {
+    await runtimeService.task.failTask(analyticsReviewTaskId, {
       message: result.error?.message || 'Task failed',
       code: result.error?.code || 'UNKNOWN_ERROR',
     });
@@ -226,7 +228,7 @@ async function executeLOCL(context: AgentContext, executionId: string): Promise<
   await runtimeService.log.writeInfo(
     runtimeExecutionId,
     null,
-    "LOCL execution completed successfully - Local SEO intelligence generated",
+    "PRISM execution completed successfully - Analytics intelligence generated",
     {
       runId,
       tenantId,

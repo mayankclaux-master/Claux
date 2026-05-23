@@ -1,14 +1,14 @@
 import type { AgentContext } from "../base/agent.types";
 import { RuntimeService } from "@/lib/runtime/services/runtime.service";
-import { LoclTaskExecutorFactory } from "./locl-tasks";
+import { ReputeTaskExecutorFactory } from "./repute-tasks";
 import type { UUID } from "@/lib/runtime/types/common.types";
 import { ExecutionStatus, ExecutionSource } from "@/lib/runtime/types/execution.types";
 import { TaskStatus } from "@/lib/runtime/types/task.types";
 import { TaskGenerationService } from "@/lib/command-center/task-generation.service";
 import type { TaskType, TaskPriority } from "@/lib/command-center/types";
-import type { LoclOutput } from "../shared/agent-output.types";
+import type { ReputeOutput } from "../shared/agent-output.types";
 
-const EXECUTION_TIMEOUT_MS = 120000; // 2 minutes for GMB audit
+const EXECUTION_TIMEOUT_MS = 120000; // 2 minutes for review monitoring
 
 /**
  * Generate execution correlation ID
@@ -18,10 +18,10 @@ function generateExecutionId(runId: string): string {
 }
 
 /**
- * Run LOCL agent - Local SEO Intelligence
- * CLAUX V1: GMB optimization recommendations, citation intelligence
+ * Run REPUTE agent - Review Intelligence
+ * CLAUX V1: Review monitoring, sentiment analysis, reply recommendations
  */
-export async function runLOCL(context: AgentContext): Promise<void> {
+export async function runREPUTE(context: AgentContext): Promise<void> {
   const { tenantId, agent, runId } = context;
   const executionId = generateExecutionId(runId);
 
@@ -31,19 +31,19 @@ export async function runLOCL(context: AgentContext): Promise<void> {
 
   try {
     await Promise.race([
-      executeLOCL(context, executionId),
+      executeREPUTE(context, executionId),
       timeoutPromise
     ]);
   } catch (error) {
-    // Error logging handled in executeLOCL
+    // Error logging handled in executeREPUTE
   }
 }
 
 /**
- * Execute LOCL logic
- * CLAUX V1: Local SEO intelligence via RuntimeService
+ * Execute REPUTE logic
+ * CLAUX V1: Review intelligence via RuntimeService
  */
-async function executeLOCL(context: AgentContext, executionId: string): Promise<void> {
+async function executeREPUTE(context: AgentContext, executionId: string): Promise<void> {
   const { tenantId, agent, runId } = context;
 
   // Initialize RuntimeService
@@ -56,7 +56,7 @@ async function executeLOCL(context: AgentContext, executionId: string): Promise<
   await runtimeService.log.writeInfo(
     executionId as UUID,
     null,
-    "Initializing LOCL agent - Local SEO Intelligence",
+    "Initializing REPUTE agent - Review Intelligence",
     {
       runId,
       tenantId,
@@ -69,8 +69,8 @@ async function executeLOCL(context: AgentContext, executionId: string): Promise<
 
   // Create execution via RuntimeService
   const createExecutionResult = await runtimeService.execution.createExecution({
-    agent_name: 'LOCL',
-    workflow_type: 'local_seo_intelligence',
+    agent_name: 'REPUTE',
+    workflow_type: 'review_intelligence',
     metadata: {
       runId,
     },
@@ -116,81 +116,85 @@ async function executeLOCL(context: AgentContext, executionId: string): Promise<
     }
   );
 
-  // Create GMB audit task
-  const gmbAuditTaskResult = await runtimeService.task.createTask({
+  // Create review monitoring task
+  const reviewMonitorTaskResult = await runtimeService.task.createTask({
     execution_id: runtimeExecutionId,
-    task_name: 'GMB Audit',
-    task_type: 'task_gmb_audit',
+    task_name: 'Review Monitoring',
+    task_type: 'task_review_monitor',
     step_order: 1,
     input_payload: {
+      platform: 'google',
       business_name: '',
-      location: '',
     },
   });
 
-  if (!gmbAuditTaskResult.success || !gmbAuditTaskResult.data) {
-    throw new Error(`Failed to create GMB audit task`);
+  if (!reviewMonitorTaskResult.success || !reviewMonitorTaskResult.data) {
+    throw new Error(`Failed to create review monitoring task`);
   }
 
-  const gmbAuditTaskId = gmbAuditTaskResult.data.id;
+  const reviewMonitorTaskId = reviewMonitorTaskResult.data.id;
 
-  // Initialize LOCL task factory
-  const loclFactory = new LoclTaskExecutorFactory(
+  // Initialize REPUTE task factory
+  const reputeFactory = new ReputeTaskExecutorFactory(
     tenantId as UUID,
     runtimeExecutionId,
-    gmbAuditTaskId
+    reviewMonitorTaskId
   );
 
-  const executor = loclFactory.createExecutor('task_gmb_audit');
+  const executor = reputeFactory.createExecutor('task_review_monitor');
   if (!executor) {
-    throw new Error('Failed to create GMB audit executor');
+    throw new Error('Failed to create review monitoring executor');
   }
 
   // Start task via RuntimeService
-  await runtimeService.task.startTask(gmbAuditTaskId);
+  await runtimeService.task.startTask(reviewMonitorTaskId);
 
   // Execute task
   const result = await executor.execute({
-    taskId: gmbAuditTaskId,
+    taskId: reviewMonitorTaskId,
     executionId: runtimeExecutionId,
-    taskType: 'task_gmb_audit',
+    taskType: 'task_review_monitor',
     input: {
+      platform: 'google',
       business_name: '',
-      location: '',
     },
     retryCount: 0,
   });
 
   // Complete or fail task based on result
   if (result.status === TaskStatus.COMPLETED) {
-    await runtimeService.task.completeTask(gmbAuditTaskId, result.output);
+    await runtimeService.task.completeTask(reviewMonitorTaskId, result.output);
 
-    // Generate Command Centre tasks for local SEO insights
+    // Generate Command Centre tasks for review insights
     const taskGenerationService = new TaskGenerationService();
-    const loclOutput = result.output as unknown as LoclOutput;
+    const reputeOutput = result.output as unknown as ReputeOutput;
 
-    if (loclOutput && loclOutput.gmb_recommendations) {
-      const commandCenterTasks = loclOutput.gmb_recommendations
-        .filter(rec => rec.priority === 'high')
-        .map(rec => ({
-          task_type: 'gmb_optimization' as TaskType,
-          title: rec.title,
-          description: rec.description,
-          priority: 'high' as TaskPriority,
+    if (reputeOutput && reputeOutput.new_reviews) {
+      const commandCenterTasks = reputeOutput.new_reviews
+        .filter((review: any) => review.sentiment === 'negative' || review.rating <= 3)
+        .map((review: any) => ({
+          task_type: 'review_reply' as TaskType,
+          title: `Reply to ${review.rating}-star review from ${review.author}`,
+          description: review.text,
+          priority: review.rating <= 2 ? 'high' as TaskPriority : 'medium' as TaskPriority,
           action_payload: {
-            recommendation: rec,
+            review_id: review.id,
+            author: review.author,
+            rating: review.rating,
+            text: review.text,
+            suggested_reply: review.suggested_reply,
           },
-          recommended_action: rec.action,
-          client_visible_impact: rec.impact,
+          recommended_action: 'Respond to review using suggested reply',
+          client_visible_impact: `Addressing ${review.rating}-star review improves reputation`,
         }));
 
       if (commandCenterTasks.length > 0) {
         await taskGenerationService.bulkCreateTasks({
           tenant_id: tenantId as string,
           client_id: tenantId as string,
-          agent_name: 'LOCL',
+          agent_name: 'REPUTE',
           source_execution_id: runtimeExecutionId,
-          source_task_id: gmbAuditTaskId,
+          source_task_id: reviewMonitorTaskId,
           tasks: commandCenterTasks,
         });
 
@@ -211,7 +215,7 @@ async function executeLOCL(context: AgentContext, executionId: string): Promise<
       }
     }
   } else {
-    await runtimeService.task.failTask(gmbAuditTaskId, {
+    await runtimeService.task.failTask(reviewMonitorTaskId, {
       message: result.error?.message || 'Task failed',
       code: result.error?.code || 'UNKNOWN_ERROR',
     });
@@ -226,7 +230,7 @@ async function executeLOCL(context: AgentContext, executionId: string): Promise<
   await runtimeService.log.writeInfo(
     runtimeExecutionId,
     null,
-    "LOCL execution completed successfully - Local SEO intelligence generated",
+    "REPUTE execution completed successfully - Review intelligence generated",
     {
       runId,
       tenantId,

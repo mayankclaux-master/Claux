@@ -1,14 +1,14 @@
 import type { AgentContext } from "../base/agent.types";
 import { RuntimeService } from "@/lib/runtime/services/runtime.service";
-import { LoclTaskExecutorFactory } from "./locl-tasks";
+import { LinxTaskExecutorFactory } from "./linx-tasks";
 import type { UUID } from "@/lib/runtime/types/common.types";
 import { ExecutionStatus, ExecutionSource } from "@/lib/runtime/types/execution.types";
 import { TaskStatus } from "@/lib/runtime/types/task.types";
 import { TaskGenerationService } from "@/lib/command-center/task-generation.service";
 import type { TaskType, TaskPriority } from "@/lib/command-center/types";
-import type { LoclOutput } from "../shared/agent-output.types";
+import type { LinxOutput } from "../shared/agent-output.types";
 
-const EXECUTION_TIMEOUT_MS = 120000; // 2 minutes for GMB audit
+const EXECUTION_TIMEOUT_MS = 120000; // 2 minutes for backlink analysis
 
 /**
  * Generate execution correlation ID
@@ -18,10 +18,10 @@ function generateExecutionId(runId: string): string {
 }
 
 /**
- * Run LOCL agent - Local SEO Intelligence
- * CLAUX V1: GMB optimization recommendations, citation intelligence
+ * Run LINX agent - Backlink Intelligence
+ * CLAUX V1: Backlink analysis, outreach recommendations, authority forecasting
  */
-export async function runLOCL(context: AgentContext): Promise<void> {
+export async function runLINX(context: AgentContext): Promise<void> {
   const { tenantId, agent, runId } = context;
   const executionId = generateExecutionId(runId);
 
@@ -31,19 +31,19 @@ export async function runLOCL(context: AgentContext): Promise<void> {
 
   try {
     await Promise.race([
-      executeLOCL(context, executionId),
+      executeLINX(context, executionId),
       timeoutPromise
     ]);
   } catch (error) {
-    // Error logging handled in executeLOCL
+    // Error logging handled in executeLINX
   }
 }
 
 /**
- * Execute LOCL logic
- * CLAUX V1: Local SEO intelligence via RuntimeService
+ * Execute LINX logic
+ * CLAUX V1: Backlink intelligence via RuntimeService
  */
-async function executeLOCL(context: AgentContext, executionId: string): Promise<void> {
+async function executeLINX(context: AgentContext, executionId: string): Promise<void> {
   const { tenantId, agent, runId } = context;
 
   // Initialize RuntimeService
@@ -56,7 +56,7 @@ async function executeLOCL(context: AgentContext, executionId: string): Promise<
   await runtimeService.log.writeInfo(
     executionId as UUID,
     null,
-    "Initializing LOCL agent - Local SEO Intelligence",
+    "Initializing LINX agent - Backlink Intelligence",
     {
       runId,
       tenantId,
@@ -69,8 +69,8 @@ async function executeLOCL(context: AgentContext, executionId: string): Promise<
 
   // Create execution via RuntimeService
   const createExecutionResult = await runtimeService.execution.createExecution({
-    agent_name: 'LOCL',
-    workflow_type: 'local_seo_intelligence',
+    agent_name: 'LINX',
+    workflow_type: 'backlink_intelligence',
     metadata: {
       runId,
     },
@@ -116,81 +116,83 @@ async function executeLOCL(context: AgentContext, executionId: string): Promise<
     }
   );
 
-  // Create GMB audit task
-  const gmbAuditTaskResult = await runtimeService.task.createTask({
+  // Create backlink analysis task
+  const backlinkAnalysisTaskResult = await runtimeService.task.createTask({
     execution_id: runtimeExecutionId,
-    task_name: 'GMB Audit',
-    task_type: 'task_gmb_audit',
+    task_name: 'Backlink Analysis',
+    task_type: 'task_backlink_analysis',
     step_order: 1,
     input_payload: {
-      business_name: '',
-      location: '',
+      domain: '',
+      competitors: [],
     },
   });
 
-  if (!gmbAuditTaskResult.success || !gmbAuditTaskResult.data) {
-    throw new Error(`Failed to create GMB audit task`);
+  if (!backlinkAnalysisTaskResult.success || !backlinkAnalysisTaskResult.data) {
+    throw new Error(`Failed to create backlink analysis task`);
   }
 
-  const gmbAuditTaskId = gmbAuditTaskResult.data.id;
+  const backlinkAnalysisTaskId = backlinkAnalysisTaskResult.data.id;
 
-  // Initialize LOCL task factory
-  const loclFactory = new LoclTaskExecutorFactory(
+  // Initialize LINX task factory
+  const linxFactory = new LinxTaskExecutorFactory(
     tenantId as UUID,
     runtimeExecutionId,
-    gmbAuditTaskId
+    backlinkAnalysisTaskId
   );
 
-  const executor = loclFactory.createExecutor('task_gmb_audit');
+  const executor = linxFactory.createExecutor('task_backlink_analysis');
   if (!executor) {
-    throw new Error('Failed to create GMB audit executor');
+    throw new Error('Failed to create backlink analysis executor');
   }
 
   // Start task via RuntimeService
-  await runtimeService.task.startTask(gmbAuditTaskId);
+  await runtimeService.task.startTask(backlinkAnalysisTaskId);
 
   // Execute task
   const result = await executor.execute({
-    taskId: gmbAuditTaskId,
+    taskId: backlinkAnalysisTaskId,
     executionId: runtimeExecutionId,
-    taskType: 'task_gmb_audit',
+    taskType: 'task_backlink_analysis',
     input: {
-      business_name: '',
-      location: '',
+      domain: '',
+      competitors: [],
     },
     retryCount: 0,
   });
 
   // Complete or fail task based on result
   if (result.status === TaskStatus.COMPLETED) {
-    await runtimeService.task.completeTask(gmbAuditTaskId, result.output);
+    await runtimeService.task.completeTask(backlinkAnalysisTaskId, result.output);
 
-    // Generate Command Centre tasks for local SEO insights
+    // Generate Command Centre tasks for backlink insights
     const taskGenerationService = new TaskGenerationService();
-    const loclOutput = result.output as unknown as LoclOutput;
+    const linxOutput = result.output as unknown as LinxOutput;
 
-    if (loclOutput && loclOutput.gmb_recommendations) {
-      const commandCenterTasks = loclOutput.gmb_recommendations
-        .filter(rec => rec.priority === 'high')
-        .map(rec => ({
-          task_type: 'gmb_optimization' as TaskType,
-          title: rec.title,
-          description: rec.description,
-          priority: 'high' as TaskPriority,
+    if (linxOutput && linxOutput.backlink_opportunities) {
+      const commandCenterTasks = linxOutput.backlink_opportunities
+        .filter((opp: any) => opp.relevance_score > 70)
+        .map((opp: any) => ({
+          task_type: 'backlink_outreach' as TaskType,
+          title: `Outreach to ${opp.target_domain}`,
+          description: `Domain authority: ${opp.domain_authority}, Relevance: ${opp.relevance_score}%`,
+          priority: opp.domain_authority > 50 ? 'high' as TaskPriority : 'medium' as TaskPriority,
           action_payload: {
-            recommendation: rec,
+            target_domain: opp.target_domain,
+            domain_authority: opp.domain_authority,
+            relevance_score: opp.relevance_score,
           },
-          recommended_action: rec.action,
-          client_visible_impact: rec.impact,
+          recommended_action: 'Send outreach email for backlink opportunity',
+          client_visible_impact: `Potential backlink from DA ${opp.domain_authority} domain`,
         }));
 
       if (commandCenterTasks.length > 0) {
         await taskGenerationService.bulkCreateTasks({
           tenant_id: tenantId as string,
           client_id: tenantId as string,
-          agent_name: 'LOCL',
+          agent_name: 'LINX',
           source_execution_id: runtimeExecutionId,
-          source_task_id: gmbAuditTaskId,
+          source_task_id: backlinkAnalysisTaskId,
           tasks: commandCenterTasks,
         });
 
@@ -211,7 +213,7 @@ async function executeLOCL(context: AgentContext, executionId: string): Promise<
       }
     }
   } else {
-    await runtimeService.task.failTask(gmbAuditTaskId, {
+    await runtimeService.task.failTask(backlinkAnalysisTaskId, {
       message: result.error?.message || 'Task failed',
       code: result.error?.code || 'UNKNOWN_ERROR',
     });
@@ -226,7 +228,7 @@ async function executeLOCL(context: AgentContext, executionId: string): Promise<
   await runtimeService.log.writeInfo(
     runtimeExecutionId,
     null,
-    "LOCL execution completed successfully - Local SEO intelligence generated",
+    "LINX execution completed successfully - Backlink intelligence generated",
     {
       runId,
       tenantId,
