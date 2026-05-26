@@ -478,3 +478,29 @@ export async function PATCH(request: Request): Promise<NextResponse> {
 
   return NextResponse.json({ success: true })
 }
+
+export async function DELETE(request: Request): Promise<NextResponse> {
+  const db = makeDb()
+  if (!db) return NextResponse.json({ error: 'Server configuration missing.' }, { status: 500 })
+
+  const { searchParams } = new URL(request.url)
+  const phoneNumber = normalizePhone(searchParams.get('phone'))
+
+  if (!phoneNumber) {
+    return NextResponse.json({ error: 'phone_number is required.' }, { status: 400 })
+  }
+
+  const { error: leadError } = await db.from(LEADS_TABLE).delete().eq('phone_number', phoneNumber)
+
+  if (leadError) {
+    return NextResponse.json({ error: leadError.message }, { status: 500 })
+  }
+
+  const { error: logsError } = await db.from(LOGS_TABLE).delete().or(`lead_phone.eq.${phoneNumber},wa_id.eq.${phoneNumber}`)
+
+  if (logsError) {
+    console.error('[crm-delete] Failed to delete logs:', logsError)
+  }
+
+  return NextResponse.json({ success: true })
+}

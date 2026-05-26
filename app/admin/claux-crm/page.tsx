@@ -213,6 +213,8 @@ export default function ClauxCrmPage() {
   const [templatesLoading, setTemplatesLoading] = useState(false)
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateItem | null>(null)
   const [leadMessagesByPhone, setLeadMessagesByPhone] = useState<Record<string, MessageItem[]>>({})
+  const [deleteConfirmPhone, setDeleteConfirmPhone] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const emojiTriggerRef = useRef<HTMLButtonElement | null>(null)
   const emojiPopoverRef = useRef<HTMLDivElement | null>(null)
@@ -617,6 +619,41 @@ export default function ClauxCrmPage() {
     }
   }
 
+  const handleDeleteLead = async (phone: string) => {
+    setDeleting(true)
+    setError('')
+
+    try {
+      const response = await fetch(`/api/whatsapp/crm?phone=${encodeURIComponent(phone)}`, {
+        method: 'DELETE',
+      })
+
+      const data = (await response.json().catch(() => ({}))) as { error?: string }
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to delete lead.')
+      }
+
+      setDeleteConfirmPhone(null)
+
+      if (selectedPhone === phone) {
+        setSelectedPhone('')
+        setMessages([])
+      }
+
+      setLeadMessagesByPhone((prev) => {
+        const next = { ...prev }
+        delete next[phone]
+        return next
+      })
+
+      await fetchCrm()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete lead.')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   if (!authed) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4" style={{ background: BG }}>
@@ -734,44 +771,60 @@ export default function ClauxCrmPage() {
             const intentBadge = getIntentBadge(intent)
 
             return (
-              <button
+              <div
                 key={lead.phone_number}
-                onClick={() => onSelectLead(lead.phone_number)}
-                className="w-full text-left px-4 py-3 rounded-xl border"
-                style={{
-                  borderColor: active ? '#86EFAC' : '#DCE3EA',
-                  background: '#FFFFFF',
-                  boxShadow: active ? '0 0 0 1px #86EFAC' : 'none',
-                }}
+                className="relative"
               >
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-[15px] font-semibold tracking-tight" style={{ color: '#0F172A' }}>
-                    {displayName}
+                <button
+                  onClick={() => onSelectLead(lead.phone_number)}
+                  className="w-full text-left px-4 py-3 rounded-xl border"
+                  style={{
+                    borderColor: active ? '#86EFAC' : '#DCE3EA',
+                    background: '#FFFFFF',
+                    boxShadow: active ? '0 0 0 1px #86EFAC' : 'none',
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-[15px] font-semibold tracking-tight" style={{ color: '#0F172A' }}>
+                      {displayName}
+                    </p>
+                    <span
+                      className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1 text-[10px] font-semibold"
+                      style={{ background: '#DCFCE7', color: SEA_GREEN }}
+                    >
+                      {lead.interaction_count || 0}
+                    </span>
+                  </div>
+                  <p className="text-xs mt-0.5" style={{ color: '#6B7280' }}>
+                    {lead.phone_number}
                   </p>
-                  <span
-                    className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1 text-[10px] font-semibold"
-                    style={{ background: '#DCFCE7', color: SEA_GREEN }}
-                  >
-                    {lead.interaction_count || 0}
-                  </span>
-                </div>
-                <p className="text-xs mt-0.5" style={{ color: '#6B7280' }}>
-                  {lead.phone_number}
-                </p>
-                <div className="flex items-center justify-between mt-2">
-                  <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: intentBadge.background, color: intentBadge.color }}>
-                    {intent}
-                  </span>
-                  <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: stageBadge.background, color: stageBadge.color }}>
-                    {stageBadge.label}
-                  </span>
-                </div>
-                <div className="mt-1 flex items-center justify-between">
-                  <span className="text-[11px]" style={{ color: '#6B7280' }}>
-                    {fmtDate(lead.last_interaction_at)}
-                  </span>
-                </div>
-              </button>
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: intentBadge.background, color: intentBadge.color }}>
+                      {intent}
+                    </span>
+                    <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: stageBadge.background, color: stageBadge.color }}>
+                      {stageBadge.label}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between">
+                    <span className="text-[11px]" style={{ color: '#6B7280' }}>
+                      {fmtDate(lead.last_interaction_at)}
+                    </span>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setDeleteConfirmPhone(lead.phone_number)
+                  }}
+                  className="absolute top-2 right-2 h-6 w-6 rounded-full border flex items-center justify-center text-xs"
+                  style={{ borderColor: '#FECACA', background: '#FEF2F2', color: '#DC2626' }}
+                  title="Delete lead"
+                >
+                  ✕
+                </button>
+              </div>
             )
           })}
 
@@ -1046,6 +1099,39 @@ export default function ClauxCrmPage() {
           </div>
         </div>
       </main>
+
+      {deleteConfirmPhone && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0, 0, 0, 0.5)' }}>
+          <div className="rounded-xl border p-6 shadow-lg" style={{ background: '#FFFFFF', borderColor: '#DCE3EA', maxWidth: '400px' }}>
+            <h3 className="text-base font-semibold" style={{ color: '#0F172A' }}>
+              Delete Lead
+            </h3>
+            <p className="text-sm mt-2" style={{ color: '#4B5563' }}>
+              Are you sure you want to delete lead <span className="font-semibold">{deleteConfirmPhone}</span>? This will remove the lead and all conversation history from the database.
+            </p>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmPhone(null)}
+                disabled={deleting}
+                className="px-4 py-2 rounded-lg text-sm font-semibold"
+                style={{ background: '#F1F5F9', color: '#475569' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDeleteLead(deleteConfirmPhone)}
+                disabled={deleting}
+                className="px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
+                style={{ background: '#DC2626' }}
+              >
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
